@@ -148,3 +148,19 @@ test('chat disiarkan ke semua pemain; pesan kosong, spam, dan sebelum join ditol
   a.close(); b.close(); lurker.close();
   await server.close();
 });
+
+import { createVoiceToken } from './server.js';
+
+test('voice: tanpa konfigurasi LiveKit token tidak dibuat; dengan konfigurasi berupa JWT berisi identitas pemain', async () => {
+  assert.equal(await createVoiceToken({ id: 'a', name: 'A', env: {} }), null);
+  const v = await createVoiceToken({
+    id: 'abc12345',
+    name: 'Budi',
+    env: { LIVEKIT_URL: 'wss://x.livekit.cloud', LIVEKIT_API_KEY: 'key', LIVEKIT_API_SECRET: 'secret-secret-secret-secret-1234' },
+  });
+  assert.equal(v.url, 'wss://x.livekit.cloud');
+  const payload = JSON.parse(Buffer.from(v.token.split('.')[1], 'base64url').toString());
+  assert.equal(payload.sub, 'abc12345');
+  assert.equal(payload.video.room, 'orbit-hall');
+  assert.equal(payload.video.canPublish, true);
+});

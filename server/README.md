@@ -31,3 +31,18 @@ Input di-clamp dan dinormalisasi (anti speed-hack), seq lama ditolak, posisi dib
 
 ## Belum ada (batas jujur)
 Belum ada autentikasi/akun, reconnect, simulasi latency/packet loss, zona/interest management, voice, dan **belum terhubung ke `game/src/main.js`** (NetClient ada di `game/src/net-client.js` dan sudah dites terhadap server, tapi belum dipakai render/UI). Tidak ada uji browser; gate Fase 3 belum lulus.
+
+## Suara proximity (LiveKit) — opsional
+
+Server hanya menerbitkan token; audio lewat LiveKit (SFU WebRTC). Atur variabel lingkungan di host server (Railway, dll.):
+
+- `LIVEKIT_URL` (mis. `wss://proyek-anda.livekit.cloud`)
+- `LIVEKIT_API_KEY`
+- `LIVEKIT_API_SECRET`
+
+Tanpa ketiganya, tombol 🎙 tidak muncul dan game berjalan seperti biasa. Volume diatur klien menurut jarak (penuh ≤ 2,5 m, hening ≥ 12 m).
+Catatan: pembatasan oleh klien belum menjamin privasi; ruang privat/meja membutuhkan pembatasan langganan di sisi server LiveKit (belum dikerjakan).
+
+## Interaksi berpasangan
+
+Pesan `greet` (`handshake`, `highfive` butuh persetujuan lewat `greet-reply`; `wave`, `bow` langsung). Server memvalidasi jarak ≤ 2,2 m, tidak duduk, lalu menghadapkan kedua pemain; aksi selesai otomatis setelah 2,6 detik.

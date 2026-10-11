@@ -497,3 +497,22 @@ body[data-input=touch] .chat-box{bottom:calc(190px + env(safe-area-inset-bottom)
 .chat-input:focus{border-color:var(--mint)}
 .chat-send{width:42px;border:0;border-radius:12px;background:var(--mint);color:#10231b;font-size:1rem}
 @media (max-height:480px){body[data-input=touch] .chat-box{bottom:calc(14px + env(safe-area-inset-bottom));width:min(260px,40vw)}}
+
+/* Menu sapa kontekstual: muncul hanya saat ada pemain dekat */
+.greet-menu, .greet-toast {
+  position: absolute; left: 50%; transform: translateX(-50%); z-index: 6;
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  background: rgba(14, 18, 24, 0.62); backdrop-filter: blur(8px);
+  border-radius: 999px; color: #fff; font: 600 13px system-ui, sans-serif;
+}
+.greet-menu { bottom: 150px; }
+.greet-toast { top: 76px; }
+.greet-menu[hidden], .greet-toast[hidden] { display: none; }
+.greet-name { padding: 0 6px; opacity: 0.85; }
+.greet-menu button, .greet-toast button {
+  width: 40px; height: 40px; border: 0; border-radius: 50%; font-size: 20px;
+  background: rgba(255, 255, 255, 0.14); color: #fff; cursor: pointer;
+}
+.greet-menu button:active, .greet-toast button:active { background: rgba(255, 255, 255, 0.3); }
+
+#mic-button.is-on { background: #2e9e6b; }

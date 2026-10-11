@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { createAvatar, makeBubble } from './avatar.js';
+import { VoiceChat } from './voice.js';
+import { applyPose, createAvatar, makeBubble } from './avatar.js';
 import { GAME_RULES, cameraRelativeMovement, normalizeMovement } from './game-rules.js';
 import { HALL, SEATS, TABLES, facingAngle, findNearestSeat, resolveCollisions } from './hall-layout.js';
 import { resolveServerUrl, startMultiplayer } from './multiplayer-view.js';
@@ -24,6 +25,10 @@ const ui = {
   chatForm: $('#chat-form'),
   chatInput: $('#chat-input'),
   chatButton: $('#chat-button'),
+  greetMenu: $('#greet-menu'),
+  greetName: $('#greet-name'),
+  greetToast: $('#greet-toast'),
+  greetToastText: $('#greet-toast-text'),
 };
 
 const PLAYER_SPEED = GAME_RULES.playerSpeed;
@@ -340,7 +345,109 @@ function goToEntrance(now) {
   me.rot = Math.PI;
 }
 
+function selfState() {
+  return multiplayer?.net.players.find((p) => p.id === multiplayer.net.id) ?? null;
+}
+
+const GREET_RANGE = 2.2;
+const GREET_TEXT = { handshake: 'mengajak salaman', highfive: 'mengajak tos' };
+let pendingGreet = null;
+let greetToastTimer = 0;
+
+function nearestRemote() {
+  if (!multiplayer || me.sit !== null) return null;
+  let best = null;
+  let bestD = GREET_RANGE;
+  for (const p of multiplayer.net.players) {
+    if (p.id === multiplayer.net.id || p.sit != null || p.act) continue;
+    const d = Math.hypot(p.x - me.x, p.z - me.z);
+    if (d < bestD) {
+      best = p;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
+function setupGreet() {
+  ui.greetMenu.querySelectorAll('[data-greet]').forEach((btn) =>
+    btn.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      const target = nearestRemote();
+      if (target) multiplayer.net.sendGreet(target.id, btn.dataset.greet);
+      ui.greetMenu.hidden = true;
+    }),
+  );
+  const hideToast = () => {
+    ui.greetToast.hidden = true;
+    pendingGreet = null;
+    window.clearTimeout(greetToastTimer);
+  };
+  $('#greet-yes').addEventListener('click', () => {
+    if (pendingGreet) multiplayer?.net.replyGreet(pendingGreet.from, true);
+    hideToast();
+  });
+  $('#greet-no').addEventListener('click', () => {
+    if (pendingGreet) multiplayer?.net.replyGreet(pendingGreet.from, false);
+    hideToast();
+  });
+  return (msg) => {
+    pendingGreet = msg;
+    ui.greetToastText.textContent = `${msg.name ?? 'Tamu'} ${GREET_TEXT[msg.kind] ?? 'menyapa'}`;
+    ui.greetToast.hidden = false;
+    window.clearTimeout(greetToastTimer);
+    greetToastTimer = window.setTimeout(hideToast, 8000);
+  };
+}
+let showGreetRequest = () => {};
+let lastVoiceTick = -1;
+
+// Suara proximity: tombol 🎙 muncul hanya bila server mengaktifkan LiveKit.
+let voice = null;
+let voiceBusy = false;
+let voiceCreds = null;
+async function toggleMic() {
+  const btn = $('#mic-button');
+  if (voiceBusy || !voiceCreds) return;
+  voiceBusy = true;
+  try {
+    if (!voice) {
+      voice = new VoiceChat();
+      voice.onChange = (on) => {
+        btn.setAttribute('aria-pressed', String(on));
+        btn.classList.toggle('is-on', on);
+      };
+      await voice.connect(voiceCreds);
+    }
+    await voice.setMic(!voice.micOn);
+  } catch (error) {
+    console.warn('[voice]', error);
+    voice?.dispose();
+    voice = null;
+  } finally {
+    voiceBusy = false;
+  }
+}
+function setupVoice(session) {
+  if (!session) return;
+  session.net.on('voice', (msg) => {
+    if (!msg.enabled) return;
+    voiceCreds = { url: msg.url, token: msg.token };
+    $('#mic-button').hidden = false;
+  });
+  session.net.requestVoiceToken();
+  $('#mic-button').addEventListener('click', toggleMic);
+}
+
 function updatePlayer(delta, now) {
+  const paired = selfState();
+  if (paired?.with) {
+    // Server memegang posisi saat berpasangan: ikuti, jangan bergerak sendiri.
+    me.x = paired.x;
+    me.z = paired.z;
+    me.rot = paired.rot;
+    return false;
+  }
   const movement = cameraRelativeMovement(getMovementInput(), yaw);
   const moving = movement.x !== 0 || movement.z !== 0;
   if (me.sit !== null && moving) standUp(now); // bergerak = berdiri
@@ -364,6 +471,10 @@ function updatePlayer(delta, now) {
 }
 
 function updateHud() {
+  const near = joined ? nearestRemote() : null;
+  const showMenu = near !== null && !selfState()?.act;
+  if (showMenu) ui.greetName.textContent = near.name;
+  if (ui.greetMenu.hidden === showMenu) ui.greetMenu.hidden = !showMenu;
   const seat = me.sit === null ? findNearestSeat(me, occupiedSeats()) : null;
   const canAct = me.sit !== null || seat !== null;
   ui.sitButton.classList.toggle('is-ready', canAct);
@@ -498,6 +609,8 @@ function renderFrame(time) {
   priorFrameTime = time;
 
   const walking = joined ? updatePlayer(delta, now) : false;
+  const selfAct = selfState()?.act ?? null;
+  applyPose(playerAvatar, selfAct ?? (now < clapUntil ? 'clap' : walking ? 'walk' : null), now, delta);
   const bob = walking ? Math.abs(Math.sin(now * 13)) * 0.09 : 0;
   const hop = now < clapUntil ? Math.abs(Math.sin((clapUntil - now) * 14)) * 0.12 : 0;
   const k = 1 - Math.exp(-14 * delta);
@@ -510,7 +623,11 @@ function renderFrame(time) {
 
   for (const npc of npcs) npc.avatar.position.y = npc.baseY + Math.sin(now * 1.6 + npc.phase) * 0.012;
 
-  multiplayer?.view.update(delta);
+  multiplayer?.view.update(delta, now);
+  if (voice && multiplayer && Math.floor(now * 10) !== lastVoiceTick) {
+    lastVoiceTick = Math.floor(now * 10);
+    voice.update(me, multiplayer.net.players);
+  }
   updateLabels();
   updateHud();
   updateCamera(delta, now);
@@ -655,6 +772,7 @@ function setupInput() {
     if (event.code === 'Space') clap(clock());
     if (event.code === 'KeyR' && joined) goToEntrance(clock());
     if (event.code === 'KeyM') toggleMute();
+    if (event.code === 'KeyV') toggleMic();
   });
   const turn = () => {
     if (heldKeys.has('KeyQ')) yaw += 0.03;
@@ -669,6 +787,7 @@ function setupInput() {
     joystick.z = 0;
   });
 
+  showGreetRequest = setupGreet();
   setupJoystick();
   ui.sitButton.addEventListener('pointerdown', (event) => {
     event.preventDefault();
@@ -715,6 +834,8 @@ function setupJoin() {
       .then((session) => {
         multiplayer = session;
         session?.net.on('chat', addChatLine);
+        session?.net.on('greet-req', (msg) => showGreetRequest(msg));
+        setupVoice(session);
       })
       .catch((error) => console.warn('[multiplayer]', error));
   });

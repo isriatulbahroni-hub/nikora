@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createAvatar } from './avatar.js';
+import { applyPose, createAvatar } from './avatar.js';
 import { HALL } from './hall-layout.js';
 import { NetClient } from './net-client.js';
 
@@ -40,7 +40,7 @@ export function createRemotePlayers(scene) {
     group.position.set(p.x, p.sit == null ? 0 : HALL.seatedDrop, p.z);
     group.rotation.y = p.rot;
     scene.add(group);
-    return { group, target: { x: p.x, z: p.z, rot: p.rot, sit: p.sit ?? null } };
+    return { group, act: p.act ?? null, target: { x: p.x, z: p.z, rot: p.rot, sit: p.sit ?? null } };
   }
 
   return {
@@ -53,7 +53,10 @@ export function createRemotePlayers(scene) {
         if (p.id === selfId) continue;
         seen.add(p.id);
         const existing = avatars.get(p.id);
-        if (existing) existing.target = { x: p.x, z: p.z, rot: p.rot, sit: p.sit ?? null };
+        if (existing) {
+          existing.target = { x: p.x, z: p.z, rot: p.rot, sit: p.sit ?? null };
+          existing.act = p.act ?? null;
+        }
         else avatars.set(p.id, build(p));
       }
       for (const [id, avatar] of avatars) {
@@ -67,9 +70,12 @@ export function createRemotePlayers(scene) {
         avatars.delete(id);
       }
     },
-    update(delta) {
+    update(delta, time = performance.now() / 1000) {
       const k = 1 - Math.exp(-SMOOTHING * Math.max(0, delta));
-      for (const { group, target } of avatars.values()) {
+      for (const avatar of avatars.values()) {
+        const { group, target } = avatar;
+        const speed = Math.hypot(target.x - group.position.x, target.z - group.position.z) / Math.max(delta, 1e-3);
+        applyPose(group, avatar.act ?? (speed > 0.8 ? 'walk' : null), time, delta);
         group.position.x += (target.x - group.position.x) * k;
         group.position.z += (target.z - group.position.z) * k;
         group.rotation.y += (shortestAngle(group.rotation.y, target.rot) - group.rotation.y) * k;

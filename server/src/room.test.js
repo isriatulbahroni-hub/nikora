@@ -130,3 +130,52 @@ test('chat dibersihkan, dibatasi panjang dan frekuensi', async () => {
   assert.equal(room.chat('a', '   ', 5000), null); // kosong
   assert.equal(room.chat('nobody', 'hai', 5000), null);
 });
+
+import { Room as GreetRoom } from './room.js';
+
+test('salaman: ajakan butuh persetujuan, keduanya saling berhadapan lalu selesai sendiri', () => {
+  const room = new GreetRoom();
+  room.addPlayer('a', 'A');
+  room.addPlayer('b', 'B');
+  Object.assign(room.players.get('a'), { x: 0, z: 0 });
+  Object.assign(room.players.get('b'), { x: 1.5, z: 0 });
+  const req = room.requestGreet('a', 'b', 'handshake', 1000);
+  assert.equal(req.auto, false);
+  assert.equal(room.players.get('a').act, null);
+  const ok = room.respondGreet('b', 'a', true, 2000);
+  assert.equal(ok.kind, 'handshake');
+  const snap = room.snapshot();
+  assert.equal(snap.find((p) => p.id === 'a').with, 'b');
+  assert.equal(snap.find((p) => p.id === 'b').act, 'handshake');
+  const dist = Math.hypot(room.players.get('a').x - room.players.get('b').x, room.players.get('a').z - room.players.get('b').z);
+  assert.ok(Math.abs(dist - 0.9) < 0.01);
+  room.expire(2000 + room.rules.greetDurationMs + 1);
+  assert.equal(room.players.get('a').act, null);
+  assert.equal(room.players.get('b').act, null);
+});
+
+test('salaman: ditolak bila jauh, sedang duduk, atau jenis tidak dikenal', () => {
+  const room = new GreetRoom();
+  room.addPlayer('a', 'A');
+  room.addPlayer('b', 'B');
+  Object.assign(room.players.get('a'), { x: 0, z: 0 });
+  Object.assign(room.players.get('b'), { x: 9, z: 0 });
+  assert.equal(room.requestGreet('a', 'b', 'handshake'), null);
+  room.players.get('b').x = 1;
+  assert.equal(room.requestGreet('a', 'b', 'kiss'), null);
+  room.players.get('b').sit = 0;
+  assert.equal(room.requestGreet('a', 'b', 'handshake'), null);
+});
+
+test('salaman: ajakan kedaluwarsa dan penolakan tidak mengubah pemain', () => {
+  const room = new GreetRoom();
+  room.addPlayer('a', 'A');
+  room.addPlayer('b', 'B');
+  Object.assign(room.players.get('a'), { x: 0, z: 0 });
+  Object.assign(room.players.get('b'), { x: 1, z: 0 });
+  room.requestGreet('a', 'b', 'highfive', 0);
+  assert.equal(room.respondGreet('b', 'a', true, 99999), null);
+  room.requestGreet('a', 'b', 'highfive', 100000);
+  assert.equal(room.respondGreet('b', 'a', false, 100100).declined, true);
+  assert.equal(room.players.get('a').act ?? null, null);
+});

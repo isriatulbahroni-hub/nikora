@@ -35,6 +35,23 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null } 
   marker.rotation.x = -Math.PI / 2;
   marker.position.set(0, 0.83, -0.48);
   group.add(body, head, face, marker);
+  // Lengan: pivot di bahu, lengan menggantung ke bawah (-y); rotation.x = +90° mengarahkannya ke depan (-z).
+  const armMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
+  const arms = {};
+  for (const [side, sx] of [['l', -0.42], ['r', 0.42]]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx, 1.08, 0);
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.46, 4, 8), armMaterial);
+    arm.position.y = -0.3;
+    arm.castShadow = true;
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.095, 10, 8), new THREE.MeshStandardMaterial({ color: skin, roughness: 0.6 }));
+    hand.position.y = -0.6;
+    pivot.add(arm, hand);
+    group.add(pivot);
+    arms[side] = pivot;
+  }
+  group.userData.arms = arms;
+  group.userData.body = body;
   if (name) {
     const label = makeLabel(name);
     if (label) {
@@ -86,4 +103,45 @@ export function makeBubble(text) {
   sprite.position.y = 2.95;
   sprite.renderOrder = 10;
   return sprite;
+}
+
+
+const lerp = (a, b, k) => a + (b - a) * k;
+
+/**
+ * Pose berdasarkan aksi. act: null | 'handshake' | 'wave' | 'highfive' | 'bow' | 'clap' | 'walk'.
+ * t: waktu (detik). Dipanggil tiap frame; halus karena memakai peluruhan eksponensial menuju target.
+ */
+export function applyPose(group, act, t, delta = 1 / 60) {
+  const arms = group.userData?.arms;
+  if (!arms) return;
+  const k = 1 - Math.exp(-14 * Math.max(0, delta));
+  let r = { x: 0, z: -0.08 };
+  let l = { x: 0, z: 0.08 };
+  let lean = 0;
+  if (act === 'handshake') {
+    r = { x: 1.35 + Math.sin(t * 9) * 0.12, z: -0.12 }; // tangan kanan terulur, naik-turun kecil
+    lean = 0.06;
+  } else if (act === 'highfive') {
+    r = { x: 2.7, z: -0.1 };
+  } else if (act === 'wave') {
+    r = { x: 2.9, z: -0.45 + Math.sin(t * 12) * 0.35 };
+  } else if (act === 'bow') {
+    lean = 0.55;
+  } else if (act === 'clap') {
+    const c = Math.abs(Math.sin(t * 14));
+    r = { x: 1.2, z: -0.35 + c * 0.3 };
+    l = { x: 1.2, z: 0.35 - c * 0.3 };
+  } else if (act === 'walk') {
+    const sw = Math.sin(t * 9) * 0.7;
+    r = { x: -sw, z: -0.08 };
+    l = { x: sw, z: 0.08 };
+  }
+  arms.r.rotation.x = lerp(arms.r.rotation.x, r.x, k);
+  arms.r.rotation.z = lerp(arms.r.rotation.z, r.z, k);
+  arms.l.rotation.x = lerp(arms.l.rotation.x, l.x, k);
+  arms.l.rotation.z = lerp(arms.l.rotation.z, l.z, k);
+  group.userData.leanTarget = lean;
+  group.userData.leanNow = lerp(group.userData.leanNow ?? 0, lean, k);
+  group.rotation.x = group.userData.leanNow;
 }

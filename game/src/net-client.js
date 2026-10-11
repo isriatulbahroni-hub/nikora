@@ -8,7 +8,7 @@ export class NetClient {
     this.id = null;
     this.seq = 0;
     this.players = [];
-    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [] };
+    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [] };
     this.pingTimer = null;
   }
 
@@ -55,6 +55,12 @@ export class NetClient {
           this.#emit('left', msg);
         } else if (msg.t === 'chat') {
           this.#emit('chat', msg);
+        } else if (msg.t === 'greet-req') {
+          this.#emit('greet-req', msg);
+        } else if (msg.t === 'voice') {
+          this.#emit('voice', msg);
+        } else if (msg.t === 'greet-declined') {
+          this.#emit('greet-declined', msg);
         }
       };
     });
@@ -73,6 +79,19 @@ export class NetClient {
 
   sendChat(text) {
     this.#send({ t: 'chat', text });
+  }
+
+  /** kind: 'handshake' | 'highfive' (butuh persetujuan) atau 'wave' | 'bow' (langsung). */
+  sendGreet(to, kind) {
+    this.#send({ t: 'greet', to, kind });
+  }
+
+  requestVoiceToken() {
+    this.#send({ t: 'voice-token' });
+  }
+
+  replyGreet(from, accept) {
+    this.#send({ t: 'greet-reply', from, accept: accept === true });
   }
 
   close() {
