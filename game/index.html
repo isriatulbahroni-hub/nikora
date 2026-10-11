@@ -17,11 +17,7 @@
         <div id="game-root"></div>
 
         <div class="arena-topline">
-          <div>
-            <p class="eyebrow">GAME PROTOTYPE / 01</p>
-            <h1>Trial Grounds</h1>
-          </div>
-          <button id="restart-button" class="icon-button" type="button" aria-label="Mulai ulang pertandingan" title="Mulai ulang">↻</button>
+          <button id="restart-button" class="icon-button" type="button" aria-label="Mulai ulang pertandingan" title="Mulai ulang (R)">↻</button>
         </div>
 
         <div class="match-hud" aria-live="polite">
@@ -30,7 +26,7 @@
             <div class="health-track"><div id="player-health-bar" class="health-fill player-fill"></div></div>
           </div>
           <div class="match-state">
-            <span class="round-label">SOLO TRIAL</span>
+            <span class="round-label">TRIAL GROUNDS</span>
             <strong id="match-status">READY</strong>
           </div>
           <div class="combatant enemy-hud">
@@ -49,18 +45,14 @@
         </div>
 
         <div class="arena-footer">
-          <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> bergerak <span class="footer-divider">/</span> <kbd>Space</kbd> serang</p>
-          <p class="arena-note">Satu arena · satu bot · tanpa jaringan</p>
+          <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> bergerak <span class="footer-divider">/</span> <kbd>Space</kbd> serang <span class="footer-divider">/</span> <kbd>R</kbd> ulang</p>
         </div>
 
-        <div class="touch-controls" aria-label="Kontrol sentuh">
-          <div class="dpad">
-            <button type="button" data-direction="up" aria-label="Bergerak ke atas">↑</button>
-            <button type="button" data-direction="left" aria-label="Bergerak ke kiri">←</button>
-            <button type="button" data-direction="down" aria-label="Bergerak ke bawah">↓</button>
-            <button type="button" data-direction="right" aria-label="Bergerak ke kanan">→</button>
+        <div class="controls" aria-label="Kontrol sentuh">
+          <div id="joy-zone" class="joy-zone">
+            <div id="joy-base" class="joy-base" role="application" aria-label="Joystick gerak"><div id="joy-knob" class="joy-knob"></div></div>
           </div>
-          <button id="touch-attack" class="touch-attack" type="button" aria-label="Serang">Hit</button>
+          <button id="touch-attack" class="atk-btn" type="button" aria-label="Serang"><span>SERANG</span></button>
         </div>
       </section>
 

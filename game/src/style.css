@@ -316,10 +316,6 @@ button {
   font-size: 1rem;
 }
 
-.touch-controls {
-  display: none;
-}
-
 .render-error {
   display: grid;
   height: 100%;
@@ -394,68 +390,10 @@ a:focus-visible {
     margin-left: auto !important;
   }
 
-  .touch-controls {
-    position: absolute;
-    z-index: 3;
-    right: 22px;
-    bottom: 68px;
-    left: 22px;
-    display: flex;
-    align-items: end;
-    justify-content: space-between;
-    pointer-events: none;
-  }
-
-  .dpad {
-    display: grid;
-    grid-template: repeat(3, 48px) / repeat(3, 48px);
-    grid-template-areas: '. up .' 'left . right' '. down .';
-    gap: 3px;
-    pointer-events: auto;
-    touch-action: none;
-  }
-
-  .dpad button,
-  .touch-attack {
-    display: grid;
-    width: 48px;
-    height: 48px;
-    place-items: center;
-    border: 1px solid rgba(243, 241, 232, 0.32);
-    border-radius: 13px;
-    background: rgba(19, 31, 26, 0.62);
-    color: var(--ink);
-    font-size: 1.15rem;
-    backdrop-filter: blur(8px);
-    touch-action: none;
-    user-select: none;
-  }
-
-  .dpad button:active {
-    background: rgba(130, 216, 173, 0.35);
-  }
-
   [data-direction='up'] { grid-area: up; }
   [data-direction='left'] { grid-area: left; }
   [data-direction='down'] { grid-area: down; }
   [data-direction='right'] { grid-area: right; }
-
-  .touch-attack {
-    width: 74px;
-    height: 74px;
-    border-radius: 50%;
-    border-color: rgba(239, 189, 114, 0.6);
-    background: rgba(179, 107, 66, 0.72);
-    font-family: var(--mono);
-    font-size: 0.72rem;
-    font-weight: 500;
-    pointer-events: auto;
-  }
-
-  .touch-attack:active {
-    transform: scale(0.94);
-    background: rgba(239, 189, 114, 0.85);
-  }
 }
 
 @media (max-width: 380px) {
@@ -465,20 +403,6 @@ a:focus-visible {
 
   .round-label {
     font-size: 0.45rem;
-  }
-
-  .dpad {
-    grid-template: repeat(3, 42px) / repeat(3, 42px);
-  }
-
-  .dpad button {
-    width: 42px;
-    height: 42px;
-  }
-
-  .touch-attack {
-    width: 66px;
-    height: 66px;
   }
 }
 
@@ -498,3 +422,25 @@ a:focus-visible {
   word-break: break-word;
   opacity: 0.85;
 }
+
+/* ---- Tata letak profesional: HUD tengah, kontrol ala MOBA ---- */
+.arena-topline{top:calc(8px + env(safe-area-inset-top));right:calc(14px + env(safe-area-inset-right));left:auto;pointer-events:auto}
+.arena-topline .icon-button{position:static;width:38px;height:38px;font-size:1.05rem;background:rgba(18,28,25,.7);backdrop-filter:blur(6px)}
+.build-label{display:none}
+.match-hud{top:calc(52px + env(safe-area-inset-top));right:auto;left:50%;width:min(560px,calc(100vw - 32px));transform:translateX(-50%);pointer-events:none;padding:10px 14px;border:1px solid var(--line);border-radius:14px;background:rgba(14,22,20,.62);backdrop-filter:blur(8px)}
+.arena-footer{left:clamp(16px,3vw,40px);right:clamp(16px,3vw,40px);bottom:calc(20px + env(safe-area-inset-bottom));justify-content:flex-start}
+.controls{display:none;position:absolute;inset:0;z-index:4;pointer-events:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.joy-zone{position:absolute;left:0;bottom:0;width:55%;height:60%;pointer-events:auto;touch-action:none}
+.joy-base{position:absolute;width:132px;height:132px;margin:-66px 0 0 -66px;border-radius:50%;border:2px solid rgba(243,241,232,.28);background:radial-gradient(circle,rgba(243,241,232,.1),rgba(243,241,232,.04));opacity:.75;transition:opacity .15s}
+.joy-base.active{opacity:1;border-color:var(--mint)}
+.joy-knob{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px 0 0 -29px;border-radius:50%;background:linear-gradient(160deg,#a8ecc9,#4fae85);box-shadow:0 4px 14px rgba(0,0,0,.4)}
+.atk-btn{--cd:0deg;position:absolute;right:calc(28px + env(safe-area-inset-right));bottom:calc(34px + env(safe-area-inset-bottom));width:96px;height:96px;border-radius:50%;border:3px solid rgba(255,225,190,.7);background:radial-gradient(circle at 35% 30%,#f09a76,#c4552f);color:#fff;font:800 .72rem/1 var(--mono);letter-spacing:.08em;box-shadow:0 6px 18px rgba(0,0,0,.45);pointer-events:auto;touch-action:none;overflow:hidden;-webkit-tap-highlight-color:transparent}
+.atk-btn::after{content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(rgba(10,14,13,.62) var(--cd),transparent 0)}
+.atk-btn span{position:relative;z-index:1}
+.atk-btn:active{transform:scale(.94)}
+@media (hover:none) and (pointer:coarse){.controls{display:block}.arena-footer{display:none}}
+.force-touch .controls{display:block}
+.force-touch .arena-footer{display:none}
+.arena-frame{touch-action:none}
+@media (max-width:760px){.match-hud{top:calc(48px + env(safe-area-inset-top));padding:8px 10px;gap:8px}}
+@media (max-height:480px){.joy-base{width:112px;height:112px;margin:-56px 0 0 -56px}.atk-btn{width:80px;height:80px;bottom:calc(20px + env(safe-area-inset-bottom))}}

@@ -26,7 +26,9 @@ const FIXED_STEP = 1 / 60;
 const PLAYER_SPEED = 5.2;
 const ENEMY_SPEED = 2.25;
 const heldKeys = new Set();
-const heldTouchDirections = new Set();
+const joystick = { x: 0, z: 0 };
+const JOY_RADIUS = 52;
+const JOY_DEADZONE = 0.14;
 
 let renderer;
 let scene;
@@ -39,6 +41,7 @@ let enemyFighter;
 let playerHealth = GAME_RULES.maxHealth;
 let enemyHealth = GAME_RULES.maxHealth;
 let nextPlayerAttackAt = 0;
+const attackButton = document.querySelector('#touch-attack');
 let nextEnemyAttackAt = 0;
 let matchOutcome = 'playing';
 let matchStarted = false;
@@ -295,11 +298,13 @@ function setupPhysics() {
 }
 
 function getMovementInput() {
-  const right = heldKeys.has('KeyD') || heldKeys.has('ArrowRight') || heldTouchDirections.has('right');
-  const left = heldKeys.has('KeyA') || heldKeys.has('ArrowLeft') || heldTouchDirections.has('left');
-  const down = heldKeys.has('KeyS') || heldKeys.has('ArrowDown') || heldTouchDirections.has('down');
-  const up = heldKeys.has('KeyW') || heldKeys.has('ArrowUp') || heldTouchDirections.has('up');
-  return normalizeMovement(Number(right) - Number(left), Number(down) - Number(up));
+  const right = heldKeys.has('KeyD') || heldKeys.has('ArrowRight');
+  const left = heldKeys.has('KeyA') || heldKeys.has('ArrowLeft');
+  const down = heldKeys.has('KeyS') || heldKeys.has('ArrowDown');
+  const up = heldKeys.has('KeyW') || heldKeys.has('ArrowUp');
+  const keyboard = normalizeMovement(Number(right) - Number(left), Number(down) - Number(up));
+  if (keyboard.x || keyboard.z) return keyboard;
+  return normalizeMovement(joystick.x, joystick.z);
 }
 
 function updateHealthHud() {
@@ -357,7 +362,8 @@ function updatePlayer(delta) {
   const movement = getMovementInput();
   if (movement.x || movement.z) {
     matchStarted = true;
-    facing = movement;
+    const magnitude = Math.hypot(movement.x, movement.z);
+    facing = { x: movement.x / magnitude, z: movement.z / magnitude };
     playerFighter.group.rotation.y = Math.atan2(-facing.x, -facing.z);
   }
 
@@ -406,7 +412,8 @@ function updateEnemy(now, delta) {
 function updateCamera(delta) {
   const position = playerBody.translation();
   const target = new THREE.Vector3(position.x, 0, position.z);
-  const desiredPosition = new THREE.Vector3(position.x + 2.8, 14, position.z + 13.6);
+  const fit = Math.min(1.9, Math.max(1, 1.45 / camera.aspect));
+  const desiredPosition = new THREE.Vector3(position.x + 2.8 * fit, 14 * fit, position.z + 13.6 * fit);
   const smoothing = 1 - Math.exp(-4.6 * delta);
   camera.position.lerp(desiredPosition, smoothing);
   camera.lookAt(target);
@@ -424,6 +431,8 @@ function renderFrame(time) {
       updateEnemy(now, delta);
     }
     attemptPlayerAttack(now);
+    const remaining = Math.max(0, nextPlayerAttackAt - now);
+    attackButton.style.setProperty('--cd', `${(remaining / GAME_RULES.playerAttackCooldown) * 360}deg`);
 
     accumulator += delta;
     while (accumulator >= FIXED_STEP) {
@@ -463,6 +472,75 @@ function restartMatch() {
   updateHealthHud();
 }
 
+function setupJoystick() {
+  const zone = document.querySelector('#joy-zone');
+  const base = document.querySelector('#joy-base');
+  const knob = document.querySelector('#joy-knob');
+  let pointerId = null;
+  let center = { x: 0, y: 0 };
+
+  const home = () => {
+    const r = zone.getBoundingClientRect();
+    return { x: Math.min(96, r.width / 2), y: Math.max(r.height - 96, r.height / 2) };
+  };
+  const place = (c) => {
+    center = c;
+    base.style.left = `${c.x}px`;
+    base.style.top = `${c.y}px`;
+  };
+  const reset = () => {
+    pointerId = null;
+    joystick.x = 0;
+    joystick.z = 0;
+    knob.style.transform = '';
+    base.classList.remove('active');
+    place(home());
+  };
+  const move = (event) => {
+    const r = zone.getBoundingClientRect();
+    let dx = event.clientX - r.left - center.x;
+    let dy = event.clientY - r.top - center.y;
+    const length = Math.hypot(dx, dy);
+    if (length > JOY_RADIUS) {
+      dx = (dx / length) * JOY_RADIUS;
+      dy = (dy / length) * JOY_RADIUS;
+    }
+    knob.style.transform = `translate(${dx}px, ${dy}px)`;
+    const strength = Math.hypot(dx, dy) / JOY_RADIUS;
+    if (strength < JOY_DEADZONE) {
+      joystick.x = 0;
+      joystick.z = 0;
+    } else {
+      joystick.x = dx / JOY_RADIUS;
+      joystick.z = dy / JOY_RADIUS;
+    }
+  };
+
+  zone.addEventListener('pointerdown', (event) => {
+    if (pointerId !== null) return;
+    event.preventDefault();
+    pointerId = event.pointerId;
+    zone.setPointerCapture(pointerId);
+    const r = zone.getBoundingClientRect();
+    place({
+      x: Math.max(70, Math.min(r.width - 70, event.clientX - r.left)),
+      y: Math.max(70, Math.min(r.height - 70, event.clientY - r.top)),
+    });
+    base.classList.add('active');
+    move(event);
+  });
+  zone.addEventListener('pointermove', (event) => {
+    if (event.pointerId === pointerId) move(event);
+  });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((type) =>
+    zone.addEventListener(type, (event) => {
+      if (event.pointerId === pointerId || type === 'lostpointercapture') reset();
+    }),
+  );
+  window.addEventListener('resize', reset);
+  reset();
+}
+
 function setupInput() {
   window.addEventListener('keydown', (event) => {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) {
@@ -476,26 +554,18 @@ function setupInput() {
   window.addEventListener('keyup', (event) => heldKeys.delete(event.code));
   window.addEventListener('blur', () => {
     heldKeys.clear();
-    heldTouchDirections.clear();
+    joystick.x = 0;
+    joystick.z = 0;
   });
 
-  document.querySelectorAll('[data-direction]').forEach((button) => {
-    const direction = button.dataset.direction;
-    button.addEventListener('pointerdown', (event) => {
-      event.preventDefault();
-      button.setPointerCapture(event.pointerId);
-      heldTouchDirections.add(direction);
-    });
-    const release = () => heldTouchDirections.delete(direction);
-    button.addEventListener('pointerup', release);
-    button.addEventListener('pointercancel', release);
-    button.addEventListener('lostpointercapture', release);
-  });
-
-  document.querySelector('#touch-attack').addEventListener('pointerdown', (event) => {
+  setupJoystick();
+  attackButton.addEventListener('pointerdown', (event) => {
     event.preventDefault();
     attackQueued = true;
+    navigator.vibrate?.(12);
   });
+  document.querySelectorAll('.controls').forEach((el) => el.addEventListener('contextmenu', (e) => e.preventDefault()));
+  if (new URLSearchParams(location.search).has('touch')) document.body.classList.add('force-touch');
   document.querySelector('#restart-button').addEventListener('click', restartMatch);
   document.querySelector('#play-again-button').addEventListener('click', restartMatch);
 

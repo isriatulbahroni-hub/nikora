@@ -61,11 +61,11 @@ test('mobile viewport renders the arena and touch controls start play', async ({
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/');
+  await page.goto('/?touch=1');
 
   const canvas = page.locator('#game-root canvas');
   await expect(canvas).toBeVisible();
-  await expect(page.locator('.touch-controls')).toBeVisible();
+  await expect(page.locator('.controls')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Serang' })).toBeVisible();
   await page.waitForTimeout(500);
 
@@ -76,10 +76,12 @@ test('mobile viewport renders the arena and touch controls start play', async ({
   expect(visual.colors).toBeGreaterThan(3);
   await page.screenshot({ path: '/tmp/orbit-game-mobile.png' });
 
-  const upButton = page.locator('[data-direction="up"]');
-  const bounds = await upButton.boundingBox();
-  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  const zone = await page.locator('#joy-zone').boundingBox();
+  const startX = zone.x + 100;
+  const startY = zone.y + zone.height - 100;
+  await page.mouse.move(startX, startY);
   await page.mouse.down();
+  await page.mouse.move(startX, startY - 45, { steps: 4 });
   await expect(page.locator('#match-status')).toHaveText('FIGHT');
   await page.waitForTimeout(250);
   await page.mouse.up();
