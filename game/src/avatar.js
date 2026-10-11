@@ -31,7 +31,8 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null } 
   head.castShadow = true;
   const face = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.09, 0.12), new THREE.MeshStandardMaterial({ color: 0x26332d, roughness: 0.74 }));
   face.position.set(0, 1.39, -0.255);
-  const marker = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.26, 4), new THREE.MeshStandardMaterial({ color, roughness: 0.5 }));
+  const markerMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
+  const marker = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.26, 4), markerMaterial);
   marker.rotation.x = -Math.PI / 2;
   marker.position.set(0, 0.83, -0.48);
   group.add(body, head, face, marker);
@@ -51,6 +52,7 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null } 
     arms[side] = pivot;
   }
   group.userData.arms = arms;
+  group.userData.tint = [bodyMaterial, markerMaterial, armMaterial];
   group.userData.body = body;
   if (name) {
     const label = makeLabel(name);
@@ -60,6 +62,18 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null } 
     }
   }
   return group;
+}
+
+/** Ganti warna badan avatar (badan, penanda arah, lengan) tanpa membuat ulang model. */
+export function setAvatarColor(group, color) {
+  for (const m of group.userData?.tint ?? []) m.color.set(color);
+}
+
+/** Warna konsisten per id pemain: semua perangkat menghitung warna yang sama dari id yang sama. */
+export function colorForId(id) {
+  let h = 0;
+  for (const c of String(id)) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return new THREE.Color().setHSL((h % 360) / 360, 0.55, 0.58).getHex();
 }
 
 /** Gelembung obrolan (sprite) di atas kepala avatar. Teks dipotong dan dibungkus maksimal 3 baris. */

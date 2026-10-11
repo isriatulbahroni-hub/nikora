@@ -1,12 +1,11 @@
 import * as THREE from 'three';
-import { applyPose, createAvatar } from './avatar.js';
+import { applyPose, colorForId, createAvatar } from './avatar.js';
 import { HALL } from './hall-layout.js';
 import { NetClient } from './net-client.js';
 import { LiveKitNet } from './livekit-net.js';
 
 const SMOOTHING = 12; // semakin besar, semakin cepat avatar mengejar posisi server
 const SEND_INTERVAL_MS = 50;
-const PALETTE = [0xf2a65a, 0x6ab8e8, 0xc77dff, 0xf25f5c, 0x70c1b3, 0xffe066];
 
 /** Baca ?server=ws://host:port dari query string, atau VITE_SERVER_URL saat build. Hanya ws:// atau wss://. */
 export function resolveServerUrl(search, fallback = import.meta.env?.VITE_SERVER_URL) {
@@ -20,11 +19,6 @@ export function resolveServerUrl(search, fallback = import.meta.env?.VITE_SERVER
   }
 }
 
-function colorFor(id) {
-  let h = 0;
-  for (const c of id) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return PALETTE[h % PALETTE.length];
-}
 
 
 function shortestAngle(from, to) {
@@ -37,7 +31,7 @@ export function createRemotePlayers(scene) {
   const avatars = new Map();
 
   function build(p) {
-    const group = createAvatar({ color: colorFor(p.id), name: p.name });
+    const group = createAvatar({ color: colorForId(p.id), name: p.name });
     group.position.set(p.x, p.sit == null ? 0 : HALL.seatedDrop, p.z);
     group.rotation.y = p.rot;
     scene.add(group);

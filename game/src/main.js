@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { VoiceChat } from './voice.js';
-import { applyPose, createAvatar, makeBubble } from './avatar.js';
+import { applyPose, colorForId, createAvatar, makeBubble, setAvatarColor } from './avatar.js';
 import { GAME_RULES, cameraRelativeMovement, normalizeMovement } from './game-rules.js';
 import { HALL, SEATS, TABLES, facingAngle, findNearestSeat, resolveCollisions } from './hall-layout.js';
 import { resolveServerUrl, startMultiplayer } from './multiplayer-view.js';
@@ -860,7 +860,10 @@ function setupJoin() {
     startMultiplayer({ scene, search: window.location.search, name: playerName, onError: (m) => { netError = m; } })
       .then((session) => {
         multiplayer = session;
-        if (session) clearSimulatedGuests();
+        if (session) {
+          clearSimulatedGuests();
+          setAvatarColor(playerAvatar, colorForId(session.net.id)); // sama persis dengan warna yang dilihat orang lain
+        }
         session?.net.on('chat', addChatLine);
         session?.net.on('greet-req', (msg) => showGreetRequest(msg));
         setupVoice(session);
