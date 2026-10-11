@@ -526,3 +526,16 @@ body[data-input=touch] .chat-box{bottom:calc(190px + env(safe-area-inset-bottom)
 #mic-button[aria-pressed=false] { opacity: .65; }
 #mic-button.is-on { background: #2e9e6b; opacity: 1; }
 #mic-button.is-speaking { box-shadow: 0 0 0 3px rgba(61,220,132,.55); }
+
+/* Menu sapa: kolom kecil transparan di sisi kanan, tidak menutupi tengah layar */
+.greet-menu {
+  left: auto; right: 12px; bottom: 210px; transform: none;
+  flex-direction: column; gap: 4px; padding: 5px; border-radius: 22px;
+  background: rgba(14, 18, 24, 0.34); backdrop-filter: blur(4px);
+  animation: greet-in 0.18s ease-out;
+}
+.greet-menu .greet-name { display: none; }
+.greet-menu button { width: 34px; height: 34px; font-size: 17px; background: rgba(255, 255, 255, 0.1); opacity: 0.8; }
+.greet-toast { padding: 4px 6px 4px 12px; font-size: 12px; background: rgba(14, 18, 24, 0.5); }
+.greet-toast button { width: 30px; height: 30px; font-size: 15px; }
+@keyframes greet-in { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
