@@ -37,7 +37,10 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null } 
   group.add(body, head, face, marker);
   if (name) {
     const label = makeLabel(name);
-    if (label) group.add(label);
+    if (label) {
+      group.add(label);
+      group.userData.label = label;
+    }
   }
   return group;
 }

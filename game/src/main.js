@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { createAvatar, makeLabel } from './avatar.js';
-import { GAME_RULES, normalizeMovement } from './game-rules.js';
+import { createAvatar } from './avatar.js';
+import { GAME_RULES, cameraRelativeMovement, normalizeMovement } from './game-rules.js';
 import { HALL, SEATS, TABLES, facingAngle, findNearestSeat, resolveCollisions } from './hall-layout.js';
 import { startMultiplayer } from './multiplayer-view.js';
 import './style.css';
@@ -8,6 +8,8 @@ import './style.css';
 const $ = (selector) => document.querySelector(selector);
 const root = $('#game-root');
 const ui = {
+  hud: $('.hall-hud'),
+  footer: $('.arena-footer'),
   status: $('#hall-status'),
   guests: $('#hall-guests'),
   joinOverlay: $('#join-overlay'),
@@ -41,6 +43,11 @@ let npcs = [];
 const focus = new THREE.Vector3(START.x, 0.5, START.z);
 let priorFrameTime = 0;
 let idleAngle = 0;
+let yaw = 0; // putaran kamera di sekitar pemain
+let zoom = 1;
+let lastStatus = '';
+let hudTimer = 0;
+const LABEL_RANGE = 8; // nama avatar hanya terlihat dalam jarak ini
 
 // ---- Suara sintetis (tanpa file aset) ----
 let audioCtx = null;
@@ -329,7 +336,7 @@ function goToEntrance(now) {
 }
 
 function updatePlayer(delta, now) {
-  const movement = getMovementInput();
+  const movement = cameraRelativeMovement(getMovementInput(), yaw);
   const moving = movement.x !== 0 || movement.z !== 0;
   if (me.sit !== null && moving) standUp(now); // bergerak = berdiri
 
@@ -362,6 +369,29 @@ function updateHud() {
   else ui.status.textContent = 'BERJALAN';
   const remote = multiplayer?.view.count ?? 0;
   ui.guests.textContent = multiplayer ? `Online · ${remote + 1} tamu` : OFFLINE ? 'Offline · tamu simulasi' : 'Menyambung…';
+  // Teks status hanya muncul sebentar saat berubah, supaya dunia 3D tetap bersih.
+  if (joined && ui.status.textContent !== lastStatus) {
+    lastStatus = ui.status.textContent;
+    showHud();
+  }
+}
+
+function showHud(ms = 2400) {
+  ui.hud.classList.add('is-visible');
+  window.clearTimeout(hudTimer);
+  hudTimer = window.setTimeout(() => ui.hud.classList.remove('is-visible'), ms);
+}
+
+function updateLabels() {
+  const groups = [...npcs.map((n) => n.avatar), ...(multiplayer?.view.avatarGroups() ?? [])];
+  for (const group of groups) {
+    const label = group.userData.label;
+    if (!label) continue;
+    const distance = Math.hypot(group.position.x - me.x, group.position.z - me.z);
+    const opacity = joined ? Math.min(1, Math.max(0, (LABEL_RANGE - distance) / 3)) : 0;
+    label.material.opacity = opacity;
+    label.visible = opacity > 0.02;
+  }
 }
 
 function updateCamera(delta, now) {
@@ -376,7 +406,13 @@ function updateCamera(delta, now) {
   focus.x += (me.x - focus.x) * smoothing;
   focus.z += (me.z - focus.z) * smoothing;
   const target = new THREE.Vector3(focus.x, 0.6, focus.z);
-  camera.position.lerp(new THREE.Vector3(focus.x, 8.5 * fit, focus.z + 9.5 * fit), 1 - Math.exp(-6 * delta));
+  const distance = 9.5 * fit * zoom;
+  const desired = new THREE.Vector3(
+    focus.x + Math.sin(yaw) * distance,
+    8.5 * fit * zoom,
+    focus.z + Math.cos(yaw) * distance,
+  );
+  camera.position.lerp(desired, 1 - Math.exp(-6 * delta));
   camera.lookAt(target);
 }
 
@@ -400,6 +436,7 @@ function renderFrame(time) {
   for (const npc of npcs) npc.avatar.position.y = npc.baseY + Math.sin(now * 1.6 + npc.phase) * 0.012;
 
   multiplayer?.view.update(delta);
+  updateLabels();
   updateHud();
   updateCamera(delta, now);
   renderer.render(scene, camera);
@@ -488,8 +525,47 @@ function isTyping(event) {
   return event.target instanceof HTMLInputElement;
 }
 
+function setupCameraGestures() {
+  const pointers = new Map();
+  let pinchStart = 0;
+  let zoomStart = 1;
+  const clampZoom = (value) => Math.min(1.6, Math.max(0.55, value));
+  root.addEventListener('pointerdown', (event) => {
+    root.setPointerCapture(event.pointerId);
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinchStart = Math.hypot(a.x - b.x, a.y - b.y);
+      zoomStart = zoom;
+    }
+  });
+  root.addEventListener('pointermove', (event) => {
+    const last = pointers.get(event.pointerId);
+    if (!last) return;
+    if (pointers.size === 1) {
+      yaw -= (event.clientX - last.x) * 0.006; // geser ke kanan memutar kamera ke kanan
+    }
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointers.size === 2 && pinchStart > 0) {
+      const [a, b] = [...pointers.values()];
+      zoom = clampZoom(zoomStart * (pinchStart / Math.max(1, Math.hypot(a.x - b.x, a.y - b.y))));
+    }
+  });
+  ['pointerup', 'pointercancel'].forEach((type) =>
+    root.addEventListener(type, (event) => {
+      pointers.delete(event.pointerId);
+      pinchStart = 0;
+    }),
+  );
+  root.addEventListener('wheel', (event) => {
+    event.preventDefault();
+    zoom = clampZoom(zoom * (1 + Math.sign(event.deltaY) * 0.08));
+  }, { passive: false });
+}
+
 function setupInput() {
   setupInputMode();
+  setupCameraGestures();
   const clock = () => performance.now() * 0.001;
   window.addEventListener('keydown', (event) => {
     if (isTyping(event)) return;
@@ -501,6 +577,12 @@ function setupInput() {
     if (event.code === 'KeyR' && joined) goToEntrance(clock());
     if (event.code === 'KeyM') toggleMute();
   });
+  const turn = () => {
+    if (heldKeys.has('KeyQ')) yaw += 0.03;
+    if (heldKeys.has('KeyZ')) yaw -= 0.03;
+    requestAnimationFrame(turn);
+  };
+  turn();
   window.addEventListener('keyup', (event) => heldKeys.delete(event.code));
   window.addEventListener('blur', () => {
     heldKeys.clear();
@@ -545,8 +627,8 @@ function setupJoin() {
     } catch {
       /* abaikan */
     }
-    const label = makeLabel(playerName);
-    if (label) playerAvatar.add(label);
+    document.body.classList.add('joined');
+    window.setTimeout(() => ui.footer.classList.add('is-faded'), 8000);
     joined = true;
     ui.joinOverlay.hidden = true;
     sfx.join();

@@ -466,6 +466,18 @@ body[data-input=touch] .arena-footer{display:none}
 .name-input{width:100%;box-sizing:border-box;margin:6px 0 14px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:rgba(14,22,20,.7);color:var(--ink);font:500 1rem var(--mono);outline:none}
 .name-input:focus{border-color:var(--mint)}
 #touch-sit{background:radial-gradient(circle at 35% 30%,#f3d58a,#c28a2b);border-color:rgba(255,240,200,.75)}
-#touch-sit:not(.is-ready){opacity:.55}
 #touch-sit.is-ready{box-shadow:0 0 0 4px rgba(243,213,138,.35),0 6px 18px rgba(0,0,0,.45)}
 .float-num.is-clap{font-size:1.7rem;color:#fff}
+
+/* ---- HUD minimal ---- */
+.hall-hud{opacity:0;transition:opacity .3s;pointer-events:none}
+.hall-hud.is-visible{opacity:1}
+body.joined .game-header,body.joined .page-footer{opacity:0;pointer-events:none;transition:opacity .5s}
+.arena-footer{transition:opacity 1s}
+.arena-footer.is-faded{opacity:0}
+.joy-base{opacity:.45}
+.joy-base.active{opacity:.9}
+#touch-sit:not(.is-ready){display:none}
+#touch-sit{right:calc(28px + env(safe-area-inset-right));bottom:calc(112px + env(safe-area-inset-bottom));width:84px;height:84px}
+#touch-clap{right:calc(28px + env(safe-area-inset-right));bottom:calc(34px + env(safe-area-inset-bottom));width:64px;height:64px;opacity:.7}
+@media (max-height:480px){#touch-sit{bottom:calc(88px + env(safe-area-inset-bottom));width:70px;height:70px}#touch-clap{bottom:calc(20px + env(safe-area-inset-bottom));width:52px;height:52px}}

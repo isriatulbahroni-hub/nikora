@@ -16,3 +16,10 @@ export function clampArenaPosition(position, limit = GAME_RULES.arenaLimit) {
     z: Math.max(-limit, Math.min(limit, position.z)),
   };
 }
+
+/** Ubah arah joystick/keyboard (layar) menjadi arah dunia menurut sudut putar kamera `yaw`. */
+export function cameraRelativeMovement(input, yaw) {
+  const cos = Math.cos(yaw);
+  const sin = Math.sin(yaw);
+  return { x: input.x * cos + input.z * sin, z: -input.x * sin + input.z * cos };
+}

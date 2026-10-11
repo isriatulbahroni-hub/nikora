@@ -76,6 +76,9 @@ export function createRemotePlayers(scene) {
         group.position.y += ((target.sit === null ? 0 : HALL.seatedDrop) - group.position.y) * k;
       }
     },
+    avatarGroups() {
+      return [...avatars.values()].map((a) => a.group);
+    },
     getAvatar(id) {
       return avatars.get(id)?.group;
     },

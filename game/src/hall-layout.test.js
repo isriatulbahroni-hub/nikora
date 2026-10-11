@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { HALL, SEATS, TABLES, facingAngle, findNearestSeat, resolveCollisions } from './hall-layout.js';
-import { clampArenaPosition, normalizeMovement } from './game-rules.js';
+import { cameraRelativeMovement, clampArenaPosition, normalizeMovement } from './game-rules.js';
 
 test('gerak diagonal dinormalisasi dan posisi dibatasi aula', () => {
   const movement = normalizeMovement(1, 1);
@@ -44,4 +44,16 @@ test('findNearestSeat memilih kursi kosong terdekat dan menghormati jangkauan', 
   assert.equal(findNearestSeat({ x: seat.x + 0.3, z: seat.z })?.id, seat.id);
   assert.notEqual(findNearestSeat({ x: seat.x, z: seat.z }, new Set([seat.id]))?.id, seat.id);
   assert.equal(findNearestSeat({ x: 0, z: 9 }), null);
+});
+
+test('gerak relatif kamera: maju selalu menuju arah pandang kamera', () => {
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  let m = cameraRelativeMovement({ x: 0, z: -1 }, 0);
+  assert.ok(near(m.x, 0) && near(m.z, -1));
+  m = cameraRelativeMovement({ x: 0, z: -1 }, Math.PI / 2); // kamera di +x melihat ke -x
+  assert.ok(near(m.x, -1) && near(m.z, 0));
+  m = cameraRelativeMovement({ x: 1, z: 0 }, Math.PI); // kamera di +z... berbalik: kanan layar = -x dunia
+  assert.ok(near(m.x, -1) && near(m.z, 0));
+  const diag = cameraRelativeMovement({ x: 0.6, z: 0.8 }, 1.1);
+  assert.ok(near(Math.hypot(diag.x, diag.z), 1)); // panjang vektor tidak berubah
 });
