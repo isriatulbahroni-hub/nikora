@@ -555,3 +555,25 @@ body{background:radial-gradient(120% 90% at 50% 0%,#2b2030,#1d1722 70%)}
 .party-row{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .party-btn{border:0;border-radius:999px;padding:.5em 1.1em;background:var(--amber);color:#2a1d14;font:700 .85rem system-ui,sans-serif;cursor:pointer}
 .party-btn.is-ghost{background:rgba(244,223,190,.14);color:var(--ink)}
+
+.editor-panel{width:min(720px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;padding:22px;text-align:left}
+.editor-panel h2{margin:0 0 12px}
+.editor-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:18px;align-items:start}
+.avatar-preview{width:100%;height:340px;border-radius:14px;background:radial-gradient(circle at 50% 35%,#3a2a40,#1d1722 75%);border:1px solid var(--line);touch-action:none;cursor:grab}
+.editor-controls{display:grid;gap:12px;min-width:0}
+.editor-controls .name-input{margin:0}
+.editor-tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
+.editor-tab{flex:0 0 auto;border:1px solid var(--line);border-radius:999px;padding:.45em 1em;background:transparent;color:var(--muted);font:600 .85rem system-ui,sans-serif;cursor:pointer}
+.editor-tab[aria-selected=true]{background:var(--amber);border-color:var(--amber);color:#2a1d14}
+.editor-options{display:flex;flex-wrap:wrap;gap:8px;min-height:92px;align-content:flex-start}
+.editor-opt{border:2px solid transparent;cursor:pointer;font:600 .85rem system-ui,sans-serif}
+.editor-options.is-swatch .editor-opt{width:38px;height:38px;border-radius:50%;box-shadow:0 0 0 1px rgba(244,223,190,.25)}
+.editor-options.is-text .editor-opt{padding:.5em 1em;border-radius:999px;background:rgba(244,223,190,.1);color:var(--ink)}
+.editor-opt[aria-pressed=true]{border-color:var(--amber);box-shadow:0 0 0 2px rgba(232,196,112,.35)}
+.editor-options.is-text .editor-opt[aria-pressed=true]{background:var(--amber);color:#2a1d14}
+.editor-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
+.editor-actions .action-button{margin:0}
+#join-form.is-edit .name-input{display:none}
+@media (max-width:640px){.editor-layout{grid-template-columns:1fr}.avatar-preview{height:210px}.editor-panel{padding:16px}}
+@media (max-height:520px) and (orientation:landscape){.editor-layout{grid-template-columns:minmax(0,.9fr) minmax(0,1.4fr)}.avatar-preview{height:220px}}
+#join-overlay{z-index:9}

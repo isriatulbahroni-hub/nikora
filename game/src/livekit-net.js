@@ -1,6 +1,8 @@
 // Transport multiplayer tanpa server sendiri: posisi, aksi, chat, dan salaman lewat data channel LiveKit
 // (satu ruang yang sama dengan suara). API-nya sama dengan NetClient supaya main.js dan multiplayer-view.js tidak berubah.
 // Konsekuensi: tidak ada server otoritatif (tiap klien memegang posisinya sendiri), cukup untuk ruang sosial.
+import { sanitizeConfig } from './avatar-config.js';
+
 const TOPIC = 'orbit';
 const STATE_INTERVAL_MS = 100;
 const HEARTBEAT_MS = 1000;
@@ -24,7 +26,7 @@ export class LiveKitNet {
     this.room = null;
     this.id = null;
     this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [], party: [] };
-    this.self = { id: null, name: 'Tamu', x: 0, z: 9.4, rot: 0, sit: null, act: null, with: null, until: 0 };
+    this.self = { id: null, name: 'Tamu', x: 0, z: 9.4, rot: 0, sit: null, act: null, with: null, until: 0, av: null };
     this.remotes = new Map();
     this.pending = new Map(); // id pengirim -> { kind, expires, pos }
     this.outgoing = new Map(); // id tujuan -> posisi kita saat mengajak
@@ -81,7 +83,7 @@ export class LiveKitNet {
   }
 
   #blank(p) {
-    return { id: p.identity, name: p.name || 'Tamu', x: 0, z: 9.4, rot: 0, sit: null, act: null, with: null };
+    return { id: p.identity, name: p.name || 'Tamu', x: 0, z: 9.4, rot: 0, sit: null, act: null, with: null, av: null };
   }
 
   #onData(participant, payload) {
@@ -105,6 +107,7 @@ export class LiveKitNet {
         sit: Number.isInteger(m.i) ? m.i : null,
         act: kind,
         with: typeof m.w === 'string' ? m.w : null,
+        av: Array.isArray(m.v) ? sanitizeConfig(m.v) : prev.av,
       });
       // Dua orang di kursi yang sama: id lebih besar mengalah.
       if (this.self.sit !== null && Number.isInteger(m.i) && m.i === this.self.sit && id < this.id) this.self.sit = null;
@@ -183,7 +186,7 @@ export class LiveKitNet {
   #publishState(opts) {
     const s = this.self;
     this.lastSent = this.now();
-    this.#send({ t: 's', x: +s.x.toFixed(2), z: +s.z.toFixed(2), r: +s.rot.toFixed(2), i: s.sit, a: s.act, w: s.with }, opts);
+    this.#send({ t: 's', x: +s.x.toFixed(2), z: +s.z.toFixed(2), r: +s.rot.toFixed(2), i: s.sit, a: s.act, w: s.with, v: s.av }, opts);
   }
 
   /** Dipanggil main.js tiap frame (dibatasi view). pos = posisi lokal; arah (x,z) tidak dipakai karena tiap klien menghitung geraknya sendiri. */
@@ -196,6 +199,12 @@ export class LiveKitNet {
     }
     if (sit !== undefined) s.sit = sit;
     if (this.now() - this.lastSent >= STATE_INTERVAL_MS) this.#publishState();
+  }
+
+  /** Avatar buatan pemain (array wire). Disiarkan segera lalu ikut tiap heartbeat untuk tamu yang baru masuk. */
+  setAvatar(wire) {
+    this.self.av = Array.isArray(wire) ? wire.slice(0, 5) : null;
+    this.#publishState({ reliable: true });
   }
 
   /** Pesan Party Room (panggung, angkat tangan). Tanpa server otoritatif: validasi dilakukan tiap penerima. */

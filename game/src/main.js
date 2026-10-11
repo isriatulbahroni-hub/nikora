@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { VoiceChat } from './voice.js';
-import { applyPose, colorForId, createAvatar, makeBubble, setAvatarColor, setStageRing } from './avatar.js';
+import { applyPose, createAvatar, makeBubble, setAvatarConfig, setStageRing } from './avatar.js';
 import { createPartyController, speakerIds } from './party.js';
+import { loadConfig, saveConfig, toWire } from './avatar-config.js';
+import { createAvatarEditor } from './avatar-editor.js';
 import { GAME_RULES, cameraRelativeMovement, normalizeMovement } from './game-rules.js';
 import { HALL, SEATS, TABLES, facingAngle, findNearestSeat, resolveCollisions } from './hall-layout.js';
 import { resolveServerUrl, startMultiplayer } from './multiplayer-view.js';
@@ -416,6 +418,17 @@ let showGreetRequest = () => {};
 let lastVoiceTick = -1;
 let lastPartyTick = -1;
 let party = null;
+let avatarCfg = loadConfig(safeStorage());
+let avatarEditor = null;
+let editMode = false;
+
+function safeStorage() {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+}
 
 function partyName(id) {
   return multiplayer?.net.players.find((p) => p.id === id)?.name ?? 'Tamu';
@@ -835,7 +848,7 @@ function setupInputMode() {
 }
 
 function isTyping(event) {
-  return event.target instanceof HTMLInputElement;
+  return event.target instanceof HTMLInputElement || !ui.joinOverlay.hidden;
 }
 
 function setupCameraGestures() {
@@ -933,7 +946,31 @@ function setupInput() {
   });
 }
 
+function openAvatarEditor(edit) {
+  editMode = edit;
+  ui.joinForm.classList.toggle('is-edit', edit);
+  $('#editor-title').textContent = edit ? 'Ubah avatarmu' : 'Buat avatarmu';
+  $('#join-label').textContent = edit ? 'Simpan' : 'Masuk';
+  $('#editor-cancel').hidden = !edit;
+  avatarEditor.set(avatarCfg);
+  ui.joinOverlay.hidden = false;
+  avatarEditor.start();
+}
+
 function setupJoin() {
+  avatarEditor = createAvatarEditor({
+    canvas: $('#avatar-preview'),
+    tabsEl: $('#editor-tabs'),
+    optionsEl: $('#editor-options'),
+    initial: avatarCfg,
+  });
+  $('#editor-random').addEventListener('click', () => avatarEditor.randomize());
+  $('#editor-cancel').addEventListener('click', () => {
+    avatarEditor.stop();
+    ui.joinOverlay.hidden = true;
+  });
+  $('#avatar-button').addEventListener('click', () => openAvatarEditor(true));
+  avatarEditor.start();
   try {
     ui.nameInput.value = window.localStorage.getItem('orbit-name') ?? '';
   } catch {
@@ -941,6 +978,15 @@ function setupJoin() {
   }
   ui.joinForm.addEventListener('submit', (event) => {
     event.preventDefault();
+    avatarCfg = avatarEditor.config;
+    saveConfig(safeStorage(), avatarCfg);
+    setAvatarConfig(playerAvatar, avatarCfg);
+    avatarEditor.stop();
+    if (editMode) {
+      ui.joinOverlay.hidden = true;
+      multiplayer?.net.setAvatar?.(toWire(avatarCfg));
+      return;
+    }
     playerName = ui.nameInput.value.replace(/[<>]/g, '').trim().slice(0, 24) || 'Tamu';
     try {
       window.localStorage.setItem('orbit-name', playerName);
@@ -948,6 +994,7 @@ function setupJoin() {
       /* abaikan */
     }
     document.body.classList.add('joined');
+    $('#avatar-button').hidden = false;
     window.setTimeout(() => ui.footer.classList.add('is-faded'), 8000);
     joined = true;
     ui.joinOverlay.hidden = true;
@@ -957,7 +1004,7 @@ function setupJoin() {
         multiplayer = session;
         if (session) {
           clearSimulatedGuests();
-          setAvatarColor(playerAvatar, colorForId(session.net.id)); // sama persis dengan warna yang dilihat orang lain
+          session.net.setAvatar?.(toWire(avatarCfg)); // avatar buatan sendiri, dilihat sama oleh semua orang
         }
         session?.net.on('chat', addChatLine);
         session?.net.on('greet-req', (msg) => showGreetRequest(msg));
@@ -978,7 +1025,7 @@ async function startGame() {
     stage = 'scene';
     createScene();
     stage = 'avatar';
-    playerAvatar = createAvatar({ color: 0x70c7a2 });
+    playerAvatar = createAvatar({ config: avatarCfg });
     playerAvatar.position.set(me.x, 0, me.z);
     playerAvatar.rotation.y = me.rot;
     scene.add(playerAvatar);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { HAIR_COLORS, OUTFITS, SKINS, sanitizeConfig } from './avatar-config.js';
 
 export function makeLabel(text) {
   if (typeof document === 'undefined') return null;
@@ -20,13 +21,19 @@ export function makeLabel(text) {
 }
 
 /** Avatar sederhana: badan, kepala, wajah, penanda arah hadap (-z), dan nama opsional. */
-export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null } = {}) {
+export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, config = null } = {}) {
+  const cfg = config ? sanitizeConfig(config) : null;
+  if (cfg) {
+    color = OUTFITS[cfg.o].hex;
+    skin = SKINS[cfg.s].hex;
+  }
   const group = new THREE.Group();
   const bodyMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
   const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.55, 5, 12), bodyMaterial);
   body.position.y = 0.75;
   body.castShadow = true;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 18, 14), new THREE.MeshStandardMaterial({ color: skin, roughness: 0.6 }));
+  const skinMaterial = new THREE.MeshStandardMaterial({ color: skin, roughness: 0.6 });
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 18, 14), skinMaterial);
   head.position.y = 1.37;
   head.castShadow = true;
   const face = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.09, 0.12), new THREE.MeshStandardMaterial({ color: 0x26332d, roughness: 0.74 }));
@@ -45,7 +52,7 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null } 
     const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.46, 4, 8), armMaterial);
     arm.position.y = -0.3;
     arm.castShadow = true;
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.095, 10, 8), new THREE.MeshStandardMaterial({ color: skin, roughness: 0.6 }));
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.095, 10, 8), skinMaterial);
     hand.position.y = -0.6;
     pivot.add(arm, hand);
     group.add(pivot);
@@ -53,7 +60,9 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null } 
   }
   group.userData.arms = arms;
   group.userData.tint = [bodyMaterial, markerMaterial, armMaterial];
+  group.userData.skin = skinMaterial;
   group.userData.body = body;
+  if (cfg) setAvatarConfig(group, cfg);
   if (name) {
     const label = makeLabel(name);
     if (label) {
@@ -174,4 +183,70 @@ export function setStageRing(group, on) {
     group.userData.stageRing = ring;
   }
   if (ring) ring.visible = on;
+}
+
+function buildGear(cfg) {
+  const gear = new THREE.Group();
+  const hairColor = HAIR_COLORS[cfg.k].hex;
+  const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...extra });
+  const add = (geometry, material, x, y, z, rx = 0) => {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(x, y, z);
+    mesh.rotation.x = rx;
+    mesh.castShadow = true;
+    gear.add(mesh);
+    return mesh;
+  };
+  const covered = cfg.a === 3 || cfg.a === 4; // kerudung/blangkon menutup rambut
+  if (cfg.h > 0 && !covered) {
+    const hair = mat(hairColor);
+    add(new THREE.SphereGeometry(0.325, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.56), hair, 0, 1.4, 0.035);
+    if (cfg.h === 2) add(new THREE.BoxGeometry(0.52, 0.1, 0.12), hair, 0, 1.59, -0.22);
+    if (cfg.h === 3) add(new THREE.BoxGeometry(0.54, 0.6, 0.12), hair, 0, 1.12, 0.25);
+    if (cfg.h === 4) {
+      add(new THREE.SphereGeometry(0.12, 10, 8), hair, 0, 1.36, 0.38);
+      add(new THREE.CapsuleGeometry(0.06, 0.28, 4, 8), hair, 0, 1.1, 0.4);
+    }
+    if (cfg.h === 5) add(new THREE.SphereGeometry(0.16, 12, 10), hair, 0, 1.73, 0.06);
+  }
+  if (cfg.a === 1) {
+    const frame = mat(0x1b1620, { metalness: 0.3 });
+    for (const sx of [-0.1, 0.1]) add(new THREE.TorusGeometry(0.075, 0.016, 8, 18), frame, sx, 1.4, -0.285);
+    add(new THREE.BoxGeometry(0.1, 0.014, 0.014), frame, 0, 1.41, -0.287);
+  } else if (cfg.a === 2) {
+    add(new THREE.CylinderGeometry(0.235, 0.27, 0.17, 20), mat(0x15151a), 0, 1.63, 0.01);
+  } else if (cfg.a === 3) {
+    const cloth = mat(hairColor, { side: THREE.DoubleSide });
+    add(new THREE.SphereGeometry(0.35, 20, 14, 0, Math.PI * 2, 0, Math.PI * 0.74), cloth, 0, 1.4, 0.035);
+    add(new THREE.CylinderGeometry(0.34, 0.5, 0.34, 20, 1, true), cloth, 0, 1.05, 0.04);
+  } else if (cfg.a === 4) {
+    const batik = mat(0x6b3f1f);
+    add(new THREE.SphereGeometry(0.29, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), batik, 0, 1.45, 0.02);
+    add(new THREE.SphereGeometry(0.09, 10, 8), batik, 0, 1.47, 0.3);
+  } else if (cfg.a === 5) {
+    add(new THREE.CylinderGeometry(0.23, 0.19, 0.15, 5), mat(0xd4a84b, { metalness: 0.5, roughness: 0.35 }), 0, 1.7, 0);
+  } else if (cfg.a === 6) {
+    const hat = mat(hairColor);
+    add(new THREE.CylinderGeometry(0.4, 0.4, 0.03, 24), hat, 0, 1.58, 0);
+    add(new THREE.CylinderGeometry(0.25, 0.27, 0.2, 20), hat, 0, 1.69, 0);
+  }
+  return gear;
+}
+
+function disposeGear(gear) {
+  gear.traverse((o) => { o.geometry?.dispose(); o.material?.dispose(); });
+}
+
+/** Terapkan konfigurasi pemain (warna pakaian, kulit, rambut, aksesori) ke avatar yang sudah ada. */
+export function setAvatarConfig(group, rawConfig) {
+  const cfg = sanitizeConfig(rawConfig);
+  setAvatarColor(group, OUTFITS[cfg.o].hex);
+  group.userData.skin?.color.set(SKINS[cfg.s].hex);
+  if (group.userData.gear) {
+    group.remove(group.userData.gear);
+    disposeGear(group.userData.gear);
+  }
+  group.userData.gear = buildGear(cfg);
+  group.add(group.userData.gear);
+  group.userData.config = cfg;
 }

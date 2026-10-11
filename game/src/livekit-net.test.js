@@ -175,3 +175,18 @@ test('LiveKitNet + Party: MC membuka panggung, tamu angkat tangan, MC menaikkan,
   b.close();
   assert.equal(pa.state.speakers.length, 0); // peserta keluar dibuang dari panggung
 });
+
+test('LiveKitNet: avatar buatan pemain sampai ke pemain lain, data ngawur dibersihkan, dan ikut heartbeat', async () => {
+  const hub = makeHub();
+  const clock = { t: 1000 };
+  const a = makeNet(hub, 'aaaa', 'Ani', clock);
+  const b = makeNet(hub, 'bbbb', 'Budi', clock);
+  await a.connect('', 'Ani');
+  a.setAvatar([3, 2, 5, 4, 6]);
+  await b.connect('', 'Budi'); // Budi masuk belakangan
+  clock.t += 1100;
+  a.sendInput(0, 0, 0, undefined, { x: 1, z: 1 }); // heartbeat membawa avatar ke tamu baru
+  assert.deepEqual(b.players.find((p) => p.id === 'aaaa').av, { o: 3, s: 2, h: 5, k: 4, a: 6 });
+  a.setAvatar([99, -5, 'x', 1e9, null]);
+  assert.deepEqual(b.players.find((p) => p.id === 'aaaa').av, { o: 0, s: 1, h: 1, k: 0, a: 0 });
+});

@@ -19,6 +19,7 @@
         <div class="arena-topline">
           <button id="mute-button" class="icon-button" type="button" aria-label="Matikan suara" aria-pressed="false" title="Suara (M)">♪</button>
           <button id="mic-button" class="icon-button" type="button" aria-label="Nyalakan mikrofon" aria-pressed="false" title="Suara dekat (V)" hidden>🎙</button>
+          <button id="avatar-button" class="icon-button" type="button" aria-label="Ubah avatar" title="Ubah avatar" hidden>👤</button>
           <button id="party-button" class="icon-button" type="button" aria-label="Panggung Party Room" title="Panggung (P)" hidden>🎤</button>
           <button id="chat-button" class="icon-button" type="button" aria-label="Buka obrolan" title="Obrolan (Enter)">💬</button>
           <button id="home-button" class="icon-button" type="button" aria-label="Kembali ke pintu masuk" title="Ke pintu masuk (R)">⌂</button>
@@ -28,12 +29,22 @@
         <span id="hall-status" hidden></span>
 
         <div id="join-overlay" class="result-overlay">
-          <form id="join-form" class="result-panel" autocomplete="off">
+          <form id="join-form" class="result-panel editor-panel" autocomplete="off">
             <p class="eyebrow">ORBIT WORLD</p>
-            <h2>Selamat datang di aula</h2>
-            <p>Masukkan nama yang tampil di atas avatarmu.</p>
-            <input id="name-input" class="name-input" type="text" maxlength="24" placeholder="Nama tamu" aria-label="Nama tamu" />
-            <button id="join-button" class="action-button" type="submit">Masuk <span>↗</span></button>
+            <h2 id="editor-title">Buat avatarmu</h2>
+            <div class="editor-layout">
+              <canvas id="avatar-preview" class="avatar-preview" aria-label="Pratinjau avatar, geser untuk memutar"></canvas>
+              <div class="editor-controls">
+                <input id="name-input" class="name-input" type="text" maxlength="24" placeholder="Nama tamu" aria-label="Nama tamu" />
+                <div id="editor-tabs" class="editor-tabs" role="tablist"></div>
+                <div id="editor-options" class="editor-options"></div>
+                <div class="editor-actions">
+                  <button type="button" id="editor-random" class="party-btn is-ghost">Acak 🎲</button>
+                  <button type="button" id="editor-cancel" class="party-btn is-ghost" hidden>Batal</button>
+                  <button id="join-button" class="action-button" type="submit"><span id="join-label">Masuk</span> <span>↗</span></button>
+                </div>
+              </div>
+            </div>
           </form>
         </div>
 

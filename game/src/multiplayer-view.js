@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { applyPose, colorForId, createAvatar } from './avatar.js';
+import { applyPose, createAvatar, setAvatarConfig } from './avatar.js';
+import { configFromId, sameConfig } from './avatar-config.js';
 import { HALL } from './hall-layout.js';
 import { NetClient } from './net-client.js';
 import { LiveKitNet } from './livekit-net.js';
@@ -31,11 +32,12 @@ export function createRemotePlayers(scene) {
   const avatars = new Map();
 
   function build(p) {
-    const group = createAvatar({ color: colorForId(p.id), name: p.name });
+    const config = p.av ?? configFromId(p.id); // tampilan sementara sampai avatar asli diterima
+    const group = createAvatar({ config, name: p.name });
     group.position.set(p.x, p.sit == null ? 0 : HALL.seatedDrop, p.z);
     group.rotation.y = p.rot;
     scene.add(group);
-    return { group, act: p.act ?? null, target: { x: p.x, z: p.z, rot: p.rot, sit: p.sit ?? null } };
+    return { group, config, act: p.act ?? null, target: { x: p.x, z: p.z, rot: p.rot, sit: p.sit ?? null } };
   }
 
   return {
@@ -51,6 +53,10 @@ export function createRemotePlayers(scene) {
         if (existing) {
           existing.target = { x: p.x, z: p.z, rot: p.rot, sit: p.sit ?? null };
           existing.act = p.act ?? null;
+          if (p.av && !sameConfig(p.av, existing.config)) {
+            existing.config = p.av;
+            setAvatarConfig(existing.group, p.av);
+          }
         }
         else avatars.set(p.id, build(p));
       }
