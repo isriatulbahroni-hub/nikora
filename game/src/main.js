@@ -271,10 +271,13 @@ function createScene() {
   addArena();
 }
 
-function setupPhysics() {
+function createWorld() {
   world = new RAPIER.World({ x: 0, y: -22, z: 0 });
   world.timestep = FIXED_STEP;
   world.integrationParameters.numSolverIterations = 6;
+}
+
+function setupPhysics() {
 
   playerFighter = createFighter({
     color: 0x70c7a2,
@@ -514,6 +517,8 @@ async function startGame() {
     }
     stage = 'physics-init';
     await RAPIER.init({});
+    stage = 'physics-world';
+    createWorld();
     stage = 'scene';
     createScene();
     stage = 'physics-setup';
