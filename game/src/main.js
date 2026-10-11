@@ -1,52 +1,51 @@
-import * as RAPIER from '@dimforge/rapier3d-compat';
 import * as THREE from 'three';
-import {
-  applyDamage,
-  clampArenaPosition,
-  GAME_RULES,
-  getDashDirection,
-  getMatchOutcome,
-  isAttackReady,
-  normalizeMovement,
-} from './game-rules.js';
+import { createAvatar, makeLabel } from './avatar.js';
+import { GAME_RULES, normalizeMovement } from './game-rules.js';
+import { HALL, SEATS, TABLES, facingAngle, findNearestSeat, resolveCollisions } from './hall-layout.js';
 import { startMultiplayer } from './multiplayer-view.js';
 import './style.css';
 
-const root = document.querySelector('#game-root');
+const $ = (selector) => document.querySelector(selector);
+const root = $('#game-root');
 const ui = {
-  playerHealth: document.querySelector('#player-health-label'),
-  playerHealthBar: document.querySelector('#player-health-bar'),
-  enemyHealth: document.querySelector('#enemy-health-label'),
-  enemyHealthBar: document.querySelector('#enemy-health-bar'),
-  matchStatus: document.querySelector('#match-status'),
-  overlay: document.querySelector('#result-overlay'),
-  resultTitle: document.querySelector('#result-title'),
-  resultCopy: document.querySelector('#result-copy'),
+  status: $('#hall-status'),
+  guests: $('#hall-guests'),
+  joinOverlay: $('#join-overlay'),
+  joinForm: $('#join-form'),
+  nameInput: $('#name-input'),
+  sitButton: $('#touch-sit'),
+  sitLabel: $('#sit-label'),
+  clapButton: $('#touch-clap'),
+  muteButton: $('#mute-button'),
 };
 
-let multiplayer = null; // aktif hanya jika URL memakai ?server=ws://...
-const FIXED_STEP = 1 / 60;
-const PLAYER_SPEED = 5.2;
-const ENEMY_SPEED = 2.9;
+const PLAYER_SPEED = GAME_RULES.playerSpeed;
+const START = Object.freeze({ x: 0, z: 9.4 });
+const OFFLINE = !new URLSearchParams(window.location.search).has('server');
 const heldKeys = new Set();
 const joystick = { x: 0, z: 0 };
 const JOY_RADIUS = 52;
 const JOY_DEADZONE = 0.14;
-const dashButton = document.querySelector('#touch-dash');
-const muteButton = document.querySelector('#mute-button');
-let nextDashAt = 0;
-let dashUntil = 0;
-let dashDir = { x: 0, z: -1 };
-let dashQueued = false;
-let shake = 0;
-let ringLife = 0;
-let attackRing;
-let lastEnemyPos = { x: 0, z: -5.2 };
+
+const me = { x: START.x, z: START.z, rot: Math.PI, sit: null };
+let joined = false;
+let playerName = 'Tamu';
+let multiplayer = null;
+let sitSince = 0;
+let clapUntil = 0;
+let renderer;
+let scene;
+let camera;
+let playerAvatar;
+let npcs = [];
+const focus = new THREE.Vector3(START.x, 0.5, START.z);
+let priorFrameTime = 0;
+let idleAngle = 0;
 
 // ---- Suara sintetis (tanpa file aset) ----
 let audioCtx = null;
 let muted = false;
-function tone(freq, duration, { type = 'square', volume = 0.07, slideTo = null, delay = 0 } = {}) {
+function tone(freq, duration, { type = 'triangle', volume = 0.06, slideTo = null, delay = 0 } = {}) {
   if (muted) return;
   try {
     audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
@@ -63,26 +62,24 @@ function tone(freq, duration, { type = 'square', volume = 0.07, slideTo = null, 
     osc.start(start);
     osc.stop(start + duration + 0.02);
   } catch {
-    /* audio tidak tersedia; game tetap berjalan */
+    /* audio tidak tersedia; dunia tetap berjalan */
   }
 }
 const sfx = {
-  swing: () => tone(320, 0.09, { type: 'triangle', slideTo: 120 }),
-  hit: () => tone(190, 0.13, { slideTo: 60, volume: 0.1 }),
-  hurt: () => tone(150, 0.2, { type: 'sawtooth', slideTo: 70 }),
-  dash: () => tone(420, 0.12, { type: 'sine', slideTo: 900 }),
-  win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, { type: 'triangle', delay: i * 0.12 })),
-  lose: () => [392, 330, 262, 196].forEach((f, i) => tone(f, 0.22, { type: 'sawtooth', volume: 0.05, delay: i * 0.14 })),
+  sit: () => tone(260, 0.12, { slideTo: 180 }),
+  stand: () => tone(180, 0.12, { slideTo: 300 }),
+  clap: () => [0, 0.11, 0.22].forEach((delay) => tone(1700, 0.05, { type: 'square', volume: 0.05, slideTo: 900, delay })),
+  join: () => [392, 523, 659].forEach((f, i) => tone(f, 0.16, { delay: i * 0.1 })),
 };
 function toggleMute() {
   muted = !muted;
-  muteButton.setAttribute('aria-pressed', String(muted));
-  muteButton.setAttribute('aria-label', muted ? 'Nyalakan suara' : 'Matikan suara');
-  muteButton.textContent = muted ? '×' : '♪';
+  ui.muteButton.setAttribute('aria-pressed', String(muted));
+  ui.muteButton.setAttribute('aria-label', muted ? 'Nyalakan suara' : 'Matikan suara');
+  ui.muteButton.textContent = muted ? '×' : '♪';
 }
 
 function spawnFloat(text, position, kind) {
-  const point = new THREE.Vector3(position.x, 1.9, position.z).project(camera);
+  const point = new THREE.Vector3(position.x, 2.2, position.z).project(camera);
   const size = root.getBoundingClientRect();
   const el = document.createElement('div');
   el.className = `float-num ${kind}`;
@@ -94,31 +91,11 @@ function spawnFloat(text, position, kind) {
   window.setTimeout(() => el.remove(), 1200);
 }
 
-let renderer;
-let scene;
-let camera;
-let world;
-let playerBody;
-let enemyBody;
-let playerFighter;
-let enemyFighter;
-let playerHealth = GAME_RULES.maxHealth;
-let enemyHealth = GAME_RULES.maxHealth;
-let nextPlayerAttackAt = 0;
-const attackButton = document.querySelector('#touch-attack');
-let nextEnemyAttackAt = 0;
-let matchOutcome = 'playing';
-let matchStarted = false;
-let attackQueued = false;
-let facing = { x: 0, z: -1 };
-let accumulator = 0;
-let priorFrameTime = 0;
-
 function showStartupError(message, detail = '') {
   const box = document.createElement('div');
   box.className = 'render-error';
   const title = document.createElement('strong');
-  title.textContent = 'Prototype tidak dapat dimulai.';
+  title.textContent = 'Aula tidak dapat dimulai.';
   const text = document.createElement('span');
   text.textContent = message;
   box.append(title, text);
@@ -128,7 +105,7 @@ function showStartupError(message, detail = '') {
     box.append(code);
   }
   root.replaceChildren(box);
-  ui.matchStatus.textContent = 'ERROR';
+  ui.status.textContent = 'ERROR';
 }
 
 function hasWebGL2() {
@@ -139,235 +116,166 @@ function hasWebGL2() {
   }
 }
 
-function addStaticBox(position, halfExtents, material, castShadow = true) {
-  const body = world.createRigidBody(
-    RAPIER.RigidBodyDesc.fixed().setTranslation(position.x, position.y, position.z),
-  );
-  world.createCollider(
-    RAPIER.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z)
-      .setFriction(0.85)
-      .setRestitution(0),
-    body,
-  );
+// ---- Dunia: aula resepsi ----
+const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...extra });
 
-  const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(halfExtents.x * 2, halfExtents.y * 2, halfExtents.z * 2),
-    material,
-  );
-  mesh.position.set(position.x, position.y, position.z);
-  mesh.castShadow = castShadow;
+function box(w, h, d, material, x, y, z, { cast = true } = {}) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = cast;
   mesh.receiveShadow = true;
   scene.add(mesh);
   return mesh;
 }
 
-function addArena() {
-  const floorBody = world.createRigidBody(
-    RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.28, 0),
-  );
-  world.createCollider(RAPIER.ColliderDesc.cuboid(12, 0.28, 12).setFriction(1), floorBody);
-
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(24, 24),
-    new THREE.MeshStandardMaterial({ color: 0x1a2823, roughness: 0.88, metalness: 0.06 }),
-  );
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = 0.006;
-  floor.receiveShadow = true;
-  scene.add(floor);
-
-  const grid = new THREE.GridHelper(24, 24, 0x88ad91, 0x526f62);
-  grid.position.y = 0.018;
-  grid.material.transparent = true;
-  grid.material.opacity = 0.4;
-  scene.add(grid);
-
-  const wallMaterial = new THREE.MeshStandardMaterial({
-    color: 0x7f9d89,
-    roughness: 0.73,
-    metalness: 0.12,
-  });
-  const trimMaterial = new THREE.MeshStandardMaterial({
-    color: 0xe2a35a,
-    roughness: 0.45,
-    metalness: 0.24,
-  });
-
-  addStaticBox({ x: 0, y: 0.65, z: -11.65 }, { x: 12, y: 0.65, z: 0.35 }, wallMaterial);
-  addStaticBox({ x: 0, y: 0.65, z: 11.65 }, { x: 12, y: 0.65, z: 0.35 }, wallMaterial);
-  addStaticBox({ x: -11.65, y: 0.65, z: 0 }, { x: 0.35, y: 0.65, z: 11 }, wallMaterial);
-  addStaticBox({ x: 11.65, y: 0.65, z: 0 }, { x: 0.35, y: 0.65, z: 11 }, wallMaterial);
-
-  const obstacleMaterial = new THREE.MeshStandardMaterial({
-    color: 0x7d8b70,
-    roughness: 0.86,
-    metalness: 0.04,
-  });
-  const obstaclePositions = [
-    { x: -4.6, z: -4.2 },
-    { x: 4.6, z: -4.2 },
-    { x: -4.6, z: 4.2 },
-    { x: 4.6, z: 4.2 },
-  ];
-
-  for (const position of obstaclePositions) {
-    addStaticBox(
-      { x: position.x, y: 0.9, z: position.z },
-      { x: 0.82, y: 0.9, z: 0.82 },
-      obstacleMaterial,
-    );
-
-    const cap = new THREE.Mesh(
-      new THREE.BoxGeometry(1.68, 0.09, 1.68),
-      trimMaterial,
-    );
-    cap.position.set(position.x, 1.86, position.z);
-    cap.castShadow = true;
-    scene.add(cap);
-  }
-
-  const centerMark = new THREE.Mesh(
-    new THREE.RingGeometry(2.2, 2.24, 64),
-    new THREE.MeshBasicMaterial({ color: 0xd99050, transparent: true, opacity: 0.52, side: THREE.DoubleSide }),
-  );
-  centerMark.rotation.x = -Math.PI / 2;
-  centerMark.position.y = 0.025;
-  scene.add(centerMark);
+function screenTexture() {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 288;
+  const ctx = canvas.getContext('2d');
+  const gradient = ctx.createLinearGradient(0, 0, 512, 288);
+  gradient.addColorStop(0, '#1d2a3a');
+  gradient.addColorStop(1, '#3a2a40');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 512, 288);
+  ctx.fillStyle = '#f3d58a';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 34px sans-serif';
+  ctx.fillText('LAYAR SIARAN LANGSUNG', 256, 134);
+  ctx.fillStyle = '#d7dccf';
+  ctx.font = '22px sans-serif';
+  ctx.fillText('(placeholder, belum tersambung)', 256, 176);
+  return new THREE.CanvasTexture(canvas);
 }
 
-function createFighter({ color, accent, start, kinematic = false }) {
-  const group = new THREE.Group();
-  const bodyMaterial = new THREE.MeshStandardMaterial({
-    color,
-    roughness: 0.52,
-    metalness: 0.08,
-    emissive: color,
-    emissiveIntensity: 0.035,
-  });
-  const accentMaterial = new THREE.MeshStandardMaterial({
-    color: accent,
-    roughness: 0.38,
-    metalness: 0.12,
-  });
-  const darkMaterial = new THREE.MeshStandardMaterial({ color: 0x26332d, roughness: 0.74 });
+function buildTable(table) {
+  const cloth = mat(0xf4efe6, { roughness: 0.9 });
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(HALL.tableRadius, HALL.tableRadius, 0.78, 28), cloth);
+  top.position.set(table.x, 0.39, table.z);
+  top.castShadow = true;
+  top.receiveShadow = true;
+  scene.add(top);
+  const flowers = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), mat(0xe58fa8));
+  flowers.position.set(table.x, 0.98, table.z);
+  scene.add(flowers);
+  const candle = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffd98a }));
+  candle.position.set(table.x + 0.45, 0.84, table.z);
+  scene.add(candle);
+}
 
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.55, 5, 12), bodyMaterial);
-  torso.position.y = 0.75;
-  torso.castShadow = true;
-  group.add(torso);
+function buildChair(seat) {
+  const wood = mat(0x8a6a4a);
+  const chair = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.5), wood);
+  base.position.y = 0.44;
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.07), wood);
+  back.position.set(0, 0.72, 0.23); // sandaran di belakang pemain (+z lokal)
+  base.castShadow = true;
+  chair.add(base, back);
+  chair.position.set(seat.x, 0, seat.z);
+  chair.rotation.y = seat.rot;
+  scene.add(chair);
+}
 
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 18, 14), accentMaterial);
-  head.position.y = 1.37;
-  head.castShadow = true;
-  group.add(head);
-
-  const face = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.09, 0.12), darkMaterial);
-  face.position.set(0, 1.39, -0.255);
-  group.add(face);
-
-  const directionMarker = new THREE.Mesh(
-    new THREE.ConeGeometry(0.16, 0.3, 4),
-    accentMaterial,
-  );
-  directionMarker.rotation.x = -Math.PI / 2;
-  directionMarker.position.set(0, 0.83, -0.48);
-  group.add(directionMarker);
-
-  const shadowDisc = new THREE.Mesh(
-    new THREE.CircleGeometry(0.56, 32),
-    new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.28, side: THREE.DoubleSide }),
-  );
-  shadowDisc.rotation.x = -Math.PI / 2;
-  shadowDisc.position.y = 0.025;
-  group.add(shadowDisc);
-
-  scene.add(group);
-
-  const descriptor = kinematic
-    ? RAPIER.RigidBodyDesc.kinematicPositionBased()
-    : RAPIER.RigidBodyDesc.dynamic().setLinearDamping(4).lockRotations();
-  const body = world.createRigidBody(descriptor.setTranslation(start.x, 0.82, start.z));
-  world.createCollider(
-    RAPIER.ColliderDesc.capsule(0.42, 0.32)
-      .setFriction(0.12)
-      .setRestitution(0),
-    body,
-  );
-
-  return { body, group, bodyMaterial };
+function buildStage() {
+  const gold = mat(0xd4a84b, { metalness: 0.4, roughness: 0.4 });
+  box(HALL.stage.halfWidth * 2, 0.4, 3.4, mat(0xb9a07a), 0, 0.2, -9.3);
+  box(2.6, 0.05, 1.4, mat(0x8c2f39), 0, 0.43, -9.2, { cast: false }); // karpet pelaminan
+  // sofa pelaminan
+  for (const x of [-0.8, 0.8]) {
+    box(1.1, 0.4, 0.8, mat(0xf2e4cf), x, 0.6, -10.2);
+    box(1.1, 0.8, 0.2, mat(0xf2e4cf), x, 1.0, -10.55);
+  }
+  // gapura bunga
+  box(0.25, 3.4, 0.25, gold, -2.4, 2.1, -10.9);
+  box(0.25, 3.4, 0.25, gold, 2.4, 2.1, -10.9);
+  box(5.05, 0.25, 0.25, gold, 0, 3.9, -10.9);
+  const bloom = new THREE.SphereGeometry(0.28, 10, 8);
+  for (let i = 0; i < 9; i += 1) {
+    const flower = new THREE.Mesh(bloom, mat(i % 2 ? 0xe58fa8 : 0xf6e8ee));
+    flower.position.set(-2.4 + i * 0.6, 3.75 - Math.sin((i / 8) * Math.PI) * 0.1, -10.8);
+    scene.add(flower);
+  }
 }
 
 function createScene() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x121c19);
-  scene.fog = new THREE.Fog(0x121c19, 22, 42);
+  scene.background = new THREE.Color(0x1d1722);
+  scene.fog = new THREE.Fog(0x1d1722, 26, 48);
 
-  const canvasSize = root.getBoundingClientRect();
-  camera = new THREE.PerspectiveCamera(42, canvasSize.width / canvasSize.height, 0.1, 80);
-  camera.position.set(0, 15, 17);
-  camera.lookAt(0, 0, 0);
+  const size = root.getBoundingClientRect();
+  camera = new THREE.PerspectiveCamera(46, size.width / size.height, 0.1, 90);
+  camera.position.set(0, 12, 20);
 
   renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
-  renderer.setSize(canvasSize.width, canvasSize.height);
+  renderer.setSize(size.width, size.height);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.18;
-  renderer.domElement.setAttribute('aria-label', 'Tampilan game arena 3D ORBIT');
+  renderer.toneMappingExposure = 1.1;
+  renderer.domElement.setAttribute('aria-label', 'Tampilan aula resepsi 3D ORBIT');
   root.append(renderer.domElement);
 
-  const hemisphere = new THREE.HemisphereLight(0xe3f4dd, 0x26332b, 2.05);
-  scene.add(hemisphere);
+  scene.add(new THREE.HemisphereLight(0xfff0dc, 0x3a2f3f, 1.7));
+  const key = new THREE.DirectionalLight(0xffe2b8, 2.4);
+  key.position.set(-6, 14, 10);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  Object.assign(key.shadow.camera, { left: -15, right: 15, top: 15, bottom: -15 });
+  scene.add(key);
+  for (const [x, z] of [[0, -8], [-6, 2], [6, 2]]) {
+    const lamp = new THREE.PointLight(0xffc98a, 18, 14, 2);
+    lamp.position.set(x, 4.2, z);
+    scene.add(lamp);
+  }
 
-  const keyLight = new THREE.DirectionalLight(0xffe0ad, 3.2);
-  keyLight.position.set(-7, 13, 8);
-  keyLight.castShadow = true;
-  keyLight.shadow.mapSize.set(1024, 1024);
-  keyLight.shadow.camera.left = -15;
-  keyLight.shadow.camera.right = 15;
-  keyLight.shadow.camera.top = 15;
-  keyLight.shadow.camera.bottom = -15;
-  scene.add(keyLight);
+  // lantai kayu, karpet merah menuju pelaminan, dinding
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(24, 24), mat(0x7a5a3c, { roughness: 0.8 }));
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+  box(2.2, 0.02, 19, mat(0x8c2f39, { roughness: 0.95 }), 0, 0.012, 1.6, { cast: false });
+  box(0.08, 0.025, 19, mat(0xd4a84b, { metalness: 0.4 }), -1.15, 0.015, 1.6, { cast: false });
+  box(0.08, 0.025, 19, mat(0xd4a84b, { metalness: 0.4 }), 1.15, 0.015, 1.6, { cast: false });
 
-  const fillLight = new THREE.DirectionalLight(0x8fcab2, 1.15);
-  fillLight.position.set(8, 7, -8);
-  scene.add(fillLight);
-
-  addArena();
-}
-
-function createWorld() {
-  world = new RAPIER.World({ x: 0, y: -22, z: 0 });
-  world.timestep = FIXED_STEP;
-  world.integrationParameters.numSolverIterations = 6;
-}
-
-function setupPhysics() {
-
-  playerFighter = createFighter({
-    color: 0x70c7a2,
-    accent: 0xe3bd79,
-    start: { x: 0, z: 5.2 },
-  });
-  enemyFighter = createFighter({
-    color: 0xd97754,
-    accent: 0xf0c47d,
-    start: { x: 0, z: -5.2 },
-    kinematic: true,
-  });
-  attackRing = new THREE.Mesh(
-    new THREE.RingGeometry(GAME_RULES.playerAttackRange - 0.08, GAME_RULES.playerAttackRange, 48),
-    new THREE.MeshBasicMaterial({ color: 0xffe3a8, transparent: true, opacity: 0, side: THREE.DoubleSide }),
+  const wall = mat(0xe8dcc4, { roughness: 0.9 });
+  box(24, 6, 0.35, wall, 0, 3, -11.65); // dinding belakang
+  box(0.35, 1.1, 23, wall, -11.65, 0.55, 0);
+  box(0.35, 1.1, 23, wall, 11.65, 0.55, 0);
+  box(24, 0.7, 0.35, wall, 0, 0.35, 11.65);
+  const screen = new THREE.Mesh(
+    new THREE.PlaneGeometry(8, 4.5),
+    new THREE.MeshBasicMaterial({ map: screenTexture() }),
   );
-  attackRing.rotation.x = -Math.PI / 2;
-  attackRing.visible = false;
-  scene.add(attackRing);
-  playerBody = playerFighter.body;
-  enemyBody = enemyFighter.body;
+  screen.position.set(0, 4.3, -11.45);
+  scene.add(screen);
+
+  buildStage();
+  for (const table of TABLES) buildTable(table);
+  for (const seat of SEATS) buildChair(seat);
 }
 
+function addSeatedNpc(seatId, color, name, { x, y, z, rot } = {}) {
+  const seat = seatId == null ? null : SEATS[seatId];
+  const avatar = createAvatar({ color, name });
+  avatar.position.set(x ?? seat.x, y ?? HALL.seatedDrop, z ?? seat.z);
+  avatar.rotation.y = rot ?? seat.rot;
+  scene.add(avatar);
+  npcs.push({ avatar, baseY: avatar.position.y, phase: Math.random() * 6.28, seatId });
+}
+
+function populateOfflineGuests() {
+  // Tamu simulasi hanya di mode offline agar tidak bentrok dengan kursi pemain sungguhan di server.
+  const colors = [0xf2a65a, 0x6ab8e8, 0xc77dff, 0xf25f5c, 0x70c1b3, 0xffe066];
+  const seats = [0, 2, 3, 7, 10, 14, 15, 19, 26, 28];
+  seats.forEach((id, i) => addSeatedNpc(id, colors[i % colors.length], null));
+  addSeatedNpc(null, 0xf6e8ee, 'Mempelai', { x: -0.8, y: 0.4 + HALL.seatedDrop, z: -10.2, rot: facingAngle(0, 1) });
+  addSeatedNpc(null, 0x2f3a55, 'Mempelai', { x: 0.8, y: 0.4 + HALL.seatedDrop, z: -10.2, rot: facingAngle(0, 1) });
+}
+
+// ---- Input dan aksi ----
 function getMovementInput() {
   const right = heldKeys.has('KeyD') || heldKeys.has('ArrowRight');
   const left = heldKeys.has('KeyA') || heldKeys.has('ArrowLeft');
@@ -378,142 +286,97 @@ function getMovementInput() {
   return normalizeMovement(joystick.x, joystick.z);
 }
 
-function updateHealthHud() {
-  ui.playerHealth.textContent = String(Math.ceil(playerHealth));
-  ui.enemyHealth.textContent = String(Math.ceil(enemyHealth));
-  ui.playerHealthBar.style.width = `${playerHealth}%`;
-  ui.enemyHealthBar.style.width = `${enemyHealth}%`;
-  ui.playerHealthBar.classList.toggle('is-low', playerHealth <= 35);
-  ui.enemyHealthBar.classList.toggle('is-low', enemyHealth <= 35);
-}
-
-function finishMatch(outcome) {
-  if (outcome === 'playing' || matchOutcome !== 'playing') return;
-  matchOutcome = outcome;
-  if (outcome === 'victory') sfx.win();
-  else sfx.lose();
-  playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
-  ui.matchStatus.textContent = outcome === 'victory' ? 'VICTORY' : outcome === 'defeat' ? 'DEFEAT' : 'DRAW';
-  ui.resultTitle.textContent = outcome === 'victory' ? 'Victory' : outcome === 'defeat' ? 'Defeated' : 'Draw';
-  ui.resultCopy.textContent = outcome === 'victory'
-    ? 'Rival tumbang. Arena dikuasai.'
-    : outcome === 'defeat'
-      ? 'Kamu tumbang. Coba pendekatan lain.'
-      : 'Keduanya tumbang. Ulangi pertarungan.';
-  ui.overlay.hidden = false;
-}
-
-function attemptPlayerAttack(now) {
-  if (!attackQueued || matchOutcome !== 'playing') return;
-  attackQueued = false;
-  matchStarted = true;
-  if (!isAttackReady(now, nextPlayerAttackAt)) return;
-  nextPlayerAttackAt = now + GAME_RULES.playerAttackCooldown;
-  ringLife = 1;
-  sfx.swing();
-
-  const playerPosition = playerBody.translation();
-  const enemyPosition = enemyBody.translation();
-  const dx = enemyPosition.x - playerPosition.x;
-  const dz = enemyPosition.z - playerPosition.z;
-  const distance = Math.hypot(dx, dz);
-  const facingDot = distance > 0 ? (dx * facing.x + dz * facing.z) / distance : 1;
-
-  playerFighter.group.scale.set(1.12, 1.06, 1.12);
-  window.setTimeout(() => playerFighter?.group.scale.set(1, 1, 1), 100);
-
-  if (distance <= GAME_RULES.playerAttackRange && facingDot > 0.05) {
-    enemyHealth = applyDamage(enemyHealth, GAME_RULES.playerDamage);
-    spawnFloat(`-${GAME_RULES.playerDamage}`, enemyPosition, 'is-enemy');
-    sfx.hit();
-    shake = Math.max(shake, 0.18);
-    enemyFighter.bodyMaterial.emissiveIntensity = 0.72;
-    window.setTimeout(() => {
-      if (enemyFighter) enemyFighter.bodyMaterial.emissiveIntensity = 0.035;
-    }, 140);
-    updateHealthHud();
-    finishMatch(getMatchOutcome(playerHealth, enemyHealth));
+function occupiedSeats() {
+  const set = new Set(npcs.map((n) => n.seatId).filter((id) => id != null));
+  for (const p of multiplayer?.net.players ?? []) {
+    if (p.id !== multiplayer.net.id && p.sit != null) set.add(p.sit);
   }
+  return set;
 }
 
-function attemptDash(now) {
-  if (!dashQueued || matchOutcome !== 'playing') return;
-  dashQueued = false;
-  if (!isAttackReady(now, nextDashAt)) return;
-  matchStarted = true;
-  nextDashAt = now + GAME_RULES.dashCooldown;
-  dashUntil = now + GAME_RULES.dashDuration;
-  dashDir = getDashDirection(getMovementInput(), facing);
-  facing = { ...dashDir };
-  sfx.dash();
+function standUp(now) {
+  if (me.sit === null) return;
+  me.sit = null;
+  sitSince = now;
+  sfx.stand();
+}
+
+function toggleSit(now) {
+  if (!joined) return;
+  if (me.sit !== null) return standUp(now);
+  const seat = findNearestSeat(me, occupiedSeats());
+  if (!seat) return;
+  me.sit = seat.id;
+  me.x = seat.x;
+  me.z = seat.z;
+  me.rot = seat.rot;
+  sitSince = now;
+  sfx.sit();
+}
+
+function clap(now) {
+  if (!joined || now < clapUntil) return;
+  clapUntil = now + 0.9;
+  sfx.clap();
+  spawnFloat('👏', me, 'is-clap');
+}
+
+function goToEntrance(now) {
+  standUp(now);
+  me.x = START.x;
+  me.z = START.z;
+  me.rot = Math.PI;
 }
 
 function updatePlayer(delta, now) {
   const movement = getMovementInput();
-  if (movement.x || movement.z) {
-    matchStarted = true;
-    const magnitude = Math.hypot(movement.x, movement.z);
-    facing = { x: movement.x / magnitude, z: movement.z / magnitude };
-    playerFighter.group.rotation.y = Math.atan2(-facing.x, -facing.z);
+  const moving = movement.x !== 0 || movement.z !== 0;
+  if (me.sit !== null && moving) standUp(now); // bergerak = berdiri
+
+  if (me.sit === null) {
+    if (moving) me.rot = facingAngle(movement.x, movement.z);
+    const next = resolveCollisions({
+      x: me.x + movement.x * PLAYER_SPEED * delta,
+      z: me.z + movement.z * PLAYER_SPEED * delta,
+    });
+    me.x = next.x;
+    me.z = next.z;
   }
 
-  multiplayer?.sendInput(movement.x, movement.z, playerFighter.group.rotation.y, now * 1000);
+  // Server menolak duduk yang tidak sah: ikuti kebenaran server.
+  const self = multiplayer?.net.players.find((p) => p.id === multiplayer.net.id);
+  if (self && me.sit !== null && now - sitSince > 0.8 && self.sit !== me.sit) standUp(now);
 
-  const dashing = now < dashUntil;
-  const moveX = dashing ? dashDir.x * GAME_RULES.dashSpeed : movement.x * PLAYER_SPEED;
-  const moveZ = dashing ? dashDir.z * GAME_RULES.dashSpeed : movement.z * PLAYER_SPEED;
-  const velocity = playerBody.linvel();
-  playerBody.setLinvel({
-    x: moveX,
-    y: velocity.y,
-    z: moveZ,
-  }, true);
-
-  if (delta <= 0) return;
-  const position = playerBody.translation();
-  const bounded = clampArenaPosition(position);
-  if (bounded.x !== position.x || bounded.z !== position.z) {
-    playerBody.setTranslation({ x: bounded.x, y: position.y, z: bounded.z }, true);
-  }
+  multiplayer?.sendInput(moving && me.sit === null ? movement.x : 0, moving && me.sit === null ? movement.z : 0, me.rot, now * 1000, me.sit);
+  return moving && me.sit === null;
 }
 
-function updateEnemy(now, delta) {
-  const enemyPosition = enemyBody.translation();
-  const playerPosition = playerBody.translation();
-  const dx = playerPosition.x - enemyPosition.x;
-  const dz = playerPosition.z - enemyPosition.z;
-  const distance = Math.hypot(dx, dz);
-  let nextX = enemyPosition.x;
-  let nextZ = enemyPosition.z;
-
-  if (distance > GAME_RULES.enemyAttackRange && distance > 0) {
-    matchStarted = true;
-    const travel = Math.min(ENEMY_SPEED * delta, distance - GAME_RULES.enemyAttackRange);
-    nextX += (dx / distance) * travel;
-    nextZ += (dz / distance) * travel;
-  }
-
-  enemyBody.setNextKinematicTranslation({ x: nextX, y: enemyPosition.y, z: nextZ });
-  if (distance <= GAME_RULES.enemyAttackRange && isAttackReady(now, nextEnemyAttackAt)) {
-    nextEnemyAttackAt = now + GAME_RULES.enemyAttackCooldown;
-    playerHealth = applyDamage(playerHealth, GAME_RULES.enemyDamage);
-    spawnFloat(`-${GAME_RULES.enemyDamage}`, playerPosition, 'is-player');
-    sfx.hurt();
-    shake = Math.max(shake, 0.3);
-    enemyFighter.group.scale.set(1.06, 1.08, 1.06);
-    window.setTimeout(() => enemyFighter?.group.scale.set(1, 1, 1), 120);
-    updateHealthHud();
-    finishMatch(getMatchOutcome(playerHealth, enemyHealth));
-  }
+function updateHud() {
+  const seat = me.sit === null ? findNearestSeat(me, occupiedSeats()) : null;
+  const canAct = me.sit !== null || seat !== null;
+  ui.sitButton.classList.toggle('is-ready', canAct);
+  ui.sitLabel.textContent = me.sit !== null ? 'BERDIRI' : 'DUDUK';
+  if (!joined) ui.status.textContent = 'MASUK';
+  else if (me.sit !== null) ui.status.textContent = `DUDUK · MEJA ${SEATS[me.sit].table + 1}`;
+  else if (seat) ui.status.textContent = 'KURSI KOSONG · DUDUK?';
+  else ui.status.textContent = 'BERJALAN';
+  const remote = multiplayer?.view.count ?? 0;
+  ui.guests.textContent = multiplayer ? `Online · ${remote + 1} tamu` : OFFLINE ? 'Offline · tamu simulasi' : 'Menyambung…';
 }
 
-function updateCamera(delta) {
-  const position = playerBody.translation();
-  const target = new THREE.Vector3(position.x, 0, position.z);
+function updateCamera(delta, now) {
   const fit = Math.min(1.9, Math.max(1, 1.45 / camera.aspect));
-  const desiredPosition = new THREE.Vector3(position.x + 2.8 * fit, 14 * fit, position.z + 13.6 * fit);
-  const smoothing = 1 - Math.exp(-4.6 * delta);
-  camera.position.lerp(desiredPosition, smoothing);
+  if (!joined) {
+    idleAngle += delta * 0.12;
+    camera.position.set(Math.sin(idleAngle) * 19, 11, Math.cos(idleAngle) * 19);
+    camera.lookAt(0, 1, 0);
+    return;
+  }
+  const smoothing = 1 - Math.exp(-5 * delta);
+  focus.x += (me.x - focus.x) * smoothing;
+  focus.z += (me.z - focus.z) * smoothing;
+  const target = new THREE.Vector3(focus.x, 0.6, focus.z);
+  camera.position.lerp(new THREE.Vector3(focus.x, 8.5 * fit, focus.z + 9.5 * fit), 1 - Math.exp(-6 * delta));
   camera.lookAt(target);
 }
 
@@ -523,80 +386,30 @@ function renderFrame(time) {
   const delta = Math.min((time - priorFrameTime) * 0.001 || 0, 0.05);
   priorFrameTime = time;
 
-  if (matchOutcome === 'playing') {
-    if (matchStarted) {
-      updatePlayer(delta, now);
-      updateEnemy(now, delta);
-    }
-    attemptDash(now);
-    attemptPlayerAttack(now);
-    const remaining = Math.max(0, nextPlayerAttackAt - now);
-    dashButton.style.setProperty('--cd', `${(Math.max(0, nextDashAt - now) / GAME_RULES.dashCooldown) * 360}deg`);
-    attackButton.style.setProperty('--cd', `${(remaining / GAME_RULES.playerAttackCooldown) * 360}deg`);
+  const walking = joined ? updatePlayer(delta, now) : false;
+  const bob = walking ? Math.abs(Math.sin(now * 13)) * 0.09 : 0;
+  const hop = now < clapUntil ? Math.abs(Math.sin((clapUntil - now) * 14)) * 0.12 : 0;
+  const k = 1 - Math.exp(-14 * delta);
+  const yTarget = (me.sit === null ? 0 : HALL.seatedDrop) + bob + hop;
+  playerAvatar.position.x += (me.x - playerAvatar.position.x) * (me.sit === null ? 1 : k);
+  playerAvatar.position.z += (me.z - playerAvatar.position.z) * (me.sit === null ? 1 : k);
+  playerAvatar.position.y += (yTarget - playerAvatar.position.y) * k;
+  const diff = ((me.rot - playerAvatar.rotation.y + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+  playerAvatar.rotation.y += diff * k;
 
-    accumulator += delta;
-    while (accumulator >= FIXED_STEP) {
-      world.step();
-      accumulator -= FIXED_STEP;
-    }
-
-    const playerPosition = playerBody.translation();
-    const enemyPosition = enemyBody.translation();
-    const playerVelocity = playerBody.linvel();
-    const playerBob = Math.hypot(playerVelocity.x, playerVelocity.z) > 0.6 ? Math.abs(Math.sin(now * 13)) * 0.09 : 0;
-    const enemyMoved = Math.hypot(enemyPosition.x - lastEnemyPos.x, enemyPosition.z - lastEnemyPos.z) > 0.002;
-    const enemyBob = enemyMoved ? Math.abs(Math.sin(now * 11)) * 0.08 : 0;
-    lastEnemyPos = { x: enemyPosition.x, z: enemyPosition.z };
-    playerFighter.group.position.set(playerPosition.x, playerPosition.y - 0.82 + playerBob, playerPosition.z);
-    enemyFighter.group.position.set(enemyPosition.x, enemyPosition.y - 0.82 + enemyBob, enemyPosition.z);
-    enemyFighter.group.rotation.y = Math.atan2(-(playerPosition.x - enemyPosition.x), -(playerPosition.z - enemyPosition.z));
-    if (attackRing) {
-      attackRing.position.set(playerPosition.x, 0.05, playerPosition.z);
-      ringLife = Math.max(0, ringLife - delta * 5);
-      attackRing.material.opacity = ringLife * 0.7;
-      attackRing.visible = ringLife > 0;
-    }
-    updateCamera(delta);
-    ui.matchStatus.textContent = matchStarted ? 'FIGHT' : 'READY';
-  }
+  for (const npc of npcs) npc.avatar.position.y = npc.baseY + Math.sin(now * 1.6 + npc.phase) * 0.012;
 
   multiplayer?.view.update(delta);
-
-  const shakeOffset = new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, 0);
-  shake = Math.max(0, shake - delta * 1.4);
-  camera.position.add(shakeOffset);
+  updateHud();
+  updateCamera(delta, now);
   renderer.render(scene, camera);
-  camera.position.sub(shakeOffset);
 }
 
-function restartMatch() {
-  playerHealth = GAME_RULES.maxHealth;
-  enemyHealth = GAME_RULES.maxHealth;
-  nextPlayerAttackAt = 0;
-  nextEnemyAttackAt = 0;
-  nextDashAt = 0;
-  dashUntil = 0;
-  dashQueued = false;
-  matchOutcome = 'playing';
-  matchStarted = false;
-  attackQueued = false;
-  facing = { x: 0, z: -1 };
-  playerBody.setTranslation({ x: 0, y: 0.82, z: 5.2 }, true);
-  playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
-  playerBody.setAngvel({ x: 0, y: 0, z: 0 }, true);
-  enemyBody.setTranslation({ x: 0, y: 0.82, z: -5.2 }, true);
-  enemyBody.setNextKinematicTranslation({ x: 0, y: 0.82, z: -5.2 });
-  playerFighter.group.rotation.set(0, 0, 0);
-  enemyFighter.group.rotation.set(0, Math.PI, 0);
-  ui.overlay.hidden = true;
-  ui.matchStatus.textContent = 'READY';
-  updateHealthHud();
-}
-
+// ---- Kontrol ----
 function setupJoystick() {
-  const zone = document.querySelector('#joy-zone');
-  const base = document.querySelector('#joy-base');
-  const knob = document.querySelector('#joy-knob');
+  const zone = $('#joy-zone');
+  const base = $('#joy-base');
+  const knob = $('#joy-knob');
   let pointerId = null;
   let center = { x: 0, y: 0 };
 
@@ -671,19 +484,23 @@ function setupInputMode() {
   window.addEventListener('keydown', () => set('keyboard'), { capture: true });
 }
 
+function isTyping(event) {
+  return event.target instanceof HTMLInputElement;
+}
+
 function setupInput() {
   setupInputMode();
+  const clock = () => performance.now() * 0.001;
   window.addEventListener('keydown', (event) => {
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) {
-      event.preventDefault();
-    }
+    if (isTyping(event)) return;
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) event.preventDefault();
     heldKeys.add(event.code);
-    if (event.code === 'Space' && !event.repeat) attackQueued = true;
-    if (event.code === 'KeyR' && !event.repeat) restartMatch();
-    if ((event.code === 'ShiftLeft' || event.code === 'ShiftRight') && !event.repeat) dashQueued = true;
-    if (event.code === 'KeyM' && !event.repeat) toggleMute();
+    if (event.repeat) return;
+    if (event.code === 'KeyE') toggleSit(clock());
+    if (event.code === 'Space') clap(clock());
+    if (event.code === 'KeyR' && joined) goToEntrance(clock());
+    if (event.code === 'KeyM') toggleMute();
   });
-
   window.addEventListener('keyup', (event) => heldKeys.delete(event.code));
   window.addEventListener('blur', () => {
     heldKeys.clear();
@@ -692,19 +509,18 @@ function setupInput() {
   });
 
   setupJoystick();
-  attackButton.addEventListener('pointerdown', (event) => {
+  ui.sitButton.addEventListener('pointerdown', (event) => {
     event.preventDefault();
-    attackQueued = true;
     navigator.vibrate?.(12);
+    toggleSit(clock());
+  });
+  ui.clapButton.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    clap(clock());
   });
   document.querySelectorAll('.controls').forEach((el) => el.addEventListener('contextmenu', (e) => e.preventDefault()));
-  dashButton.addEventListener('pointerdown', (event) => {
-    event.preventDefault();
-    dashQueued = true;
-  });
-  muteButton.addEventListener('click', toggleMute);
-  document.querySelector('#restart-button').addEventListener('click', restartMatch);
-  document.querySelector('#play-again-button').addEventListener('click', restartMatch);
+  ui.muteButton.addEventListener('click', toggleMute);
+  $('#home-button').addEventListener('click', () => joined && goToEntrance(clock()));
 
   window.addEventListener('resize', () => {
     const size = root.getBoundingClientRect();
@@ -715,6 +531,33 @@ function setupInput() {
   });
 }
 
+function setupJoin() {
+  try {
+    ui.nameInput.value = window.localStorage.getItem('orbit-name') ?? '';
+  } catch {
+    /* penyimpanan tidak tersedia */
+  }
+  ui.joinForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    playerName = ui.nameInput.value.replace(/[<>]/g, '').trim().slice(0, 24) || 'Tamu';
+    try {
+      window.localStorage.setItem('orbit-name', playerName);
+    } catch {
+      /* abaikan */
+    }
+    const label = makeLabel(playerName);
+    if (label) playerAvatar.add(label);
+    joined = true;
+    ui.joinOverlay.hidden = true;
+    sfx.join();
+    startMultiplayer({ scene, search: window.location.search, name: playerName })
+      .then((session) => {
+        multiplayer = session;
+      })
+      .catch((error) => console.warn('[multiplayer]', error));
+  });
+}
+
 async function startGame() {
   let stage = 'webgl-check';
   try {
@@ -722,22 +565,17 @@ async function startGame() {
       showStartupError('Browser ini tidak menyediakan WebGL 2. Aktifkan akselerasi perangkat keras di pengaturan browser, lalu muat ulang.');
       return;
     }
-    stage = 'physics-init';
-    await RAPIER.init({});
-    stage = 'physics-world';
-    createWorld();
     stage = 'scene';
     createScene();
-    stage = 'physics-setup';
-    setupPhysics();
+    stage = 'avatar';
+    playerAvatar = createAvatar({ color: 0x70c7a2 });
+    playerAvatar.position.set(me.x, 0, me.z);
+    playerAvatar.rotation.y = me.rot;
+    scene.add(playerAvatar);
+    if (OFFLINE) populateOfflineGuests();
     stage = 'input';
     setupInput();
-    updateHealthHud();
-    startMultiplayer({ scene, search: window.location.search })
-      .then((session) => {
-        multiplayer = session;
-      })
-      .catch((error) => console.warn('[multiplayer]', error));
+    setupJoin();
     requestAnimationFrame(renderFrame);
   } catch (error) {
     console.error(`[startup:${stage}]`, error);

@@ -15,12 +15,12 @@ npm test
 
 Klien ke server:
 - `{ t: 'join', name }` — masuk ruang (wajib dalam 5 detik)
-- `{ t: 'input', x, z, rot, seq }` — arah gerak (-1..1), rotasi, nomor urut naik
+- `{ t: 'input', x, z, rot, seq, sit? }` — arah gerak (-1..1), rotasi, nomor urut naik; `sit` = id kursi (0..35) untuk duduk atau `null` untuk berdiri (divalidasi: harus dekat dan kursi kosong)
 - `{ t: 'ping', ts }`
 
 Server ke klien:
 - `{ t: 'welcome', id, players }`
-- `{ t: 'state', tick, players }` — snapshot 20 Hz
+- `{ t: 'state', tick, players }` — snapshot 20 Hz; tiap pemain punya `sit` (id kursi atau null)
 - `{ t: 'left', id }`
 - `{ t: 'pong', ts }`, `{ t: 'error', reason }`
 

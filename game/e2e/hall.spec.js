@@ -21,7 +21,7 @@ async function inspectCanvas(canvas) {
   });
 }
 
-test('desktop arena renders, resolves an offline match, and restarts', async ({ page }) => {
+test('desktop: aula tampil, masuk dengan nama, berjalan, duduk, dan berdiri', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -29,35 +29,36 @@ test('desktop arena renders, resolves an offline match, and restarts', async ({ 
 
   const canvas = page.locator('#game-root canvas');
   await expect(canvas).toBeVisible();
-  await expect(page.locator('#match-status')).toHaveText('READY');
+  await expect(page.locator('#join-overlay')).toBeVisible();
   await page.waitForTimeout(500);
 
   const visual = await inspectCanvas(canvas);
   expect(visual.webgl).toBe(true);
-  expect(visual.width).toBeGreaterThan(900);
-  expect(visual.height).toBeGreaterThan(500);
   expect(visual.colors).toBeGreaterThan(3);
-  await page.screenshot({ path: '/tmp/orbit-game-desktop.png' });
 
+  await page.locator('#name-input').fill('Tamu Uji');
+  await page.getByRole('button', { name: /Masuk/ }).click();
+  await expect(page.locator('#join-overlay')).toBeHidden();
+  await expect(page.locator('#hall-status')).toHaveText('BERJALAN');
+  await page.screenshot({ path: '/tmp/orbit-hall-desktop.png' });
+
+  // Dari pintu masuk berjalan ke arah meja kanan bawah (x=6, z=7.6) lalu duduk.
+  await page.keyboard.down('KeyD');
+  await page.waitForTimeout(900);
+  await page.keyboard.up('KeyD');
   await page.keyboard.down('KeyW');
-  await page.waitForTimeout(1_300);
+  await page.waitForTimeout(350);
   await page.keyboard.up('KeyW');
-  for (let hit = 0; hit < 7; hit += 1) {
-    await page.keyboard.press('Space');
-    await page.waitForTimeout(520);
-  }
-
-  await expect(page.locator('#result-overlay')).toBeVisible({ timeout: 10_000 });
-  await expect(page.locator('#result-title')).toHaveText('Victory');
-  await expect(page.locator('#enemy-health-label')).toHaveText('0');
-  await page.locator('#play-again-button').click();
-  await expect(page.locator('#result-overlay')).toBeHidden();
-  await expect(page.locator('#match-status')).toHaveText('READY');
-  await expect(page.locator('#player-health-label')).toHaveText('100');
+  await expect(page.locator('#hall-status')).toContainText('KURSI KOSONG');
+  await page.keyboard.press('KeyE');
+  await expect(page.locator('#hall-status')).toContainText('DUDUK · MEJA');
+  await page.keyboard.press('Space'); // tepuk tangan tidak boleh error
+  await page.keyboard.press('KeyE');
+  await expect(page.locator('#hall-status')).not.toContainText('DUDUK · MEJA');
   expect(pageErrors).toEqual([]);
 });
 
-test('mobile viewport renders the arena and touch controls start play', async ({ page }) => {
+test('mobile: kontrol sentuh aula tampil dan joystick menggerakkan avatar', async ({ page }) => {
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
@@ -65,16 +66,17 @@ test('mobile viewport renders the arena and touch controls start play', async ({
 
   const canvas = page.locator('#game-root canvas');
   await expect(canvas).toBeVisible();
+  await page.locator('#name-input').fill('Tamu HP');
+  await page.getByRole('button', { name: /Masuk/ }).click();
   await expect(page.locator('.controls')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Serang' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Duduk atau berdiri' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Tepuk tangan' })).toBeVisible();
   await page.waitForTimeout(500);
 
   const visual = await inspectCanvas(canvas);
   expect(visual.webgl).toBe(true);
-  expect(visual.width).toBeGreaterThan(300);
-  expect(visual.height).toBeGreaterThan(700);
   expect(visual.colors).toBeGreaterThan(3);
-  await page.screenshot({ path: '/tmp/orbit-game-mobile.png' });
+  await page.screenshot({ path: '/tmp/orbit-hall-mobile.png' });
 
   const zone = await page.locator('#joy-zone').boundingBox();
   const startX = zone.x + 100;
@@ -82,8 +84,7 @@ test('mobile viewport renders the arena and touch controls start play', async ({
   await page.mouse.move(startX, startY);
   await page.mouse.down();
   await page.mouse.move(startX, startY - 45, { steps: 4 });
-  await expect(page.locator('#match-status')).toHaveText('FIGHT');
-  await page.waitForTimeout(250);
+  await page.waitForTimeout(400);
   await page.mouse.up();
   expect(pageErrors).toEqual([]);
 });

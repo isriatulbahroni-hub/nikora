@@ -62,8 +62,11 @@ export class NetClient {
     if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(data));
   }
 
-  sendInput(x, z, rot) {
-    this.#send({ t: 'input', x, z, rot, seq: ++this.seq });
+  /** sit: id kursi untuk duduk, null untuk berdiri; undefined = tidak mengubah status duduk. */
+  sendInput(x, z, rot, sit) {
+    const msg = { t: 'input', x, z, rot, seq: ++this.seq };
+    if (sit !== undefined) msg.sit = sit;
+    this.#send(msg);
   }
 
   close() {

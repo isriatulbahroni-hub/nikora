@@ -1,4 +1,5 @@
-import { clampArenaPosition, normalizeMovement } from '../../game/src/game-rules.js';
+import { normalizeMovement } from '../../game/src/game-rules.js';
+import { HALL, SEATS, resolveCollisions } from '../../game/src/hall-layout.js';
 
 export const ROOM_RULES = Object.freeze({
   maxPlayers: 50,
@@ -25,16 +26,17 @@ export class Room {
 
   addPlayer(id, name) {
     if (this.players.has(id) || this.players.size >= this.rules.maxPlayers) return null;
-    const angle = (this.spawnCounter++ * 2.399963) % (Math.PI * 2); // sudut emas, sebar rata
-    const radius = 3 + (this.spawnCounter % 4);
+    // Muncul di lorong pintu masuk (sisi z positif), tersebar dalam baris.
+    const n = this.spawnCounter++;
     const player = {
       id,
       name: sanitizeName(name),
-      x: Math.cos(angle) * radius,
-      z: Math.sin(angle) * radius,
+      x: ((n % 7) - 3) * 1.1,
+      z: 9.4 - Math.floor(n / 7 % 8) * 0.6,
       rot: 0,
       input: { x: 0, z: 0 },
       seq: 0,
+      sit: null, // id kursi bila sedang duduk
     };
     this.players.set(id, player);
     return player;
@@ -54,6 +56,26 @@ export class Room {
     p.input = dir;
     p.rot = ((rot % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
     p.seq = seq;
+    if ('sit' in msg && !this.#applySit(p, msg.sit)) return false;
+    if (p.sit !== null) p.input = { x: 0, z: 0 };
+    return true;
+  }
+
+  /** sit: id kursi (angka bulat) untuk duduk, null untuk berdiri. Server memvalidasi jarak dan kursi kosong. */
+  #applySit(p, sit) {
+    if (sit === null || sit === undefined) {
+      p.sit = null;
+      return true;
+    }
+    if (!Number.isInteger(sit) || sit < 0 || sit >= SEATS.length) return false;
+    if (p.sit === sit) return true;
+    for (const other of this.players.values()) if (other !== p && other.sit === sit) return false;
+    const seat = SEATS[sit];
+    if (Math.hypot(seat.x - p.x, seat.z - p.z) > HALL.sitRange + 0.6) return false; // toleransi latensi
+    p.sit = sit;
+    p.x = seat.x;
+    p.z = seat.z;
+    p.rot = seat.rot;
     return true;
   }
 
@@ -61,7 +83,8 @@ export class Room {
     if (!Number.isFinite(dt) || dt <= 0) return;
     const safeDt = Math.min(dt, 0.25);
     for (const p of this.players.values()) {
-      const next = clampArenaPosition({
+      if (p.sit !== null) continue; // sedang duduk: tidak bergerak
+      const next = resolveCollisions({
         x: p.x + p.input.x * this.rules.playerSpeed * safeDt,
         z: p.z + p.input.z * this.rules.playerSpeed * safeDt,
       });
@@ -78,6 +101,7 @@ export class Room {
       z: +p.z.toFixed(3),
       rot: +p.rot.toFixed(3),
       seq: p.seq,
+      sit: p.sit,
     }));
   }
 }

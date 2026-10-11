@@ -459,3 +459,13 @@ body[data-input=touch] .arena-footer{display:none}
 @keyframes float-up{from{opacity:1;margin-top:0}to{opacity:0;margin-top:-56px}}
 @media (max-height:480px){.dash-btn{width:56px;height:56px;right:calc(116px + env(safe-area-inset-right));bottom:calc(26px + env(safe-area-inset-bottom))}}
 @media (prefers-reduced-motion:reduce){.float-num{animation-duration:.01ms}}
+
+/* ---- Aula virtual (Prototipe 1) ---- */
+.hall-hud{grid-template-columns:auto auto;justify-content:center;gap:16px;width:auto;max-width:calc(100vw - 32px)}
+.hall-guests{color:var(--muted);font:500 .72rem var(--mono);letter-spacing:.06em;white-space:nowrap}
+.name-input{width:100%;box-sizing:border-box;margin:6px 0 14px;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:rgba(14,22,20,.7);color:var(--ink);font:500 1rem var(--mono);outline:none}
+.name-input:focus{border-color:var(--mint)}
+#touch-sit{background:radial-gradient(circle at 35% 30%,#f3d58a,#c28a2b);border-color:rgba(255,240,200,.75)}
+#touch-sit:not(.is-ready){opacity:.55}
+#touch-sit.is-ready{box-shadow:0 0 0 4px rgba(243,213,138,.35),0 6px 18px rgba(0,0,0,.45)}
+.float-num.is-clap{font-size:1.7rem;color:#fff}

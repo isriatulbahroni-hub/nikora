@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { createAvatar } from './avatar.js';
+import { HALL } from './hall-layout.js';
 import { NetClient } from './net-client.js';
 
 const SMOOTHING = 12; // semakin besar, semakin cepat avatar mengejar posisi server
@@ -23,24 +25,6 @@ function colorFor(id) {
   return PALETTE[h % PALETTE.length];
 }
 
-function makeLabel(text) {
-  if (typeof document === 'undefined') return null;
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  ctx.font = 'bold 30px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillRect(0, 8, 256, 48);
-  ctx.fillStyle = '#fff';
-  ctx.fillText(text, 128, 42);
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true }));
-  sprite.scale.set(2, 0.5, 1);
-  sprite.position.y = 2.05;
-  return sprite;
-}
 
 function shortestAngle(from, to) {
   const diff = ((to - from + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
@@ -52,26 +36,11 @@ export function createRemotePlayers(scene) {
   const avatars = new Map();
 
   function build(p) {
-    const color = colorFor(p.id);
-    const group = new THREE.Group();
-    const body = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.34, 0.55, 5, 12),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.55 }),
-    );
-    body.position.y = 0.75;
-    body.castShadow = true;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 18, 14), new THREE.MeshStandardMaterial({ color: 0xf1e3d3 }));
-    head.position.y = 1.37;
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.26, 4), new THREE.MeshStandardMaterial({ color }));
-    nose.rotation.x = -Math.PI / 2;
-    nose.position.set(0, 0.83, -0.48);
-    group.add(body, head, nose);
-    const label = makeLabel(p.name);
-    if (label) group.add(label);
-    group.position.set(p.x, 0, p.z);
+    const group = createAvatar({ color: colorFor(p.id), name: p.name });
+    group.position.set(p.x, p.sit == null ? 0 : HALL.seatedDrop, p.z);
     group.rotation.y = p.rot;
     scene.add(group);
-    return { group, target: { x: p.x, z: p.z, rot: p.rot } };
+    return { group, target: { x: p.x, z: p.z, rot: p.rot, sit: p.sit ?? null } };
   }
 
   return {
@@ -84,7 +53,7 @@ export function createRemotePlayers(scene) {
         if (p.id === selfId) continue;
         seen.add(p.id);
         const existing = avatars.get(p.id);
-        if (existing) existing.target = { x: p.x, z: p.z, rot: p.rot };
+        if (existing) existing.target = { x: p.x, z: p.z, rot: p.rot, sit: p.sit ?? null };
         else avatars.set(p.id, build(p));
       }
       for (const [id, avatar] of avatars) {
@@ -104,6 +73,7 @@ export function createRemotePlayers(scene) {
         group.position.x += (target.x - group.position.x) * k;
         group.position.z += (target.z - group.position.z) * k;
         group.rotation.y += (shortestAngle(group.rotation.y, target.rot) - group.rotation.y) * k;
+        group.position.y += ((target.sit === null ? 0 : HALL.seatedDrop) - group.position.y) * k;
       }
     },
     getAvatar(id) {
@@ -135,10 +105,10 @@ export async function startMultiplayer({ scene, search, name = 'Tamu', NetClient
   return {
     net,
     view,
-    sendInput(x, z, rot, nowMs) {
+    sendInput(x, z, rot, nowMs, sit) {
       if (nowMs - lastSent < SEND_INTERVAL_MS) return;
       lastSent = nowMs;
-      net.sendInput(x, z, rot);
+      net.sendInput(x, z, rot, sit);
     },
     dispose() {
       net.close();
