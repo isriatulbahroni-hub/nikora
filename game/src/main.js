@@ -154,15 +154,15 @@ function screenTexture() {
   canvas.height = 288;
   const ctx = canvas.getContext('2d');
   const gradient = ctx.createLinearGradient(0, 0, 512, 288);
-  gradient.addColorStop(0, '#1d2a3a');
-  gradient.addColorStop(1, '#3a2a40');
+  gradient.addColorStop(0, '#2b2030');
+  gradient.addColorStop(1, '#5a2431');
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, 512, 288);
   ctx.fillStyle = '#f3d58a';
   ctx.textAlign = 'center';
   ctx.font = 'bold 34px sans-serif';
   ctx.fillText('LAYAR SIARAN LANGSUNG', 256, 134);
-  ctx.fillStyle = '#d7dccf';
+  ctx.fillStyle = '#e8dcc4';
   ctx.font = '22px sans-serif';
   ctx.fillText('(placeholder, belum tersambung)', 256, 176);
   return new THREE.CanvasTexture(canvas);
