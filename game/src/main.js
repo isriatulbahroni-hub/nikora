@@ -9,6 +9,7 @@ import {
   isAttackReady,
   normalizeMovement,
 } from './game-rules.js';
+import { startMultiplayer } from './multiplayer-view.js';
 import './style.css';
 
 const root = document.querySelector('#game-root');
@@ -23,6 +24,7 @@ const ui = {
   resultCopy: document.querySelector('#result-copy'),
 };
 
+let multiplayer = null; // aktif hanya jika URL memakai ?server=ws://...
 const FIXED_STEP = 1 / 60;
 const PLAYER_SPEED = 5.2;
 const ENEMY_SPEED = 2.9;
@@ -455,6 +457,8 @@ function updatePlayer(delta, now) {
     playerFighter.group.rotation.y = Math.atan2(-facing.x, -facing.z);
   }
 
+  multiplayer?.sendInput(movement.x, movement.z, playerFighter.group.rotation.y, now * 1000);
+
   const dashing = now < dashUntil;
   const moveX = dashing ? dashDir.x * GAME_RULES.dashSpeed : movement.x * PLAYER_SPEED;
   const moveZ = dashing ? dashDir.z * GAME_RULES.dashSpeed : movement.z * PLAYER_SPEED;
@@ -555,6 +559,8 @@ function renderFrame(time) {
     updateCamera(delta);
     ui.matchStatus.textContent = matchStarted ? 'FIGHT' : 'READY';
   }
+
+  multiplayer?.view.update(delta);
 
   const shakeOffset = new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, 0);
   shake = Math.max(0, shake - delta * 1.4);
@@ -727,6 +733,11 @@ async function startGame() {
     stage = 'input';
     setupInput();
     updateHealthHud();
+    startMultiplayer({ scene, search: window.location.search })
+      .then((session) => {
+        multiplayer = session;
+      })
+      .catch((error) => console.warn('[multiplayer]', error));
     requestAnimationFrame(renderFrame);
   } catch (error) {
     console.error(`[startup:${stage}]`, error);

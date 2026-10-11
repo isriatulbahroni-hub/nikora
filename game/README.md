@@ -27,6 +27,16 @@ Open the local URL printed by Vite. The prototype needs no game server or networ
 
 Defeat the bot before your health reaches zero. The bot approaches and attacks locally; outcomes are not server-authoritative.
 
+## Multiplayer (opsional)
+
+Jalankan server (`cd server && npm install && npm start`), lalu buka game dengan `?server=`:
+
+```
+http://localhost:5173/?server=ws://localhost:8080
+```
+
+Pemain lain tampil sebagai avatar berwarna dengan nama. Tanpa `?server=`, game tetap offline. Jika server tidak terjangkau, game lanjut offline. Batasan: pemain lokal masih disimulasikan di klien (belum ada rekonsiliasi dengan server), jadi ini baru sinkronisasi tampilan; belum diuji di browser sungguhan.
+
 ## Checks
 
 ```bash

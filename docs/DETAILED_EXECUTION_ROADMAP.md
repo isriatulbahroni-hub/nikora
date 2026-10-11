@@ -32,7 +32,7 @@ Atas instruksi pengguna, proyek offline pertama kini berada di `game/` dan memak
 ### Pembaruan status Fase 3 (awal)
 
 - `server/` berisi server WebSocket otoritatif (satu ruang, hingga 50 pemain) dengan 12 tes lulus: sinkronisasi dua klien, input tidak valid, anti speed-hack, payload besar, rate limit, ruang penuh.
-- `game/src/net-client.js` adalah klien jaringan yang dites terhadap server di Node; belum dihubungkan ke render/UI game.
+- `game/src/net-client.js` adalah klien jaringan, dan `game/src/multiplayer-view.js` menampilkan pemain lain di scene (aktif lewat `?server=`). Keduanya dites terhadap server di Node (14 tes game lulus), tetapi belum diuji di browser sungguhan.
 - Belum ada: reconnect, simulasi latency/packet loss, akun, uji browser. Gate Fase 2 dan Fase 3 belum lulus.
 
 ### Aturan gate
