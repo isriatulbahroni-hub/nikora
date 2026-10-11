@@ -1,6 +1,6 @@
-# NEXORA Offline Arena Prototype
+# ORBIT Offline Arena Prototype
 
-An isolated, local-only 3D gameplay prototype. It is separate from the NEXORA landing page and has no multiplayer, account, or backend integration.
+An isolated, local-only 3D gameplay prototype. It is separate from the ORBIT landing page and has no multiplayer, account, or backend integration.
 
 ## Requirements
 

@@ -37,7 +37,7 @@ test('desktop arena renders, resolves an offline match, and restarts', async ({ 
   expect(visual.width).toBeGreaterThan(900);
   expect(visual.height).toBeGreaterThan(500);
   expect(visual.colors).toBeGreaterThan(3);
-  await page.screenshot({ path: '/tmp/nexora-game-desktop.png' });
+  await page.screenshot({ path: '/tmp/orbit-game-desktop.png' });
 
   await page.keyboard.down('KeyW');
   await page.waitForTimeout(1_300);
@@ -74,7 +74,7 @@ test('mobile viewport renders the arena and touch controls start play', async ({
   expect(visual.width).toBeGreaterThan(300);
   expect(visual.height).toBeGreaterThan(700);
   expect(visual.colors).toBeGreaterThan(3);
-  await page.screenshot({ path: '/tmp/nexora-game-mobile.png' });
+  await page.screenshot({ path: '/tmp/orbit-game-mobile.png' });
 
   const upButton = page.locator('[data-direction="up"]');
   const bounds = await upButton.boundingBox();

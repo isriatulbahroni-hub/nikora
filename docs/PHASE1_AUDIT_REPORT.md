@@ -1,4 +1,4 @@
-# NEXORA — Laporan Audit Fase 1
+# ORBIT — Laporan Audit Fase 1
 
 > Status: **draft untuk review pemilik**. Gate Fase 1 belum disetujui. Dokumen ini hanya mencatat apa yang diverifikasi; tidak menyatakan gate lulus.
 

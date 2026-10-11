@@ -1,4 +1,4 @@
-# NEXORA — Detailed Execution Roadmap
+# ORBIT — Detailed Execution Roadmap
 
 > Dokumen turunan dari [master blueprint](../README.md). Dokumen ini merinci urutan eksekusi Fase 0–14; bukan spesifikasi modul lengkap, backlog siap sprint, jadwal bertanggal, atau bukti bahwa fitur telah dibuat.
 

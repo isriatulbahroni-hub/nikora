@@ -248,7 +248,7 @@ function createScene() {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.18;
-  renderer.domElement.setAttribute('aria-label', 'Tampilan game arena 3D NEXORA');
+  renderer.domElement.setAttribute('aria-label', 'Tampilan game arena 3D ORBIT');
   root.append(renderer.domElement);
 
   const hemisphere = new THREE.HemisphereLight(0xe3f4dd, 0x26332b, 2.05);

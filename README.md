@@ -1,4 +1,4 @@
-# NEXORA — Master Product Blueprint
+# ORBIT — Master Product Blueprint
 
 > Dokumen ini adalah rancangan induk dan roadmap produk, bukan bukti bahwa seluruh fitur telah diimplementasikan atau diuji. Prototipe game offline Fase 2 kini berada di `game/`; unit test dan production build lulus, tetapi audit implementasi penuh serta browser E2E/manual belum selesai dan gate Fase 2 belum lulus.
 
@@ -6,13 +6,13 @@ One digital universe. Infinite experiences.
 
 ## Play, explore, create, work, and grow in one living ecosystem.
 
- NEXORA connects gaming, social interaction, creator tools, events, digital commerce, learning, and virtual communities into one unified identity-driven platform.
+ ORBIT connects gaming, social interaction, creator tools, events, digital commerce, learning, and virtual communities into one unified identity-driven platform.
 
 Vision
 
 ## Not just a platform — a digital civilization.
 
- NEXORA is designed to unify entertainment, communication, learning, business, and self-expression through a single interoperable digital identity, shared economy, and modular world infrastructure.
+ ORBIT is designed to unify entertainment, communication, learning, business, and self-expression through a single interoperable digital identity, shared economy, and modular world infrastructure.
 
 Core pillars
 
@@ -92,7 +92,7 @@ Platform architecture
 
 ### Social layer
 
- Messages, voice rooms, friend systems, guilds, communities, matching, and discovery are built as the social backbone of NEXORA.
+ Messages, voice rooms, friend systems, guilds, communities, matching, and discovery are built as the social backbone of ORBIT.
 
 ### Creator tools
 
@@ -100,7 +100,7 @@ Platform architecture
 
 ### Events platform
 
- NEXORA supports live performances, ceremonies, meetups, educational events, corporate sessions, and large-scale virtual gatherings.
+ ORBIT supports live performances, ceremonies, meetups, educational events, corporate sessions, and large-scale virtual gatherings.
 
 ### Digital economy
 
@@ -146,7 +146,7 @@ Bagian III · Struktur pengalaman pengguna
 
  5.1 · Pengunjung tanpa akun
 
-1. Membuka halaman NEXORA.
+1. Membuka halaman ORBIT.
 
 1. Melihat dunia atau acara yang tersedia.
 
@@ -654,7 +654,7 @@ Financial integrity
 
 ## Security and privacy baseline.
 
-Daftar minimum kontrol keamanan dan privasi NEXORA:
+Daftar minimum kontrol keamanan dan privasi ORBIT:
 
  Identity, access & application security
 
@@ -713,7 +713,7 @@ Real-payment readiness
  Contoh rancangan monorepo untuk layanan bersama dan aplikasi web. Engine game dapat ditempatkan dalam repository terpisah jika workflow build dan asetnya berbeda secara signifikan.
 
 ```text
-nexora/
+orbit/
 ├── apps/
 │   ├── web/
 │   ├── creator-studio/
@@ -1894,7 +1894,7 @@ Bagian XIII · Prioritas MVP
 
 ## 19. Apa yang harus dibangun pertama kali?
 
- MVP bukan NEXORA versi kecil yang hanya memiliki halaman beranda. MVP harus membuktikan satu pengalaman yang benar-benar bekerja dari awal hingga akhir.
+ MVP bukan ORBIT versi kecil yang hanya memiliki halaman beranda. MVP harus membuktikan satu pengalaman yang benar-benar bekerja dari awal hingga akhir.
 
  MVP A · Game foundation
 
@@ -1974,7 +1974,7 @@ Bagian XIV · Kaitan dengan proyek yang sudah ada
 
 ## 20. Pemisahan proyek dan penggunaan ulang
 
-NEXORA harus diperlakukan sebagai proyek berbeda dari website undangan yang telah ada.
+ORBIT harus diperlakukan sebagai proyek berbeda dari website undangan yang telah ada.
 
  Proyek undangan
 
@@ -2004,7 +2004,7 @@ Menjadi tempat pengembangan:
 
 - Simulasi multiplayer
 
- NEXORA Core
+ ORBIT Core
 
 Diperkenalkan secara bertahap ketika kebutuhan berikut sudah jelas:
 
@@ -2164,7 +2164,7 @@ Privacy, moderation, accessibility, and operating cost discipline are part of th
 
 Audience map
 
-## Who uses NEXORA and what do they need most?
+## Who uses ORBIT and what do they need most?
 
  Pemain kasual
 
@@ -2208,9 +2208,9 @@ Moderasi, keamanan, dukungan, dan pengelolaan platform yang menjaga kualitas eko
 
 Module 1
 
-## NEXORA Core
+## ORBIT Core
 
- Fondasi bersama seluruh platform. Semua pengalaman NEXORA mulai dari satu identitas digital yang stabil, konsisten, dan dapat digunakan lintas mode, dunia, komunitas, dan layanan.
+ Fondasi bersama seluruh platform. Semua pengalaman ORBIT mulai dari satu identitas digital yang stabil, konsisten, dan dapat digunakan lintas mode, dunia, komunitas, dan layanan.
 
 - Identitas pengguna
 
@@ -2240,9 +2240,9 @@ Module 1
 
 Expected outcome
 
-### One NEXORA identity for every world.
+### One ORBIT identity for every world.
 
- Pengguna memiliki satu identitas NEXORA tanpa harus membuat akun berbeda untuk setiap dunia.
+ Pengguna memiliki satu identitas ORBIT tanpa harus membuat akun berbeda untuk setiap dunia.
 
 Module 2
 
@@ -2424,7 +2424,7 @@ Community design
 
 ### Friendship, group dynamics, and safety in one layer.
 
- Komunitas dalam NEXORA harus terasa hidup, terhubung, dan tetap aman untuk semua kelompok pengguna.
+ Komunitas dalam ORBIT harus terasa hidup, terhubung, dan tetap aman untuk semua kelompok pengguna.
 
 Module 7
 
@@ -2508,7 +2508,7 @@ Module 9
 
 ## AI Studio
 
- AI bekerja sebagai asisten yang mempercepat produksi, pengelolaan, dan penyajian pengalaman di seluruh ekosistem NEXORA.
+ AI bekerja sebagai asisten yang mempercepat produksi, pengelolaan, dan penyajian pengalaman di seluruh ekosistem ORBIT.
 
 - Asisten desain dunia
 
@@ -2584,7 +2584,7 @@ Module 11
 
 ## Marketplace
 
- Menyediakan kanal perdagangan digital untuk aset, pengalaman, dan layanan yang dibuat oleh komunitas NEXORA.
+ Menyediakan kanal perdagangan digital untuk aset, pengalaman, dan layanan yang dibuat oleh komunitas ORBIT.
 
 - Pakaian avatar
 
@@ -2694,7 +2694,7 @@ Module 14
 
 ## Admin & Operations
 
- Memberikan kendali operasional agar ekosistem NEXORA dapat berjalan dengan aman, terukur, dan sesuai kebijakan yang berlaku.
+ Memberikan kendali operasional agar ekosistem ORBIT dapat berjalan dengan aman, terukur, dan sesuai kebijakan yang berlaku.
 
 - Pengelolaan pengguna
 
@@ -2734,7 +2734,7 @@ Module 15
 
 ## Developer Platform
 
- Menyediakan fondasi dan perangkat bagi pihak ketiga untuk membangun integrasi NEXORA secara aman, konsisten, dan terkontrol.
+ Menyediakan fondasi dan perangkat bagi pihak ketiga untuk membangun integrasi ORBIT secara aman, konsisten, dan terkontrol.
 
 - Dokumentasi API
 
@@ -2792,7 +2792,7 @@ Penutup
 
 ## Visi besar, eksekusi terukur
 
- NEXORA dapat menjadi platform yang menghubungkan game, dunia virtual, AI, komunitas, acara, dan ekonomi kreator. Namun, tidak ada alasan untuk membangun semua sistem itu sekaligus sebelum kita mengetahui bahwa fondasi teknis dan pengalaman inti benar-benar berfungsi.
+ ORBIT dapat menjadi platform yang menghubungkan game, dunia virtual, AI, komunitas, acara, dan ekonomi kreator. Namun, tidak ada alasan untuk membangun semua sistem itu sekaligus sebelum kita mengetahui bahwa fondasi teknis dan pengalaman inti benar-benar berfungsi.
 
  Ukuran keberhasilan pertama bukan banyaknya menu atau banyaknya fitur. Ukurannya adalah apakah pengguna bisa masuk ke dunia, melakukan sesuatu yang menyenangkan, berinteraksi dengan orang lain, dan ingin kembali.
 
