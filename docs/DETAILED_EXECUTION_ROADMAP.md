@@ -34,7 +34,7 @@ Atas instruksi pengguna, proyek offline pertama kini berada di `game/` dan memak
 - `server/` berisi server WebSocket otoritatif (satu ruang, hingga 50 pemain) dengan 12 tes lulus: sinkronisasi dua klien, input tidak valid, anti speed-hack, payload besar, rate limit, ruang penuh.
 - `game/src/net-client.js` adalah klien jaringan, dan `game/src/multiplayer-view.js` menampilkan pemain lain di scene (aktif lewat `?server=`). Keduanya dites terhadap server di Node (14 tes game lulus), tetapi belum diuji di browser sungguhan.
 - `game/villa.html` + `src/villa-layout.js` + `src/villa-world.js`: dunia NIKORA Wedding Villa yang bisa dijelajahi (aula, kolam, taman, restoran, dapur, spa, suite, bridal, lobby, 8 kamar tamu, parkir). Server memakai denah dan tabrakan yang sama (`WORLD=villa`). Diuji di Chromium headless: berjalan dari gerbang ke aula lewat jembatan, dinding menahan pemain, dua pemain saling melihat lewat server.
-- Belum ada: reconnect, simulasi latency/packet loss, akun, lantai 2, aksi duduk, suara, uji di perangkat sungguhan. Gate Fase 2 dan Fase 3 belum lulus secara resmi.
+- Vila juga punya 210 titik duduk/tidur (kursi aula, restoran, sofa lobi, 10 kasur) yang divalidasi server, serta suara dekat LiveKit. Belum ada: reconnect, simulasi latency/packet loss, akun, lantai 2, chat teks di vila, uji suara dengan dua perangkat sungguhan. Gate Fase 2 dan Fase 3 belum lulus secara resmi.
 
 ### Aturan gate
 

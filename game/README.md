@@ -28,7 +28,9 @@ Dunia jelajah berdasarkan desain NIKORA Wedding Villa: aula pernikahan dengan pe
 
 Denah ada sebagai data di `src/villa-layout.js` (ruangan, pintu, properti) sehingga mudah ditambah atau diubah; logika tabrakannya dipakai bersama oleh klien dan server. Dinding sisi selatan pemain direndahkan otomatis supaya isi ruangan tetap terlihat.
 
-Belum ada: lantai 2 dan tangga, aksi duduk, atap, interior detail (furnitur lengkap, tekstur), suara.
+Aksi: tombol emas di kanan bawah muncul di dekat kursi aula, kursi restoran, sofa lobi, atau tempat tidur (Duduk / Tidur / Berdiri; tombol E di keyboard). Bergerak = berdiri otomatis. Pemain lain melihat posisi duduk dan berbaringmu. Suara dekat memakai LiveKit seperti di aula (tombol 🎙, tombol V); volume mengikuti jarak. Peta tersembunyi secara bawaan; tombol 🗺 atau tombol M menampilkannya.
+
+Belum ada: lantai 2 dan tangga, atap, interior detail (furnitur lengkap, tekstur), chat teks di vila.
 
 Dengan multiplayer: jalankan server `WORLD=villa npm start` (di folder `server`), lalu buka `/villa.html?server=ws://localhost:8080&name=Ron`.
 

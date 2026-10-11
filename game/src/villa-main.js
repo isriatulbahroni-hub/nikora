@@ -1,8 +1,9 @@
 import * as THREE from 'three';
-import { createAvatar } from './avatar.js';
+import { applyPose, createAvatar } from './avatar.js';
 import { loadConfig, toWire } from './avatar-config.js';
 import { startMultiplayer } from './multiplayer-view.js';
-import { getVillaWorld, roomAt } from './villa-layout.js';
+import { findNearestSpot, getVillaWorld, roomAt, spotPose } from './villa-layout.js';
+import { VoiceChat } from './voice.js';
 import { buildVillaWorld } from './villa-world.js';
 
 const PLAYER_SPEED = 5.2; // harus sama dengan server (ROOM_RULES.playerSpeed)
@@ -40,13 +41,19 @@ function readInput() {
   return len > 1 ? { x: x / len, z: z / len } : { x, z };
 }
 
+const hooks = { action: () => {}, map: () => {}, mic: () => {} };
+
 function setupInput(canvas, camState) {
   addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
     if (k in KEYS) {
       held.add(k);
       e.preventDefault();
-    }
+    } else if (!e.repeat && (k === 'e' || k === ' ')) {
+      hooks.action();
+      e.preventDefault();
+    } else if (!e.repeat && k === 'm') hooks.map();
+    else if (!e.repeat && k === 'v') hooks.mic();
   });
   addEventListener('keyup', (e) => held.delete(e.key.toLowerCase()));
   addEventListener('blur', () => held.clear());
@@ -190,16 +197,19 @@ async function start() {
       return null;
     }
   })();
-  const savedName = (() => {
+  const store = (key, value) => {
     try {
-      return storage?.getItem('orbit-name');
+      if (value === undefined) return storage?.getItem(key) ?? null;
+      storage?.setItem(key, value);
     } catch {
-      return null;
+      /* penyimpanan tidak tersedia */
     }
-  })();
-  const name = (params.get('name') || savedName || `Tamu-${Math.floor(Math.random() * 900 + 100)}`).replace(/[<>]/g, '').slice(0, 24);
+    return null;
+  };
+  const name = (params.get('name') || store('orbit-name') || `Tamu-${Math.floor(Math.random() * 900 + 100)}`).replace(/[<>]/g, '').slice(0, 24);
   const avatarConfig = loadConfig(storage); // avatar yang sama dengan yang dibuat di aula
   const avatar = createAvatar({ config: avatarConfig, name });
+  avatar.rotation.order = 'YXZ'; // miring (tidur) dulu, lalu arah hadap
   scene.add(avatar);
   const me = { x: world.spawn.x, z: world.spawn.z };
   const spawn = world.constrain(me);
@@ -207,21 +217,130 @@ async function start() {
   me.z = spawn.z;
   camera.position.set(me.x, 14, me.z + 11);
 
+  // ---------- duduk / tidur ----------
+  let seat = null; // id titik duduk/tidur yang sedang dipakai
+  let seatSince = 0;
+  let facing = 0;
+  const actBtn = $('act-button');
+  const poseFor = (id) => {
+    const spot = world.spots[id];
+    return spot ? spotPose(spot) : null;
+  };
   let multiplayer = null;
+  const occupiedSpots = () => {
+    const set = new Set();
+    if (multiplayer) for (const p of multiplayer.net.players) if (p.id !== multiplayer.net.id && p.sit != null) set.add(p.sit);
+    return set;
+  };
+  const nearestSpot = () => (seat === null ? findNearestSpot(me, world.spots, occupiedSpots()) : null);
+  const standUp = () => {
+    if (seat === null) return;
+    seat = null;
+  };
+  const sitDown = (now) => {
+    const spot = nearestSpot();
+    if (!spot) return false;
+    seat = spot.id;
+    seatSince = now;
+    me.x = spot.x;
+    me.z = spot.z;
+    facing = spot.rot;
+    return true;
+  };
+  hooks.action = () => (seat !== null ? standUp() : sitDown(performance.now()));
+  actBtn.addEventListener('click', () => hooks.action());
+  const setActLabel = (() => {
+    let last = '';
+    return (text) => {
+      if (text === last) return;
+      last = text;
+      actBtn.hidden = !text;
+      if (text) actBtn.textContent = text;
+    };
+  })();
+
+  // ---------- peta (tersembunyi secara bawaan) ----------
+  const mapBtn = $('map-button');
+  const mapCanvas = $('minimap');
+  const setMap = (on) => {
+    mapCanvas.hidden = !on;
+    mapBtn.setAttribute('aria-pressed', String(on));
+    mapBtn.setAttribute('aria-label', on ? 'Sembunyikan peta' : 'Tampilkan peta');
+    store('villa-map', on ? '1' : '0');
+  };
+  hooks.map = () => setMap(mapCanvas.hidden);
+  mapBtn.addEventListener('click', () => hooks.map());
+  setMap(store('villa-map') === '1');
+
+  // ---------- suara dekat (LiveKit), sama seperti di aula ----------
+  let voice = null;
+  let voiceBusy = false;
+  const toastEl = $('toast');
+  let toastTimer = 0;
+  const toast = (text) => {
+    toastEl.textContent = text;
+    toastEl.style.display = 'block';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toastEl.style.display = 'none';
+    }, 3500);
+  };
+  const micBtn = $('mic-button');
+  const toggleMic = async () => {
+    if (voiceBusy || !voice?.room) return;
+    voiceBusy = true;
+    try {
+      await voice.setMic(!voice.micOn);
+    } catch (error) {
+      console.warn('[voice]', error);
+      micBtn.setAttribute('aria-pressed', 'false');
+      toast('Mikrofon tidak bisa dipakai. Izinkan akses mikrofon di browser.');
+    } finally {
+      voiceBusy = false;
+    }
+  };
+  hooks.mic = toggleMic;
+  micBtn.addEventListener('click', toggleMic);
+  function setupVoice(session) {
+    if (!session) return;
+    session.net.on('voice', async (msg) => {
+      if (!msg.enabled || voice) return;
+      voice = new VoiceChat();
+      voice.onChange = (on) => {
+        micBtn.setAttribute('aria-pressed', String(on));
+        micBtn.setAttribute('aria-label', on ? 'Matikan mikrofon' : 'Nyalakan mikrofon');
+      };
+      try {
+        if (msg.room) await voice.attach(msg.room); // transport LiveKit: Room sudah tersambung
+        else await voice.connect({ url: msg.url, token: msg.token });
+        micBtn.hidden = false;
+        // Browser memblokir audio sebelum ada sentuhan: aktifkan pada sentuhan pertama.
+        window.addEventListener('pointerdown', () => voice?.room?.startAudio().catch(() => {}), { once: true });
+      } catch (error) {
+        console.warn('[voice] gagal tersambung:', error);
+        voice?.dispose();
+        voice = null;
+      }
+    });
+    session.net.requestVoiceToken();
+  }
+
+  // ---------- jaringan ----------
   let netStatus = 'Menyambung…'; // alasan ditampilkan bila gagal terhubung
-  startMultiplayer({ scene, search: window.location.search, name, world: 'villa', onError: (m) => { netStatus = `Offline · ${m}`; } })
+  startMultiplayer({ scene, search: window.location.search, name, world: 'villa', poseFor, onError: (m) => { netStatus = `Offline · ${m}`; } })
     .then((session) => {
       multiplayer = session;
       if (!session && netStatus === 'Menyambung…') netStatus = 'Offline';
       session?.net.setAvatar?.(toWire(avatarConfig));
+      setupVoice(session);
     })
     .catch((error) => console.warn('[multiplayer]', error));
 
   const drawMap = createMinimap();
   let last = performance.now();
-  let facing = 0;
   let walkClock = 0;
   let placeId = '';
+  let voiceTick = 0;
 
   function frame(time) {
     requestAnimationFrame(frame);
@@ -229,7 +348,8 @@ async function start() {
     last = time;
 
     const input = readInput();
-    const moving = input.x !== 0 || input.z !== 0;
+    if (seat !== null && Math.hypot(input.x, input.z) > 0.35) standUp(); // bergerak = berdiri
+    const moving = seat === null && (input.x !== 0 || input.z !== 0);
     if (moving) {
       const next = world.move(me, input.x * PLAYER_SPEED * delta, input.z * PLAYER_SPEED * delta);
       me.x = next.x;
@@ -239,17 +359,40 @@ async function start() {
     }
 
     if (multiplayer) {
-      multiplayer.sendInput(input.x, input.z, facing, time, null, { x: me.x, z: me.z });
+      multiplayer.sendInput(seat === null ? input.x : 0, seat === null ? input.z : 0, facing, time, seat, { x: me.x, z: me.z });
       const mine = multiplayer.net.players.find((p) => p.id === multiplayer.net.id);
-      if (mine && Math.hypot(mine.x - me.x, mine.z - me.z) > SNAP_DISTANCE) {
+      if (mine && seat === null && Math.hypot(mine.x - me.x, mine.z - me.z) > SNAP_DISTANCE) {
         me.x = mine.x;
         me.z = mine.z;
       }
-      multiplayer.view.update(delta);
+      if (mine && seat !== null && time - seatSince > 800 && mine.sit !== seat) standUp(); // server menolak
+      multiplayer.view.update(delta, time / 1000);
+      if (voice && time - voiceTick > 100) {
+        voiceTick = time;
+        voice.update(me, multiplayer.net.players);
+        const speaking = voice.speaking();
+        micBtn.classList.toggle('is-speaking', voice.micOn && speaking.has(multiplayer.net.id));
+      }
     }
 
-    avatar.position.set(me.x, moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0, me.z);
-    avatar.rotation.y = facing;
+    // avatar lokal: berjalan, duduk, atau berbaring
+    const pose = seat !== null ? poseFor(seat) : null;
+    const k = 1 - Math.exp(-14 * delta);
+    if (pose) {
+      avatar.position.x += (pose.x - avatar.position.x) * k;
+      avatar.position.z += (pose.z - avatar.position.z) * k;
+      avatar.position.y += (pose.y - avatar.position.y) * k;
+      avatar.userData.tilt = (avatar.userData.tilt ?? 0) + (pose.tilt - (avatar.userData.tilt ?? 0)) * k;
+      avatar.rotation.y = pose.rotY;
+    } else {
+      avatar.position.x = me.x;
+      avatar.position.z = me.z;
+      avatar.position.y += ((moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0) - avatar.position.y) * Math.max(k, 0.5);
+      avatar.userData.tilt = (avatar.userData.tilt ?? 0) * (1 - k);
+      avatar.rotation.y = facing;
+    }
+    applyPose(avatar, moving ? 'walk' : null, time / 1000, delta);
+    avatar.rotation.x += avatar.userData.tilt ?? 0; // applyPose menimpa rotation.x, tambahkan kemiringan tidur sesudahnya
 
     const fit = Math.min(1.9, Math.max(1, 1.45 / camera.aspect)) * camState.zoom;
     const desired = new THREE.Vector3(me.x + 1.5 * fit, 15 * fit, me.z + 11.5 * fit);
@@ -258,19 +401,26 @@ async function start() {
     built.update(me.x, me.z, delta);
     renderer.render(scene, camera);
 
+    const near = nearestSpot();
+    setActLabel(seat !== null ? 'Berdiri' : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : '');
+
     const place = roomAt(me.x, me.z);
     if (place.id !== placeId) {
       placeId = place.id;
       $('place').textContent = place.name;
     }
     const others = multiplayer ? multiplayer.net.players.filter((p) => p.id !== multiplayer.net.id) : [];
-    drawMap(me, others);
+    if (!mapCanvas.hidden) drawMap(me, others);
     $('online').textContent = multiplayer ? `Online: ${others.length + 1}` : netStatus;
   }
   requestAnimationFrame(frame);
 
   window.__villa = {
-    state: () => ({ x: me.x, z: me.z, place: roomAt(me.x, me.z), online: !!multiplayer, others: multiplayer ? multiplayer.view.count : 0 }),
+    state: () => ({
+      x: me.x, z: me.z, place: roomAt(me.x, me.z), online: !!multiplayer, others: multiplayer ? multiplayer.view.count : 0,
+      seat, action: actBtn.hidden ? '' : actBtn.textContent, mapVisible: !mapCanvas.hidden,
+    }),
+    remotes: () => (multiplayer ? multiplayer.view.avatarGroups().map((g) => ({ y: g.position.y, rx: g.rotation.x, ry: g.rotation.y })) : []),
     // hanya untuk pengujian; dalam mode multiplayer server tetap otoritatif dan akan mengoreksi posisi
     teleport: (x, z) => {
       const p = world.constrain({ x, z });

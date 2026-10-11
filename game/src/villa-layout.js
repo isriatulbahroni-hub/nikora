@@ -7,6 +7,8 @@ export const WALL_HEIGHT = 2.6;
 export const PLAYER_RADIUS = 0.4;
 export const BOUNDS = Object.freeze({ minX: -42, maxX: 42, minZ: -26, maxZ: 42 });
 export const SPAWN = Object.freeze({ x: 0, z: 37 });
+export const SIT_RANGE = 1.9; // jarak maksimum ke kursi/sofa/tempat tidur agar boleh duduk atau tidur
+export const SEATED_DROP = -0.3; // avatar duduk sedikit lebih rendah
 
 const GUEST_COLS = [16, 21.5, 27, 32.5, 38];
 
@@ -73,6 +75,7 @@ export const PROP_SPECS = Object.freeze({
   tub: { hx: 1.5, hz: 1.0 },
   car: { hx: 0.95, hz: 2.1 },
   palm: { hx: 0.25, hz: 0.25 },
+  sofa: { hx: 1.1, hz: 0.5 },
 });
 
 function buildProps() {
@@ -87,6 +90,7 @@ function buildProps() {
   props.push({ type: 'bed', x: 32, z: -17.8 }); // bridal room
   props.push({ type: 'tub', x: -34, z: -17 }); // spa
   props.push({ type: 'desk', x: 20, z: -17.5 }); // reception
+  props.push({ type: 'sofa', x: 17.5, z: -7 }, { type: 'sofa', x: 22.5, z: -7 }); // lobby, menghadap utara
   for (const x of [-32, -20]) for (const z of [8, 16]) props.push({ type: 'table', x, z }); // restoran
   for (const z of [22.5, 26.5]) props.push({ type: 'counter', x: -31, z: z + 0 }, { type: 'counter', x: -28, z: z + 0 }); // dapur
   for (const x of [22, 26, 30, 34]) for (const z of [30, 37]) props.push({ type: 'car', x, z }); // parkir
@@ -100,6 +104,57 @@ function buildProps() {
 }
 
 export const HALL_SEATING = Object.freeze({ z0: -17, z1: -6, rowStep: 1.3, xInner: 2.4, xOuter: 11.2, colStep: 0.9 });
+
+/** Posisi semua kursi tamu di aula pernikahan (dua blok, kiri dan kanan lorong). */
+export function hallChairPositions() {
+  const { z0, z1, rowStep, xInner, xOuter, colStep } = HALL_SEATING;
+  const out = [];
+  for (let z = z0; z <= z1 + 1e-6; z += rowStep) {
+    for (let x = xInner; x <= xOuter + 1e-6; x += colStep) out.push({ x, z }, { x: -x, z });
+  }
+  return out;
+}
+
+// Titik duduk/tidur. id = indeks di larik ini (sama di klien dan server).
+// rot mengikuti avatar: 0 = menghadap utara (-z). Untuk 'sleep', rot = arah kepala.
+function buildSpots(props) {
+  const spots = [];
+  for (const c of hallChairPositions()) spots.push({ kind: 'sit', x: c.x, z: c.z, rot: 0 });
+  for (const t of props.filter((p) => p.type === 'table')) {
+    for (const [dx, dz] of [[1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]]) {
+      spots.push({ kind: 'sit', x: t.x + dx, z: t.z + dz, rot: Math.atan2(dx, dz) }); // menghadap meja
+    }
+  }
+  for (const s of props.filter((p) => p.type === 'sofa')) {
+    spots.push({ kind: 'sit', x: s.x - 0.55, z: s.z, rot: 0 }, { kind: 'sit', x: s.x + 0.55, z: s.z, rot: 0 });
+  }
+  for (const b of props.filter((p) => p.type === 'bed')) {
+    spots.push({ kind: 'sleep', x: b.x, z: b.z, rot: b.z < 10 ? 0 : Math.PI }); // kepala di sisi papan kepala
+  }
+  return spots.map((s, id) => ({ id, ...s }));
+}
+
+/** Posisi/arah avatar saat memakai titik duduk atau tidur (tidur = berbaring telentang). */
+export function spotPose(spot) {
+  if (spot.kind === 'sleep') {
+    return { x: spot.x + 0.83 * Math.sin(spot.rot), z: spot.z + 0.83 * Math.cos(spot.rot), y: 0.9, rotY: spot.rot, tilt: -Math.PI / 2 };
+  }
+  return { x: spot.x, z: spot.z, y: SEATED_DROP, rotY: spot.rot, tilt: 0 };
+}
+
+export function findNearestSpot(pos, spots, occupied = new Set(), range = SIT_RANGE) {
+  let best = null;
+  let bestDistance = range;
+  for (const s of spots) {
+    if (occupied.has(s.id)) continue;
+    const d = Math.hypot(s.x - pos.x, s.z - pos.z);
+    if (d <= bestDistance) {
+      best = s;
+      bestDistance = d;
+    }
+  }
+  return best;
+}
 
 function splitEdge(orient, coord, lo, hi) {
   const half = WALL_THICKNESS / 2;
@@ -240,6 +295,8 @@ export function getVillaWorld() {
     doors: DOORS,
     walls,
     props,
+    spots: buildSpots(props),
+    sitRange: SIT_RANGE,
     colliders,
     constrain: (pos) => resolveMove(pos, PLAYER_RADIUS, colliders, BOUNDS),
     move: (pos, dx, dz) => moveWithCollisions(pos, dx, dz, PLAYER_RADIUS, colliders, BOUNDS),

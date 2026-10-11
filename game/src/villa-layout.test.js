@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  BOUNDS, PLAYER_RADIUS, ROOMS, DOORS, SPAWN, getVillaWorld, isWalkable, moveWithCollisions, resolveMove, roomAt,
+  BOUNDS, PLAYER_RADIUS, ROOMS, DOORS, SPAWN, SIT_RANGE, findNearestSpot, getVillaWorld, isWalkable, moveWithCollisions, resolveMove, roomAt, spotPose,
 } from './villa-layout.js';
 
 const world = getVillaWorld();
@@ -88,4 +88,44 @@ test('roomAt memberi nama lokasi yang benar', () => {
 test('jumlah ruangan dan kamar tamu sesuai rancangan', () => {
   assert.equal(ROOMS.filter((r) => r.kind === 'guest').length, 8);
   assert.ok(world.colliders.length > 50);
+});
+
+test('titik duduk/tidur: id berurutan, ada kursi aula, restoran, sofa, dan 10 kasur', () => {
+  const spots = world.spots;
+  assert.ok(spots.every((s, i) => s.id === i));
+  assert.equal(spots.filter((x) => x.kind === 'sleep').length, 10);
+  assert.ok(spots.filter((x) => x.kind === 'sit').length >= 190);
+  for (const s of spots) assert.ok(Number.isFinite(s.x) && Number.isFinite(s.z) && Number.isFinite(s.rot));
+});
+
+test('setiap kasur bisa didekati (ada titik bebas dalam jangkauan) dan setiap kursi aula dalam batas dunia', () => {
+  for (const s of world.spots.filter((x) => x.kind === 'sleep')) {
+    let reachable = false;
+    for (let a = 0; a < 16 && !reachable; a++) {
+      const px = s.x + Math.cos((a / 16) * Math.PI * 2) * 1.5;
+      const pz = s.z + Math.sin((a / 16) * Math.PI * 2) * 1.5;
+      reachable = ok(px, pz) && Math.hypot(px - s.x, pz - s.z) <= SIT_RANGE;
+    }
+    assert.ok(reachable, `kasur di (${s.x},${s.z}) tidak bisa didekati`);
+  }
+  for (const s of world.spots) assert.ok(s.x > BOUNDS.minX && s.x < BOUNDS.maxX && s.z > BOUNDS.minZ && s.z < BOUNDS.maxZ);
+});
+
+test('findNearestSpot melewati yang terpakai dan menghormati jangkauan', () => {
+  const chair = world.spots[0];
+  const near = { x: chair.x, z: chair.z + 0.1 };
+  assert.equal(findNearestSpot(near, world.spots).id, chair.id);
+  const other = findNearestSpot(near, world.spots, new Set([chair.id]));
+  assert.notEqual(other?.id, chair.id);
+  assert.equal(findNearestSpot({ x: 0, z: 37 }, world.spots), null);
+});
+
+test('spotPose: duduk lebih rendah, tidur berbaring dengan kepala ke papan kepala', () => {
+  const sit = spotPose({ kind: 'sit', x: 1, z: 2, rot: 0 });
+  assert.ok(sit.y < 0 && sit.tilt === 0);
+  const bed = world.spots.find((s) => s.kind === 'sleep' && s.z < 10);
+  const p = spotPose(bed);
+  assert.equal(p.tilt, -Math.PI / 2);
+  assert.ok(p.y > 0.7);
+  assert.ok(p.z > bed.z, 'kaki di sisi selatan, kepala di utara');
 });

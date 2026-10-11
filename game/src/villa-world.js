@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { HALL_SEATING, WALL_HEIGHT, WALL_THICKNESS } from './villa-layout.js';
+import { HALL_SEATING, WALL_HEIGHT, WALL_THICKNESS, hallChairPositions } from './villa-layout.js';
 
 const FLOOR_COLORS = {
   hall: 0xece4d4, lobby: 0xd9cbb0, suite: 0xa9805a, spa: 0xa6cdc8, bridal: 0xecd2da,
@@ -140,13 +140,8 @@ function buildHall(parent) {
   parent.add(instanced(new THREE.SphereGeometry(1, 10, 8), standard(0xffffff), flowers));
 
   // kursi tamu
-  const { z0, z1: zEnd, rowStep, xInner, xOuter, colStep } = HALL_SEATING;
-  const seats = [];
-  for (let z = z0; z <= zEnd + 1e-6; z += rowStep) {
-    for (let x = xInner; x <= xOuter + 1e-6; x += colStep) {
-      seats.push({ x, z }, { x: -x, z });
-    }
-  }
+  const { z0, z1: zEnd, rowStep } = HALL_SEATING;
+  const seats = hallChairPositions();
   const seat = instanced(new THREE.BoxGeometry(0.5, 0.08, 0.5), standard(0xf7f1e6), seats.map((s) => ({ ...s, y: 0.46 })));
   const back = instanced(new THREE.BoxGeometry(0.5, 0.5, 0.06), standard(0xf7f1e6), seats.map((s) => ({ ...s, y: 0.72, z: s.z + 0.22 })));
   const leg = instanced(new THREE.BoxGeometry(0.4, 0.42, 0.4), standard(0xcbbfa8), seats.map((s) => ({ ...s, y: 0.21 })), { castShadow: false });
@@ -197,6 +192,10 @@ function buildProps(world, parent) {
     return [{ x: b.x - 0.45, y: 0.57, z: b.z + dz }, { x: b.x + 0.45, y: 0.57, z: b.z + dz }];
   })));
   parent.add(instanced(new THREE.BoxGeometry(1.8, 0.1, 1.1), standard(0xc9a56a), beds.map((b) => ({ x: b.x, y: 0.55, z: b.z + (b.z < 10 ? 0.45 : -0.45) }))));
+  // sofa lobi
+  const sofas = by('sofa');
+  parent.add(instanced(new THREE.BoxGeometry(2.2, 0.45, 1.0), standard(0x7b2d3b), sofas.map((s) => ({ x: s.x, y: 0.22, z: s.z }))));
+  parent.add(instanced(new THREE.BoxGeometry(2.2, 0.6, 0.2), standard(0x682433), sofas.map((s) => ({ x: s.x, y: 0.7, z: s.z + 0.4 }))));
   // meja resepsionis, bak mandi spa, meja dapur
   by('desk').forEach((d) => box(3.6, 1.05, 1, 0x7a5538, d.x, 0.52, d.z, parent));
   by('tub').forEach((t) => {

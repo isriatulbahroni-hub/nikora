@@ -180,7 +180,7 @@ test('salaman: ajakan kedaluwarsa dan penolakan tidak mengubah pemain', () => {
   assert.equal(room.players.get('a').act ?? null, null);
 });
 
-test('dunia vila: spawn valid, dinding dan kolam menahan pemain, kursi aula dinonaktifkan', async () => {
+test('dunia vila: spawn valid, dinding dan kolam menahan pemain', async () => {
   const { getVillaWorld, isWalkable, PLAYER_RADIUS } = await import('../../game/src/villa-layout.js');
   const world = getVillaWorld();
   const room = new Room({ world, maxPlayers: 100 });
@@ -195,5 +195,37 @@ test('dunia vila: spawn valid, dinding dan kolam menahan pemain, kursi aula dino
   room.setInput('p2', { x: 0, z: 1, rot: 0, seq: 2 });
   for (let i = 0; i < 600; i++) room.step(0.05);
   assert.ok(p.z <= world.bounds.maxZ - PLAYER_RADIUS + 1e-6);
-  assert.equal(room.setInput('p2', { x: 0, z: 0, rot: 0, seq: 3, sit: 0 }), false, 'tidak boleh duduk di kursi aula saat di vila');
+});
+
+test('dunia vila: duduk di kursi, tidur di kasur, tempat dipakai orang lain ditolak, terlalu jauh ditolak', async () => {
+  const { getVillaWorld } = await import('../../game/src/villa-layout.js');
+  const world = getVillaWorld();
+  const room = new Room({ world, maxPlayers: 100 });
+  const a = room.addPlayer('a', 'A');
+  const b = room.addPlayer('b', 'B');
+  const chair = world.spots.find((s) => s.kind === 'sit');
+  const bed = world.spots.find((s) => s.kind === 'sleep');
+  let seq = 0;
+  const send = (id, sit) => room.setInput(id, { x: 0, z: 0, rot: 0, seq: ++seq, sit });
+
+  Object.assign(a, { x: 0, z: 37 }); // jauh dari kursi aula
+  assert.equal(send('a', chair.id), false, 'terlalu jauh');
+  Object.assign(a, { x: chair.x + 1, z: chair.z });
+  assert.equal(send('a', chair.id), true);
+  assert.equal(a.sit, chair.id);
+  assert.equal(a.x, chair.x);
+  assert.equal(a.z, chair.z);
+  Object.assign(b, { x: chair.x - 0.5, z: chair.z });
+  assert.equal(send('b', chair.id), false, 'kursi sudah dipakai');
+
+  room.setInput('a', { x: 1, z: 0, rot: 0, seq: ++seq, sit: chair.id });
+  room.step(1);
+  assert.equal(a.x, chair.x, 'tidak bergerak saat duduk');
+  assert.equal(send('a', null), true);
+  assert.equal(a.sit, null);
+
+  Object.assign(b, { x: bed.x + 1.4, z: bed.z });
+  assert.equal(send('b', bed.id), true, 'tidur di kasur');
+  assert.equal(room.snapshot().find((p) => p.id === 'b').sit, bed.id);
+  assert.equal(send('b', 99999), false, 'id tidak valid');
 });

@@ -28,12 +28,13 @@ function shortestAngle(from, to) {
 }
 
 /** Menampilkan pemain lain (bukan pemain lokal) di scene. */
-export function createRemotePlayers(scene) {
+export function createRemotePlayers(scene, { poseFor } = {}) {
   const avatars = new Map();
 
   function build(p) {
     const config = p.av ?? configFromId(p.id); // tampilan sementara sampai avatar asli diterima
     const group = createAvatar({ config, name: p.name });
+    group.rotation.order = 'YXZ'; // miring (tidur) dulu, lalu arah hadap
     group.position.set(p.x, p.sit == null ? 0 : HALL.seatedDrop, p.z);
     group.rotation.y = p.rot;
     scene.add(group);
@@ -75,12 +76,18 @@ export function createRemotePlayers(scene) {
       const k = 1 - Math.exp(-SMOOTHING * Math.max(0, delta));
       for (const avatar of avatars.values()) {
         const { group, target } = avatar;
-        const speed = Math.hypot(target.x - group.position.x, target.z - group.position.z) / Math.max(delta, 1e-3);
+        const pose = target.sit != null && poseFor ? poseFor(target.sit) : null; // vila: duduk atau berbaring
+        const tx = pose ? pose.x : target.x;
+        const tz = pose ? pose.z : target.z;
+        const speed = Math.hypot(tx - group.position.x, tz - group.position.z) / Math.max(delta, 1e-3);
         applyPose(group, avatar.act ?? (speed > 0.8 ? 'walk' : null), time, delta);
-        group.position.x += (target.x - group.position.x) * k;
-        group.position.z += (target.z - group.position.z) * k;
-        group.rotation.y += (shortestAngle(group.rotation.y, target.rot) - group.rotation.y) * k;
-        group.position.y += ((target.sit === null ? 0 : HALL.seatedDrop) - group.position.y) * k;
+        group.position.x += (tx - group.position.x) * k;
+        group.position.z += (tz - group.position.z) * k;
+        group.rotation.y += (shortestAngle(group.rotation.y, pose ? pose.rotY : target.rot) - group.rotation.y) * k;
+        // applyPose menulis rotation.x (membungkuk) tiap frame: tambahkan kemiringan tidur sesudahnya
+        group.userData.tilt = (group.userData.tilt ?? 0) + ((pose ? pose.tilt : 0) - (group.userData.tilt ?? 0)) * k;
+        group.rotation.x += group.userData.tilt;
+        group.position.y += ((pose ? pose.y : target.sit == null ? 0 : HALL.seatedDrop) - group.position.y) * k;
       }
     },
     avatarGroups() {
@@ -96,11 +103,11 @@ export function createRemotePlayers(scene) {
 }
 
 /** Sambung ke server jika ?server= ada. Tidak pernah melempar error; game offline tetap jalan. */
-export async function startMultiplayer({ scene, search, name = 'Tamu', world, NetClientImpl = NetClient, LiveKitImpl = LiveKitNet, useLiveKit = !import.meta.env?.VITE_DISABLE_LIVEKIT, onError = () => {} }) {
+export async function startMultiplayer({ scene, search, name = 'Tamu', world, poseFor, NetClientImpl = NetClient, LiveKitImpl = LiveKitNet, useLiveKit = !import.meta.env?.VITE_DISABLE_LIVEKIT, onError = () => {} }) {
   // ?server=ws://... memakai server WebSocket sendiri; selain itu coba LiveKit lewat /api/token (cukup Vercel).
   const url = resolveServerUrl(search);
   if (!url && !useLiveKit) return null;
-  const view = createRemotePlayers(scene);
+  const view = createRemotePlayers(scene, { poseFor });
   const net = url ? new NetClientImpl() : new LiveKitImpl(world ? { world } : undefined);
   net.on('state', (msg) => view.sync(msg.players, net.id));
   net.on('welcome', (msg) => view.sync(msg.players, msg.id));

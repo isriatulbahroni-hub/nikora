@@ -163,12 +163,14 @@ export class Room {
       p.sit = null;
       return true;
     }
-    if (this.rules.world) return false; // kursi aula hanya berlaku di aula resepsi
-    if (!Number.isInteger(sit) || sit < 0 || sit >= SEATS.length) return false;
+    const world = this.rules.world;
+    const spots = world ? world.spots : SEATS; // vila: kursi, sofa, dan tempat tidur
+    const range = world ? world.sitRange : HALL.sitRange;
+    if (!Number.isInteger(sit) || sit < 0 || sit >= spots.length) return false;
     if (p.sit === sit) return true;
     for (const other of this.players.values()) if (other !== p && other.sit === sit) return false;
-    const seat = SEATS[sit];
-    if (Math.hypot(seat.x - p.x, seat.z - p.z) > HALL.sitRange + 0.6) return false; // toleransi latensi
+    const seat = spots[sit];
+    if (Math.hypot(seat.x - p.x, seat.z - p.z) > range + 0.6) return false; // toleransi latensi
     p.sit = sit;
     p.x = seat.x;
     p.z = seat.z;
