@@ -448,7 +448,8 @@ function setupVoice(session) {
       btn.classList.toggle('is-on', on);
     };
     try {
-      await voice.connect({ url: msg.url, token: msg.token });
+      if (msg.room) await voice.attach(msg.room); // transport LiveKit: Room sudah tersambung
+      else await voice.connect({ url: msg.url, token: msg.token });
       btn.hidden = false;
       // Browser memblokir audio sebelum ada sentuhan: aktifkan pada sentuhan pertama.
       window.addEventListener('pointerdown', () => voice?.room?.startAudio().catch(() => {}), { once: true });
@@ -489,7 +490,7 @@ function updatePlayer(delta, now) {
   const self = multiplayer?.net.players.find((p) => p.id === multiplayer.net.id);
   if (self && me.sit !== null && now - sitSince > 0.8 && self.sit !== me.sit) standUp(now);
 
-  multiplayer?.sendInput(moving && me.sit === null ? movement.x : 0, moving && me.sit === null ? movement.z : 0, me.rot, now * 1000, me.sit);
+  multiplayer?.sendInput(moving && me.sit === null ? movement.x : 0, moving && me.sit === null ? movement.z : 0, me.rot, now * 1000, me.sit, { x: me.x, z: me.z });
   return moving && me.sit === null;
 }
 

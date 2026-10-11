@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { applyPose, createAvatar } from './avatar.js';
 import { HALL } from './hall-layout.js';
 import { NetClient } from './net-client.js';
+import { LiveKitNet } from './livekit-net.js';
 
 const SMOOTHING = 12; // semakin besar, semakin cepat avatar mengejar posisi server
 const SEND_INTERVAL_MS = 50;
@@ -95,11 +96,12 @@ export function createRemotePlayers(scene) {
 }
 
 /** Sambung ke server jika ?server= ada. Tidak pernah melempar error; game offline tetap jalan. */
-export async function startMultiplayer({ scene, search, name = 'Tamu', NetClientImpl = NetClient }) {
+export async function startMultiplayer({ scene, search, name = 'Tamu', NetClientImpl = NetClient, LiveKitImpl = LiveKitNet, useLiveKit = !import.meta.env?.VITE_DISABLE_LIVEKIT }) {
+  // ?server=ws://... memakai server WebSocket sendiri; selain itu coba LiveKit lewat /api/token (cukup Vercel).
   const url = resolveServerUrl(search);
-  if (!url) return null;
+  if (!url && !useLiveKit) return null;
   const view = createRemotePlayers(scene);
-  const net = new NetClientImpl();
+  const net = url ? new NetClientImpl() : new LiveKitImpl();
   net.on('state', (msg) => view.sync(msg.players, net.id));
   net.on('welcome', (msg) => view.sync(msg.players, msg.id));
   net.on('left', () => {});
@@ -117,10 +119,10 @@ export async function startMultiplayer({ scene, search, name = 'Tamu', NetClient
     sendChat(text) {
       net.sendChat(text);
     },
-    sendInput(x, z, rot, nowMs, sit) {
+    sendInput(x, z, rot, nowMs, sit, pos) {
       if (nowMs - lastSent < SEND_INTERVAL_MS) return;
       lastSent = nowMs;
-      net.sendInput(x, z, rot, sit);
+      net.sendInput(x, z, rot, sit, pos);
     },
     dispose() {
       net.close();

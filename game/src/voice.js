@@ -22,8 +22,17 @@ export class VoiceChat {
   /** Dipanggil dari gestur pengguna (klik tombol mikrofon) agar browser mengizinkan audio & mikrofon. */
   async connect({ url, token }) {
     const LiveKit = this.LiveKit ?? (await import('livekit-client'));
-    const { Room, RoomEvent, Track } = LiveKit;
-    const room = new Room({ adaptiveStream: true, dynacast: true, audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    const room = new LiveKit.Room({ adaptiveStream: true, dynacast: true, audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    await this.attach(room, LiveKit);
+    await room.connect(url, token);
+    await room.startAudio();
+    return this;
+  }
+
+  /** Pasang pendengar audio ke Room yang sudah/akan tersambung (dipakai bersama transport LiveKit). */
+  async attach(room, LiveKit = this.LiveKit) {
+    LiveKit ??= await import('livekit-client');
+    const { RoomEvent, Track } = LiveKit;
     room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
       if (track.kind !== Track.Kind.Audio) return;
       const el = track.attach();
@@ -39,8 +48,16 @@ export class VoiceChat {
       this.audio.get(p.identity)?.remove();
       this.audio.delete(p.identity);
     });
-    await room.connect(url, token);
-    await room.startAudio();
+    for (const p of room.remoteParticipants?.values?.() ?? []) {
+      for (const pub of p.audioTrackPublications?.values?.() ?? []) {
+        if (pub.track && !this.audio.has(p.identity)) {
+          const el = pub.track.attach();
+          el.volume = 0;
+          document.body.appendChild(el);
+          this.audio.set(p.identity, el);
+        }
+      }
+    }
     this.room = room;
     return this;
   }

@@ -47,3 +47,13 @@ npm run test:e2e
 - Tepuk tangan hanya terlihat oleh pemain sendiri (belum disinkronkan ke pemain lain).
 - Pemain lokal masih diprediksi di klien; belum ada rekonsiliasi penuh dengan server.
 - Tes E2E (`e2e/hall.spec.js`) ditulis tetapi belum pernah dijalankan di browser sungguhan; tampilan belum diverifikasi secara visual.
+
+## Multiplayer + suara hanya dengan Vercel + LiveKit (tanpa server sendiri)
+
+Posisi, aksi, chat, salaman, dan suara semuanya lewat satu ruang LiveKit (`orbit-hall`). Fungsi serverless `api/token.js` hanya menerbitkan token.
+
+1. Buat proyek di cloud.livekit.io, lalu salin URL, API key, dan API secret.
+2. Di Vercel → Settings → Environment Variables, isi `LIVEKIT_URL` (`wss://...livekit.cloud`), `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`. Pastikan **Root Directory** proyek = `game`. Redeploy.
+3. Buka situs di dua perangkat: indikator di kiri atas menyala hijau dan 🎙 muncul.
+
+Tanpa variabel itu game tetap berjalan offline. Batasan: tanpa server otoritatif, tiap klien memegang posisinya sendiri (cocok untuk ruang sosial, bukan kompetitif). `?server=ws://...` masih bisa memakai `server/` bila suatu saat dibutuhkan.
