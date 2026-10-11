@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { VoiceChat } from './voice.js';
-import { applyPose, colorForId, createAvatar, makeBubble, setAvatarColor } from './avatar.js';
+import { applyPose, colorForId, createAvatar, makeBubble, setAvatarColor, setStageRing } from './avatar.js';
+import { createPartyController, speakerIds } from './party.js';
 import { GAME_RULES, cameraRelativeMovement, normalizeMovement } from './game-rules.js';
 import { HALL, SEATS, TABLES, facingAngle, findNearestSeat, resolveCollisions } from './hall-layout.js';
 import { resolveServerUrl, startMultiplayer } from './multiplayer-view.js';
@@ -413,6 +414,94 @@ function setupGreet() {
 }
 let showGreetRequest = () => {};
 let lastVoiceTick = -1;
+let lastPartyTick = -1;
+let party = null;
+
+function partyName(id) {
+  return multiplayer?.net.players.find((p) => p.id === id)?.name ?? 'Tamu';
+}
+
+function partyButton(label, onClick, ghost = false) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = ghost ? 'party-btn is-ghost' : 'party-btn';
+  b.textContent = label;
+  b.addEventListener('click', onClick);
+  return b;
+}
+
+function partyRow(text, button) {
+  const row = document.createElement('div');
+  row.className = 'party-row';
+  const span = document.createElement('span');
+  span.textContent = text;
+  row.append(span);
+  if (button) row.append(button);
+  return row;
+}
+
+function partyHeading(text) {
+  const h = document.createElement('h4');
+  h.textContent = text;
+  return h;
+}
+
+function renderParty() {
+  if (!party) return;
+  const s = party.state;
+  const role = party.role;
+  const body = $('#party-body');
+  body.replaceChildren();
+  $('#party-button').dataset.count = role === 'host' ? String(s.hands.length) : '0';
+  if (!s.host) {
+    body.append(partyRow('Belum ada MC. Jadi MC untuk membuka panggung.'), partyButton('Jadi MC', () => party.claimHost()));
+    return;
+  }
+  body.append(partyHeading('MC'), partyRow(`${partyName(s.host)}${role === 'host' ? ' (kamu)' : ''}`));
+  if (s.speakers.length) {
+    body.append(partyHeading('Pembicara'));
+    for (const id of s.speakers) {
+      body.append(partyRow(partyName(id), role === 'host' ? partyButton('Turunkan', () => party.revoke(id), true) : null));
+    }
+  }
+  if (role === 'listener') {
+    body.append(party.handRaised
+      ? partyButton('Turunkan tangan', () => party.lowerHand(), true)
+      : partyButton('Angkat tangan ✋', () => party.raiseHand()));
+  } else if (role === 'speaker') {
+    body.append(partyButton('Turun dari panggung', () => party.revoke(), true));
+  } else {
+    body.append(partyHeading(`Angkat tangan (${s.hands.length})`));
+    if (!s.hands.length) body.append(partyRow('Belum ada yang mengangkat tangan.'));
+    for (const id of s.hands) body.append(partyRow(partyName(id), partyButton('Naikkan', () => party.grant(id))));
+    body.append(partyButton('Tutup panggung', () => party.close(), true));
+  }
+}
+
+function applyStage() {
+  if (!party || !multiplayer) return;
+  const speakers = speakerIds(party.state);
+  for (const p of multiplayer.net.players) {
+    const group = p.id === multiplayer.net.id ? playerAvatar : multiplayer.view.getAvatar(p.id);
+    if (group) setStageRing(group, speakers.has(p.id));
+  }
+}
+
+function togglePartyPanel() {
+  if (!party) return;
+  const panel = $('#party-panel');
+  panel.hidden = !panel.hidden;
+  renderParty();
+}
+
+function setupParty(session) {
+  if (!session || typeof session.net.sendParty !== 'function') return;
+  party = createPartyController({ net: session.net, onChange: () => { renderParty(); applyStage(); } });
+  $('#party-button').hidden = false;
+  $('#party-button').addEventListener('click', togglePartyPanel);
+  $('#party-close').addEventListener('click', () => { $('#party-panel').hidden = true; });
+  renderParty();
+}
 
 // Suara proximity (LiveKit). Tersambung otomatis untuk MENDENGAR begitu server menyiapkan token;
 // mikrofon baru menyala saat tombol 🎙 ditekan dan bisa dimatikan (mute) kapan saja.
@@ -652,8 +741,13 @@ function renderFrame(time) {
   multiplayer?.view.update(delta, now);
   if (voice && multiplayer && Math.floor(now * 10) !== lastVoiceTick) {
     lastVoiceTick = Math.floor(now * 10);
-    voice.update(me, multiplayer.net.players);
+    voice.update(me, multiplayer.net.players, party ? speakerIds(party.state) : undefined);
     $('#mic-button').classList.toggle('is-speaking', voice.micOn && voice.speaking().has(multiplayer.net.id));
+  }
+  if (party && Math.floor(now * 2) !== lastPartyTick) {
+    lastPartyTick = Math.floor(now * 2);
+    party.tick();
+    applyStage();
   }
   updateLabels();
   updateHud();
@@ -800,6 +894,7 @@ function setupInput() {
     if (event.code === 'KeyR' && joined) goToEntrance(clock());
     if (event.code === 'KeyM') toggleMute();
     if (event.code === 'KeyV') toggleMic();
+    if (event.code === 'KeyP' && joined) togglePartyPanel();
   });
   const turn = () => {
     if (heldKeys.has('KeyQ')) yaw += 0.03;
@@ -867,6 +962,7 @@ function setupJoin() {
         session?.net.on('chat', addChatLine);
         session?.net.on('greet-req', (msg) => showGreetRequest(msg));
         setupVoice(session);
+        setupParty(session);
       })
       .catch((error) => console.warn('[multiplayer]', error));
   });

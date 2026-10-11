@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LiveKitNet } from './livekit-net.js';
+import { createPartyController } from './party.js';
 
 // Hub palsu yang meniru Room LiveKit: mengantar data antar-peserta dan memicu event.
 function makeHub() {
@@ -148,4 +149,29 @@ test('LiveKitNet: fetch bawaan dipanggil tanpa this=instance (regresi "Illegal i
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+test('LiveKitNet + Party: MC membuka panggung, tamu angkat tangan, MC menaikkan, pesan palsu ditolak', async () => {
+  const hub = makeHub();
+  const clock = { t: 1000 };
+  const a = makeNet(hub, 'aaaa', 'MC', clock);
+  const b = makeNet(hub, 'bbbb', 'Tamu', clock);
+  const c = makeNet(hub, 'cccc', 'Iseng', clock);
+  await a.connect('', 'MC');
+  await b.connect('', 'Tamu');
+  await c.connect('', 'Iseng');
+  const pa = createPartyController({ net: a, now: () => clock.t });
+  const pb = createPartyController({ net: b, now: () => clock.t });
+  const pc = createPartyController({ net: c, now: () => clock.t });
+  pa.claimHost();
+  assert.equal(pb.state.host, 'aaaa');
+  pb.raiseHand();
+  assert.deepEqual(pa.state.hands, ['bbbb']);
+  c.sendParty({ k: 'grant', to: 'cccc' }); // bukan MC
+  assert.deepEqual(pa.state.speakers, []);
+  pa.grant('bbbb');
+  assert.equal(pb.role, 'speaker');
+  assert.equal(pc.state.speakers[0], 'bbbb');
+  b.close();
+  assert.equal(pa.state.speakers.length, 0); // peserta keluar dibuang dari panggung
 });

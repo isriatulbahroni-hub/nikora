@@ -159,3 +159,19 @@ export function applyPose(group, act, t, delta = 1 / 60) {
   group.userData.leanNow = lerp(group.userData.leanNow ?? 0, lean, k);
   group.rotation.x = group.userData.leanNow;
 }
+
+/** Cincin emas di kaki avatar penanda pembicara di panggung Party Room. */
+export function setStageRing(group, on) {
+  let ring = group.userData.stageRing;
+  if (!ring && on) {
+    ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.5, 0.62, 40),
+      new THREE.MeshBasicMaterial({ color: 0xf3d58a, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.04;
+    group.add(ring);
+    group.userData.stageRing = ring;
+  }
+  if (ring) ring.visible = on;
+}

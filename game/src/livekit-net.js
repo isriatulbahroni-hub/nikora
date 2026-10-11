@@ -23,7 +23,7 @@ export class LiveKitNet {
     this.fetch = fetchImpl ?? ((...args) => globalThis.fetch(...args));
     this.room = null;
     this.id = null;
-    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [] };
+    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [], party: [] };
     this.self = { id: null, name: 'Tamu', x: 0, z: 9.4, rot: 0, sit: null, act: null, with: null, until: 0 };
     this.remotes = new Map();
     this.pending = new Map(); // id pengirim -> { kind, expires, pos }
@@ -114,6 +114,8 @@ export class LiveKitNet {
       if (text) this.#emit('chat', { t: 'chat', id, name: participant.name || 'Tamu', text, ts: this.now() });
     } else if (m.t === 'g') {
       this.#onGreet(participant, m);
+    } else if (m.t === 'p') {
+      this.#emit('party', { from: id, msg: m });
     }
   }
 
@@ -194,6 +196,11 @@ export class LiveKitNet {
     }
     if (sit !== undefined) s.sit = sit;
     if (this.now() - this.lastSent >= STATE_INTERVAL_MS) this.#publishState();
+  }
+
+  /** Pesan Party Room (panggung, angkat tangan). Tanpa server otoritatif: validasi dilakukan tiap penerima. */
+  sendParty(msg) {
+    this.#send({ ...msg, t: 'p' }, { reliable: true });
   }
 
   sendChat(text) {

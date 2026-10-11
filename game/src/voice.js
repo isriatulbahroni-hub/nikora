@@ -71,11 +71,12 @@ export class VoiceChat {
   }
 
   /** Panggil tiap beberapa frame: self {x,z}, players [{id,x,z,sit}] dari snapshot server. */
-  update(self, players) {
+  update(self, players, stage = new Set()) {
     for (const p of players) {
       const el = this.audio.get(p.id);
       if (!el) continue;
-      el.volume = voiceGain(Math.hypot(p.x - self.x, p.z - self.z));
+      // Pembicara di panggung terdengar penuh di seluruh aula; yang lain tetap berdasarkan jarak.
+      el.volume = stage.has(p.id) ? 1 : voiceGain(Math.hypot(p.x - self.x, p.z - self.z));
     }
   }
 

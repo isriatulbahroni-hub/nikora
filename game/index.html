@@ -19,6 +19,7 @@
         <div class="arena-topline">
           <button id="mute-button" class="icon-button" type="button" aria-label="Matikan suara" aria-pressed="false" title="Suara (M)">♪</button>
           <button id="mic-button" class="icon-button" type="button" aria-label="Nyalakan mikrofon" aria-pressed="false" title="Suara dekat (V)" hidden>🎙</button>
+          <button id="party-button" class="icon-button" type="button" aria-label="Panggung Party Room" title="Panggung (P)" hidden>🎤</button>
           <button id="chat-button" class="icon-button" type="button" aria-label="Buka obrolan" title="Obrolan (Enter)">💬</button>
           <button id="home-button" class="icon-button" type="button" aria-label="Kembali ke pintu masuk" title="Ke pintu masuk (R)">⌂</button>
         </div>
@@ -35,6 +36,11 @@
             <button id="join-button" class="action-button" type="submit">Masuk <span>↗</span></button>
           </form>
         </div>
+
+        <aside id="party-panel" class="party-panel" hidden aria-label="Panggung Party Room">
+          <div class="party-head"><strong>Panggung</strong><button type="button" id="party-close" aria-label="Tutup panel">✕</button></div>
+          <div id="party-body" class="party-body"></div>
+        </aside>
 
         <div id="greet-menu" class="greet-menu" hidden aria-label="Sapa pemain terdekat">
           <span id="greet-name" class="greet-name"></span>
