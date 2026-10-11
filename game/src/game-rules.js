@@ -1,12 +1,15 @@
 export const GAME_RULES = Object.freeze({
   arenaLimit: 10.5,
   maxHealth: 100,
-  playerDamage: 25,
-  enemyDamage: 9,
+  playerDamage: 20,
+  enemyDamage: 11,
   playerAttackRange: 1.8,
   playerAttackCooldown: 0.48,
   enemyAttackRange: 1.25,
-  enemyAttackCooldown: 1.05,
+  enemyAttackCooldown: 0.85,
+  dashCooldown: 2.2,
+  dashDuration: 0.18,
+  dashSpeed: 15,
 });
 
 export function normalizeMovement(x, z) {
@@ -37,4 +40,12 @@ export function clampArenaPosition(position, limit = GAME_RULES.arenaLimit) {
     x: Math.max(-limit, Math.min(limit, position.x)),
     z: Math.max(-limit, Math.min(limit, position.z)),
   };
+}
+
+export function getDashDirection(movement, facing) {
+  const length = Math.hypot(movement.x, movement.z);
+  if (length > 0) return { x: movement.x / length, z: movement.z / length };
+  const faceLength = Math.hypot(facing.x, facing.z);
+  if (faceLength > 0) return { x: facing.x / faceLength, z: facing.z / faceLength };
+  return { x: 0, z: -1 };
 }

@@ -4,6 +4,7 @@ import {
   applyDamage,
   clampArenaPosition,
   GAME_RULES,
+  getDashDirection,
   getMatchOutcome,
   isAttackReady,
   normalizeMovement,
@@ -24,11 +25,72 @@ const ui = {
 
 const FIXED_STEP = 1 / 60;
 const PLAYER_SPEED = 5.2;
-const ENEMY_SPEED = 2.25;
+const ENEMY_SPEED = 2.9;
 const heldKeys = new Set();
 const joystick = { x: 0, z: 0 };
 const JOY_RADIUS = 52;
 const JOY_DEADZONE = 0.14;
+const dashButton = document.querySelector('#touch-dash');
+const muteButton = document.querySelector('#mute-button');
+let nextDashAt = 0;
+let dashUntil = 0;
+let dashDir = { x: 0, z: -1 };
+let dashQueued = false;
+let shake = 0;
+let ringLife = 0;
+let attackRing;
+let lastEnemyPos = { x: 0, z: -5.2 };
+
+// ---- Suara sintetis (tanpa file aset) ----
+let audioCtx = null;
+let muted = false;
+function tone(freq, duration, { type = 'square', volume = 0.07, slideTo = null, delay = 0 } = {}) {
+  if (muted) return;
+  try {
+    audioCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    const start = audioCtx.currentTime + delay;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, start);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, start + duration);
+    gain.gain.setValueAtTime(volume, start);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(start);
+    osc.stop(start + duration + 0.02);
+  } catch {
+    /* audio tidak tersedia; game tetap berjalan */
+  }
+}
+const sfx = {
+  swing: () => tone(320, 0.09, { type: 'triangle', slideTo: 120 }),
+  hit: () => tone(190, 0.13, { slideTo: 60, volume: 0.1 }),
+  hurt: () => tone(150, 0.2, { type: 'sawtooth', slideTo: 70 }),
+  dash: () => tone(420, 0.12, { type: 'sine', slideTo: 900 }),
+  win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.18, { type: 'triangle', delay: i * 0.12 })),
+  lose: () => [392, 330, 262, 196].forEach((f, i) => tone(f, 0.22, { type: 'sawtooth', volume: 0.05, delay: i * 0.14 })),
+};
+function toggleMute() {
+  muted = !muted;
+  muteButton.setAttribute('aria-pressed', String(muted));
+  muteButton.setAttribute('aria-label', muted ? 'Nyalakan suara' : 'Matikan suara');
+  muteButton.textContent = muted ? '×' : '♪';
+}
+
+function spawnFloat(text, position, kind) {
+  const point = new THREE.Vector3(position.x, 1.9, position.z).project(camera);
+  const size = root.getBoundingClientRect();
+  const el = document.createElement('div');
+  el.className = `float-num ${kind}`;
+  el.textContent = text;
+  el.style.left = `${((point.x + 1) / 2) * size.width}px`;
+  el.style.top = `${((1 - point.y) / 2) * size.height}px`;
+  root.parentElement.append(el);
+  el.addEventListener('animationend', () => el.remove());
+  window.setTimeout(() => el.remove(), 1200);
+}
 
 let renderer;
 let scene;
@@ -105,7 +167,7 @@ function addArena() {
 
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(24, 24),
-    new THREE.MeshStandardMaterial({ color: 0x24352f, roughness: 0.88, metalness: 0.06 }),
+    new THREE.MeshStandardMaterial({ color: 0x1a2823, roughness: 0.88, metalness: 0.06 }),
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = 0.006;
@@ -115,11 +177,11 @@ function addArena() {
   const grid = new THREE.GridHelper(24, 24, 0x88ad91, 0x526f62);
   grid.position.y = 0.018;
   grid.material.transparent = true;
-  grid.material.opacity = 0.28;
+  grid.material.opacity = 0.4;
   scene.add(grid);
 
   const wallMaterial = new THREE.MeshStandardMaterial({
-    color: 0x526b5d,
+    color: 0x7f9d89,
     roughness: 0.73,
     metalness: 0.12,
   });
@@ -293,6 +355,13 @@ function setupPhysics() {
     start: { x: 0, z: -5.2 },
     kinematic: true,
   });
+  attackRing = new THREE.Mesh(
+    new THREE.RingGeometry(GAME_RULES.playerAttackRange - 0.08, GAME_RULES.playerAttackRange, 48),
+    new THREE.MeshBasicMaterial({ color: 0xffe3a8, transparent: true, opacity: 0, side: THREE.DoubleSide }),
+  );
+  attackRing.rotation.x = -Math.PI / 2;
+  attackRing.visible = false;
+  scene.add(attackRing);
   playerBody = playerFighter.body;
   enemyBody = enemyFighter.body;
 }
@@ -319,6 +388,8 @@ function updateHealthHud() {
 function finishMatch(outcome) {
   if (outcome === 'playing' || matchOutcome !== 'playing') return;
   matchOutcome = outcome;
+  if (outcome === 'victory') sfx.win();
+  else sfx.lose();
   playerBody.setLinvel({ x: 0, y: 0, z: 0 }, true);
   ui.matchStatus.textContent = outcome === 'victory' ? 'VICTORY' : outcome === 'defeat' ? 'DEFEAT' : 'DRAW';
   ui.resultTitle.textContent = outcome === 'victory' ? 'Victory' : outcome === 'defeat' ? 'Defeated' : 'Draw';
@@ -336,6 +407,8 @@ function attemptPlayerAttack(now) {
   matchStarted = true;
   if (!isAttackReady(now, nextPlayerAttackAt)) return;
   nextPlayerAttackAt = now + GAME_RULES.playerAttackCooldown;
+  ringLife = 1;
+  sfx.swing();
 
   const playerPosition = playerBody.translation();
   const enemyPosition = enemyBody.translation();
@@ -349,6 +422,9 @@ function attemptPlayerAttack(now) {
 
   if (distance <= GAME_RULES.playerAttackRange && facingDot > 0.05) {
     enemyHealth = applyDamage(enemyHealth, GAME_RULES.playerDamage);
+    spawnFloat(`-${GAME_RULES.playerDamage}`, enemyPosition, 'is-enemy');
+    sfx.hit();
+    shake = Math.max(shake, 0.18);
     enemyFighter.bodyMaterial.emissiveIntensity = 0.72;
     window.setTimeout(() => {
       if (enemyFighter) enemyFighter.bodyMaterial.emissiveIntensity = 0.035;
@@ -358,7 +434,19 @@ function attemptPlayerAttack(now) {
   }
 }
 
-function updatePlayer(delta) {
+function attemptDash(now) {
+  if (!dashQueued || matchOutcome !== 'playing') return;
+  dashQueued = false;
+  if (!isAttackReady(now, nextDashAt)) return;
+  matchStarted = true;
+  nextDashAt = now + GAME_RULES.dashCooldown;
+  dashUntil = now + GAME_RULES.dashDuration;
+  dashDir = getDashDirection(getMovementInput(), facing);
+  facing = { ...dashDir };
+  sfx.dash();
+}
+
+function updatePlayer(delta, now) {
   const movement = getMovementInput();
   if (movement.x || movement.z) {
     matchStarted = true;
@@ -367,11 +455,14 @@ function updatePlayer(delta) {
     playerFighter.group.rotation.y = Math.atan2(-facing.x, -facing.z);
   }
 
+  const dashing = now < dashUntil;
+  const moveX = dashing ? dashDir.x * GAME_RULES.dashSpeed : movement.x * PLAYER_SPEED;
+  const moveZ = dashing ? dashDir.z * GAME_RULES.dashSpeed : movement.z * PLAYER_SPEED;
   const velocity = playerBody.linvel();
   playerBody.setLinvel({
-    x: movement.x * PLAYER_SPEED,
+    x: moveX,
     y: velocity.y,
-    z: movement.z * PLAYER_SPEED,
+    z: moveZ,
   }, true);
 
   if (delta <= 0) return;
@@ -402,6 +493,9 @@ function updateEnemy(now, delta) {
   if (distance <= GAME_RULES.enemyAttackRange && isAttackReady(now, nextEnemyAttackAt)) {
     nextEnemyAttackAt = now + GAME_RULES.enemyAttackCooldown;
     playerHealth = applyDamage(playerHealth, GAME_RULES.enemyDamage);
+    spawnFloat(`-${GAME_RULES.enemyDamage}`, playerPosition, 'is-player');
+    sfx.hurt();
+    shake = Math.max(shake, 0.3);
     enemyFighter.group.scale.set(1.06, 1.08, 1.06);
     window.setTimeout(() => enemyFighter?.group.scale.set(1, 1, 1), 120);
     updateHealthHud();
@@ -427,11 +521,13 @@ function renderFrame(time) {
 
   if (matchOutcome === 'playing') {
     if (matchStarted) {
-      updatePlayer(delta);
+      updatePlayer(delta, now);
       updateEnemy(now, delta);
     }
+    attemptDash(now);
     attemptPlayerAttack(now);
     const remaining = Math.max(0, nextPlayerAttackAt - now);
+    dashButton.style.setProperty('--cd', `${(Math.max(0, nextDashAt - now) / GAME_RULES.dashCooldown) * 360}deg`);
     attackButton.style.setProperty('--cd', `${(remaining / GAME_RULES.playerAttackCooldown) * 360}deg`);
 
     accumulator += delta;
@@ -442,13 +538,29 @@ function renderFrame(time) {
 
     const playerPosition = playerBody.translation();
     const enemyPosition = enemyBody.translation();
-    playerFighter.group.position.set(playerPosition.x, playerPosition.y - 0.82, playerPosition.z);
-    enemyFighter.group.position.set(enemyPosition.x, enemyPosition.y - 0.82, enemyPosition.z);
+    const playerVelocity = playerBody.linvel();
+    const playerBob = Math.hypot(playerVelocity.x, playerVelocity.z) > 0.6 ? Math.abs(Math.sin(now * 13)) * 0.09 : 0;
+    const enemyMoved = Math.hypot(enemyPosition.x - lastEnemyPos.x, enemyPosition.z - lastEnemyPos.z) > 0.002;
+    const enemyBob = enemyMoved ? Math.abs(Math.sin(now * 11)) * 0.08 : 0;
+    lastEnemyPos = { x: enemyPosition.x, z: enemyPosition.z };
+    playerFighter.group.position.set(playerPosition.x, playerPosition.y - 0.82 + playerBob, playerPosition.z);
+    enemyFighter.group.position.set(enemyPosition.x, enemyPosition.y - 0.82 + enemyBob, enemyPosition.z);
+    enemyFighter.group.rotation.y = Math.atan2(-(playerPosition.x - enemyPosition.x), -(playerPosition.z - enemyPosition.z));
+    if (attackRing) {
+      attackRing.position.set(playerPosition.x, 0.05, playerPosition.z);
+      ringLife = Math.max(0, ringLife - delta * 5);
+      attackRing.material.opacity = ringLife * 0.7;
+      attackRing.visible = ringLife > 0;
+    }
     updateCamera(delta);
     ui.matchStatus.textContent = matchStarted ? 'FIGHT' : 'READY';
   }
 
+  const shakeOffset = new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, 0);
+  shake = Math.max(0, shake - delta * 1.4);
+  camera.position.add(shakeOffset);
   renderer.render(scene, camera);
+  camera.position.sub(shakeOffset);
 }
 
 function restartMatch() {
@@ -456,6 +568,9 @@ function restartMatch() {
   enemyHealth = GAME_RULES.maxHealth;
   nextPlayerAttackAt = 0;
   nextEnemyAttackAt = 0;
+  nextDashAt = 0;
+  dashUntil = 0;
+  dashQueued = false;
   matchOutcome = 'playing';
   matchStarted = false;
   attackQueued = false;
@@ -541,7 +656,17 @@ function setupJoystick() {
   reset();
 }
 
+function setupInputMode() {
+  const forced = new URLSearchParams(location.search).has('touch');
+  const set = (mode) => { document.body.dataset.input = mode; };
+  set(forced || window.matchMedia('(hover: none) and (pointer: coarse)').matches ? 'touch' : 'keyboard');
+  if (forced) return;
+  window.addEventListener('pointerdown', (event) => set(event.pointerType === 'touch' ? 'touch' : 'keyboard'), { capture: true });
+  window.addEventListener('keydown', () => set('keyboard'), { capture: true });
+}
+
 function setupInput() {
+  setupInputMode();
   window.addEventListener('keydown', (event) => {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) {
       event.preventDefault();
@@ -549,6 +674,8 @@ function setupInput() {
     heldKeys.add(event.code);
     if (event.code === 'Space' && !event.repeat) attackQueued = true;
     if (event.code === 'KeyR' && !event.repeat) restartMatch();
+    if ((event.code === 'ShiftLeft' || event.code === 'ShiftRight') && !event.repeat) dashQueued = true;
+    if (event.code === 'KeyM' && !event.repeat) toggleMute();
   });
 
   window.addEventListener('keyup', (event) => heldKeys.delete(event.code));
@@ -565,7 +692,11 @@ function setupInput() {
     navigator.vibrate?.(12);
   });
   document.querySelectorAll('.controls').forEach((el) => el.addEventListener('contextmenu', (e) => e.preventDefault()));
-  if (new URLSearchParams(location.search).has('touch')) document.body.classList.add('force-touch');
+  dashButton.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    dashQueued = true;
+  });
+  muteButton.addEventListener('click', toggleMute);
   document.querySelector('#restart-button').addEventListener('click', restartMatch);
   document.querySelector('#play-again-button').addEventListener('click', restartMatch);
 

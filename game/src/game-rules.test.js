@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   applyDamage,
   clampArenaPosition,
+  getDashDirection,
   getMatchOutcome,
   isAttackReady,
   normalizeMovement,
@@ -32,4 +33,22 @@ test('recognizes victory, defeat, draw, and active matches', () => {
 test('enforces attack cooldown timing', () => {
   assert.equal(isAttackReady(4.9, 5), false);
   assert.equal(isAttackReady(5, 5), true);
+});
+
+test('applyDamage handles invalid and out-of-range health safely', () => {
+  assert.equal(applyDamage(NaN, 10), 0);
+  assert.equal(applyDamage(500, 10), 90);
+  assert.equal(applyDamage(50, Infinity), 50);
+  assert.equal(applyDamage(0, 25), 0);
+});
+
+test('clampArenaPosition keeps extreme positions inside the arena', () => {
+  const limit = 10.5;
+  assert.deepEqual(clampArenaPosition({ x: 1e9, z: -1e9 }), { x: limit, z: -limit });
+});
+
+test('dash uses movement first, then facing, then a safe default', () => {
+  assert.deepEqual(getDashDirection({ x: 2, z: 0 }, { x: 0, z: 1 }), { x: 1, z: 0 });
+  assert.deepEqual(getDashDirection({ x: 0, z: 0 }, { x: 0, z: 3 }), { x: 0, z: 1 });
+  assert.deepEqual(getDashDirection({ x: 0, z: 0 }, { x: 0, z: 0 }), { x: 0, z: -1 });
 });

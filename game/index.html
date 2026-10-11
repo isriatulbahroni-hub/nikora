@@ -17,6 +17,7 @@
         <div id="game-root"></div>
 
         <div class="arena-topline">
+          <button id="mute-button" class="icon-button" type="button" aria-label="Matikan suara" aria-pressed="false" title="Suara (M)">♪</button>
           <button id="restart-button" class="icon-button" type="button" aria-label="Mulai ulang pertandingan" title="Mulai ulang (R)">↻</button>
         </div>
 
@@ -45,13 +46,14 @@
         </div>
 
         <div class="arena-footer">
-          <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> bergerak <span class="footer-divider">/</span> <kbd>Space</kbd> serang <span class="footer-divider">/</span> <kbd>R</kbd> ulang</p>
+          <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> bergerak <span class="footer-divider">/</span> <kbd>Space</kbd> serang <span class="footer-divider">/</span> <kbd>Shift</kbd> dash <span class="footer-divider">/</span> <kbd>R</kbd> ulang <span class="footer-divider">/</span> <kbd>M</kbd> suara</p>
         </div>
 
         <div class="controls" aria-label="Kontrol sentuh">
           <div id="joy-zone" class="joy-zone">
             <div id="joy-base" class="joy-base" role="application" aria-label="Joystick gerak"><div id="joy-knob" class="joy-knob"></div></div>
           </div>
+          <button id="touch-dash" class="atk-btn dash-btn" type="button" aria-label="Dash"><span>DASH</span></button>
           <button id="touch-attack" class="atk-btn" type="button" aria-label="Serang"><span>SERANG</span></button>
         </div>
       </section>

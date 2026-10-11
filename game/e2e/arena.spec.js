@@ -42,7 +42,7 @@ test('desktop arena renders, resolves an offline match, and restarts', async ({ 
   await page.keyboard.down('KeyW');
   await page.waitForTimeout(1_300);
   await page.keyboard.up('KeyW');
-  for (let hit = 0; hit < 5; hit += 1) {
+  for (let hit = 0; hit < 7; hit += 1) {
     await page.keyboard.press('Space');
     await page.waitForTimeout(520);
   }
