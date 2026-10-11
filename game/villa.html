@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#2c4a3a" />
+    <title>NIKORA Wedding Villa | ORBIT</title>
+    <style>
+      :root { font-family: ui-sans-serif, 'Segoe UI', sans-serif; color: #fff; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #a9d4ee; touch-action: none; }
+      #villa-root, #villa-root canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+      .hud { position: fixed; z-index: 5; pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,.55); }
+      .title { top: max(14px, env(safe-area-inset-top)); left: 16px; }
+      .title strong { display: block; font-size: 20px; letter-spacing: .12em; font-weight: 600; }
+      .title span { font-size: 12px; opacity: .85; }
+      .place { top: max(14px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); padding: 7px 16px; border-radius: 999px; background: rgba(20,32,26,.62); font-size: 14px; white-space: nowrap; text-shadow: none; }
+      .side { top: max(14px, env(safe-area-inset-top)); right: 12px; display: grid; gap: 6px; justify-items: end; }
+      .side small { padding: 3px 10px; border-radius: 999px; background: rgba(20,32,26,.62); font-size: 12px; text-shadow: none; }
+      #minimap { border-radius: 10px; background: rgba(20,32,26,.55); border: 1px solid rgba(255,255,255,.25); width: 168px; height: 136px; }
+      .hint { bottom: max(10px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .9; white-space: nowrap; }
+      .joy-zone { position: fixed; z-index: 6; left: 0; bottom: 0; width: 55%; height: 45%; touch-action: none; display: none; }
+      @media (pointer: coarse) { .joy-zone { display: block; } .hint { display: none; } }
+      .joy-base { position: absolute; left: 28px; bottom: max(28px, env(safe-area-inset-bottom)); width: 124px; height: 124px; border-radius: 50%; background: rgba(255,255,255,.18); border: 2px solid rgba(255,255,255,.4); }
+      .joy-knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(255,255,255,.75); box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+      #villa-error { position: fixed; z-index: 9; inset: 0; display: none; place-items: center; padding: 24px; background: rgba(20,32,26,.9); text-align: center; }
+      #villa-error pre { white-space: pre-wrap; font-size: 12px; opacity: .8; }
+    </style>
+  </head>
+  <body>
+    <div id="villa-root"></div>
+    <div class="hud title"><strong>NIKORA</strong><span>Wedding Villa</span></div>
+    <div class="hud place" id="place">Villa Grounds</div>
+    <div class="hud side"><canvas id="minimap" width="168" height="136"></canvas><small id="online">Offline</small></div>
+    <div class="hud hint">WASD / panah: jalan · scroll: zoom</div>
+    <div class="joy-zone" id="joy-zone"><div class="joy-base" id="joy-base"><div class="joy-knob" id="joy-knob"></div></div></div>
+    <div id="villa-error"><div><h2>Tidak bisa memulai</h2><p id="villa-error-text"></p><pre id="villa-error-detail"></pre></div></div>
+    <script type="module" src="/src/villa-main.js"></script>
+  </body>
+</html>

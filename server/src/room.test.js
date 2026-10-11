@@ -179,3 +179,21 @@ test('salaman: ajakan kedaluwarsa dan penolakan tidak mengubah pemain', () => {
   assert.equal(room.respondGreet('b', 'a', false, 100100).declined, true);
   assert.equal(room.players.get('a').act ?? null, null);
 });
+
+test('dunia vila: spawn valid, dinding dan kolam menahan pemain, kursi aula dinonaktifkan', async () => {
+  const { getVillaWorld, isWalkable, PLAYER_RADIUS } = await import('../../game/src/villa-layout.js');
+  const world = getVillaWorld();
+  const room = new Room({ world, maxPlayers: 100 });
+  for (let i = 0; i < 12; i++) {
+    const p = room.addPlayer(`p${i}`, `P${i}`);
+    assert.ok(isWalkable(p.x, p.z, PLAYER_RADIUS, world.colliders), `spawn ${i} di dalam penghalang`);
+  }
+  const p = room.players.get('p2');
+  room.setInput('p2', { x: 0.3, z: -1, rot: 0, seq: 1 });
+  for (let i = 0; i < 600; i++) room.step(0.05);
+  assert.ok(isWalkable(p.x, p.z, PLAYER_RADIUS, world.colliders), 'berakhir di dalam penghalang');
+  room.setInput('p2', { x: 0, z: 1, rot: 0, seq: 2 });
+  for (let i = 0; i < 600; i++) room.step(0.05);
+  assert.ok(p.z <= world.bounds.maxZ - PLAYER_RADIUS + 1e-6);
+  assert.equal(room.setInput('p2', { x: 0, z: 0, rot: 0, seq: 3, sit: 0 }), false, 'tidak boleh duduk di kursi aula saat di vila');
+});

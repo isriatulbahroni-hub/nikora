@@ -22,6 +22,16 @@ npm run dev
 - `Space` atau tombol TEPUK: tepuk tangan
 - `R` atau ikon rumah: kembali ke pintu masuk, `M`: suara
 
+## NIKORA Wedding Villa (`/villa.html`)
+
+Dunia jelajah berdasarkan desain NIKORA Wedding Villa: aula pernikahan dengan pelaminan dan 180 kursi, kolam dengan jembatan, taman air mancur, restoran & kafe, dapur, spa, main suite, bridal room, lobby, koridor dengan 8 kamar tamu, dan parkiran. Pemain berjalan masuk ke semua ruangan lewat pintu; dinding, kolam, dan perabot menghalangi jalan. Kontrol: WASD/panah (atau joystick di layar sentuh), scroll untuk zoom. Ada minimap dan label lokasi.
+
+Denah ada sebagai data di `src/villa-layout.js` (ruangan, pintu, properti) sehingga mudah ditambah atau diubah; logika tabrakannya dipakai bersama oleh klien dan server. Dinding sisi selatan pemain direndahkan otomatis supaya isi ruangan tetap terlihat.
+
+Belum ada: lantai 2 dan tangga, aksi duduk, atap, interior detail (furnitur lengkap, tekstur), suara.
+
+Dengan multiplayer: jalankan server `WORLD=villa npm start` (di folder `server`), lalu buka `/villa.html?server=ws://localhost:8080&name=Ron`.
+
 ## Multiplayer (opsional)
 
 Jalankan server (`cd server && npm install && npm start`), lalu buka `http://localhost:5173/?server=ws://localhost:8080`. Posisi dan status duduk divalidasi server; pemain lain terlihat bergerak dan duduk. Tanpa `?server=`, aula berjalan offline dengan tamu simulasi.

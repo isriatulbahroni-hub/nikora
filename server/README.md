@@ -46,3 +46,7 @@ Catatan: pembatasan oleh klien belum menjamin privasi; ruang privat/meja membutu
 ## Interaksi berpasangan
 
 Pesan `greet` (`handshake`, `highfive` butuh persetujuan lewat `greet-reply`; `wave`, `bow` langsung). Server memvalidasi jarak ≤ 2,2 m, tidak duduk, lalu menghadapkan kedua pemain; aksi selesai otomatis setelah 2,6 detik.
+
+## Dunia vila (NIKORA Wedding Villa)
+
+`WORLD=villa npm start` memakai denah `game/src/villa-layout.js`: dinding, kolam, air mancur, dan perabot menghalangi jalan, hingga 100 pemain, tanpa kursi aula. Klien membuka `/villa.html?server=ws://localhost:8080`. Tanpa `?server=`, halaman vila memakai LiveKit (`/api/token`) dengan kanal terpisah dari aula (`nikora-villa`), jadi tamu aula dan tamu vila tidak saling terlihat.

@@ -41,11 +41,15 @@ export class Room {
     if (this.players.has(id) || this.players.size >= this.rules.maxPlayers) return null;
     // Muncul di lorong pintu masuk (sisi z positif), tersebar dalam baris.
     const n = this.spawnCounter++;
+    const world = this.rules.world; // dunia berdinding opsional (NIKORA Wedding Villa)
+    const spawn = world
+      ? world.constrain({ x: world.spawn.x + ((n % 5) - 2) * 1.2, z: world.spawn.z - (Math.floor(n / 5) % 4) * 1.2 })
+      : { x: ((n % 7) - 3) * 1.1, z: 9.4 - Math.floor(n / 7 % 8) * 0.6 };
     const player = {
       id,
       name: sanitizeName(name),
-      x: ((n % 7) - 3) * 1.1,
-      z: 9.4 - Math.floor(n / 7 % 8) * 0.6,
+      x: spawn.x,
+      z: spawn.z,
       rot: 0,
       input: { x: 0, z: 0 },
       seq: 0,
@@ -159,6 +163,7 @@ export class Room {
       p.sit = null;
       return true;
     }
+    if (this.rules.world) return false; // kursi aula hanya berlaku di aula resepsi
     if (!Number.isInteger(sit) || sit < 0 || sit >= SEATS.length) return false;
     if (p.sit === sit) return true;
     for (const other of this.players.values()) if (other !== p && other.sit === sit) return false;
@@ -176,10 +181,9 @@ export class Room {
     const safeDt = Math.min(dt, 0.25);
     for (const p of this.players.values()) {
       if (p.sit !== null || p.act?.with) continue; // duduk atau sedang berpasangan: tidak bergerak
-      const next = resolveCollisions({
-        x: p.x + p.input.x * this.rules.playerSpeed * safeDt,
-        z: p.z + p.input.z * this.rules.playerSpeed * safeDt,
-      });
+      const dx = p.input.x * this.rules.playerSpeed * safeDt;
+      const dz = p.input.z * this.rules.playerSpeed * safeDt;
+      const next = this.rules.world ? this.rules.world.move(p, dx, dz) : resolveCollisions({ x: p.x + dx, z: p.z + dz });
       p.x = next.x;
       p.z = next.z;
     }

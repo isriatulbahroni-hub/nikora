@@ -17,7 +17,8 @@ const normAngle = (a) => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
 const num = (v, fallback = 0) => (Number.isFinite(v) ? v : fallback);
 
 export class LiveKitNet {
-  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl } = {}) {
+  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl, world } = {}) {
+    this.world = world; // 'villa' memakai kanal terpisah dari aula
     this.LiveKit = LiveKit;
     this.now = now;
     this.tokenUrl = tokenUrl;
@@ -49,7 +50,7 @@ export class LiveKitNet {
   }
 
   async connect(_url, name = 'Tamu') {
-    const res = await this.fetch(this.tokenUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
+    const res = await this.fetch(this.tokenUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, world: this.world }) });
     if (!res.ok) throw new Error(`api/token HTTP ${res.status}`);
     const cred = await res.json();
     if (!cred.enabled) throw new Error('env LiveKit belum terbaca');

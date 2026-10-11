@@ -16,3 +16,11 @@ test('issueToken: nonaktif tanpa env; aktif menghasilkan JWT room orbit-hall den
   assert.equal(cleanName(42), 'Tamu');
   assert.equal(cleanName('x'.repeat(99)).length, 24);
 });
+
+test('kanal LiveKit dipisah per dunia; nama dunia tak dikenal jatuh ke aula', async () => {
+  const { roomFor, VOICE_ROOM } = await import('./token-issuer.js');
+  assert.equal(roomFor('villa'), 'nikora-villa');
+  assert.equal(roomFor('hall'), VOICE_ROOM);
+  assert.equal(roomFor('../admin'), VOICE_ROOM);
+  assert.equal(roomFor(undefined), VOICE_ROOM);
+});

@@ -5,8 +5,8 @@ import { Room } from './room.js';
 
 const LIMITS = Object.freeze({
   maxPayload: 1024,
-  joinTimeoutMs: 5000,
-  idleTimeoutMs: 15000,
+  joinTimeoutMs: 20000,
+  idleTimeoutMs: 30000,
   maxMessagesPerSecond: 60,
 });
 
