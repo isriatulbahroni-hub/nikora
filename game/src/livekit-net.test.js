@@ -132,3 +132,20 @@ test('LiveKitNet: salaman ditolak jauh/duduk, penolakan dikabarkan, ajakan kedal
   assert.equal(a.self.sit, 3);
   a.close(); b.close();
 });
+
+test('LiveKitNet: fetch bawaan dipanggil tanpa this=instance (regresi "Illegal invocation" di browser)', async () => {
+  const realFetch = globalThis.fetch;
+  let thisSeen = 'belum';
+  globalThis.fetch = function strictFetch() {
+    thisSeen = this;
+    if (this !== undefined && this !== globalThis) throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
+    return Promise.resolve({ ok: true, json: async () => ({ enabled: false }) });
+  };
+  try {
+    const net = new LiveKitNet({ LiveKit: {} });
+    await assert.rejects(() => net.connect('', 'A'), /env LiveKit belum terbaca/);
+    assert.ok(thisSeen === undefined || thisSeen === globalThis);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

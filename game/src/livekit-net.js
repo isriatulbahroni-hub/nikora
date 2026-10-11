@@ -15,11 +15,12 @@ const normAngle = (a) => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
 const num = (v, fallback = 0) => (Number.isFinite(v) ? v : fallback);
 
 export class LiveKitNet {
-  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl = globalThis.fetch } = {}) {
+  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl } = {}) {
     this.LiveKit = LiveKit;
     this.now = now;
     this.tokenUrl = tokenUrl;
-    this.fetch = fetchImpl;
+    // Bungkus agar `fetch` tidak dipanggil dengan this=LiveKitNet (browser melempar "Illegal invocation").
+    this.fetch = fetchImpl ?? ((...args) => globalThis.fetch(...args));
     this.room = null;
     this.id = null;
     this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [] };
