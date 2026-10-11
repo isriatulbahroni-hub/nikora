@@ -29,6 +29,8 @@ const ui = {
   greetName: $('#greet-name'),
   greetToast: $('#greet-toast'),
   greetToastText: $('#greet-toast-text'),
+  greetYes: $('#greet-yes'),
+  greetNo: $('#greet-no'),
 };
 
 const PLAYER_SPEED = GAME_RULES.playerSpeed;
@@ -402,41 +404,62 @@ function setupGreet() {
 let showGreetRequest = () => {};
 let lastVoiceTick = -1;
 
-// Suara proximity: tombol 🎙 muncul hanya bila server mengaktifkan LiveKit.
+// Suara proximity (LiveKit). Tersambung otomatis untuk MENDENGAR begitu server menyiapkan token;
+// mikrofon baru menyala saat tombol 🎙 ditekan dan bisa dimatikan (mute) kapan saja.
 let voice = null;
 let voiceBusy = false;
-let voiceCreds = null;
+let micToastTimer = 0;
+function micToast(text) {
+  ui.greetToastText.textContent = text;
+  ui.greetYes.hidden = true;
+  ui.greetNo.hidden = true;
+  ui.greetToast.hidden = false;
+  window.clearTimeout(micToastTimer);
+  micToastTimer = window.setTimeout(() => {
+    ui.greetToast.hidden = true;
+    ui.greetYes.hidden = false;
+    ui.greetNo.hidden = false;
+  }, 3500);
+}
 async function toggleMic() {
   const btn = $('#mic-button');
-  if (voiceBusy || !voiceCreds) return;
+  if (voiceBusy || !voice?.room) return;
   voiceBusy = true;
   try {
-    if (!voice) {
-      voice = new VoiceChat();
-      voice.onChange = (on) => {
-        btn.setAttribute('aria-pressed', String(on));
-        btn.classList.toggle('is-on', on);
-      };
-      await voice.connect(voiceCreds);
-    }
     await voice.setMic(!voice.micOn);
   } catch (error) {
     console.warn('[voice]', error);
-    voice?.dispose();
-    voice = null;
+    btn.classList.remove('is-on');
+    btn.setAttribute('aria-pressed', 'false');
+    micToast('Mikrofon tidak bisa dipakai. Izinkan akses mikrofon di browser.');
   } finally {
     voiceBusy = false;
   }
 }
 function setupVoice(session) {
   if (!session) return;
-  session.net.on('voice', (msg) => {
-    if (!msg.enabled) return;
-    voiceCreds = { url: msg.url, token: msg.token };
-    $('#mic-button').hidden = false;
+  const btn = $('#mic-button');
+  session.net.on('voice', async (msg) => {
+    if (!msg.enabled || voice) return;
+    voice = new VoiceChat();
+    voice.onChange = (on) => {
+      btn.setAttribute('aria-pressed', String(on));
+      btn.setAttribute('aria-label', on ? 'Matikan mikrofon' : 'Nyalakan mikrofon');
+      btn.classList.toggle('is-on', on);
+    };
+    try {
+      await voice.connect({ url: msg.url, token: msg.token });
+      btn.hidden = false;
+      // Browser memblokir audio sebelum ada sentuhan: aktifkan pada sentuhan pertama.
+      window.addEventListener('pointerdown', () => voice?.room?.startAudio().catch(() => {}), { once: true });
+    } catch (error) {
+      console.warn('[voice] gagal tersambung:', error);
+      voice?.dispose();
+      voice = null;
+    }
   });
   session.net.requestVoiceToken();
-  $('#mic-button').addEventListener('click', toggleMic);
+  btn.addEventListener('click', toggleMic);
 }
 
 function updatePlayer(delta, now) {
@@ -479,17 +502,9 @@ function updateHud() {
   const canAct = me.sit !== null || seat !== null;
   ui.sitButton.classList.toggle('is-ready', canAct);
   ui.sitLabel.textContent = me.sit !== null ? 'BERDIRI' : 'DUDUK';
-  if (!joined) ui.status.textContent = 'MASUK';
-  else if (me.sit !== null) ui.status.textContent = `DUDUK · MEJA ${SEATS[me.sit].table + 1}`;
-  else if (seat) ui.status.textContent = 'KURSI KOSONG · DUDUK?';
-  else ui.status.textContent = 'BERJALAN';
   const remote = multiplayer?.view.count ?? 0;
-  ui.guests.textContent = multiplayer ? `Online · ${remote + 1} tamu` : OFFLINE ? 'Offline · tamu simulasi' : 'Menyambung…';
-  // Teks status hanya muncul sebentar saat berubah, supaya dunia 3D tetap bersih.
-  if (joined && ui.status.textContent !== lastStatus) {
-    lastStatus = ui.status.textContent;
-    showHud();
-  }
+  ui.guests.textContent = multiplayer ? `${remote + 1}` : OFFLINE ? 'offline' : '…';
+  $('#online-dot').classList.toggle('is-online', Boolean(multiplayer));
 }
 
 // ---- Obrolan ----
@@ -627,6 +642,7 @@ function renderFrame(time) {
   if (voice && multiplayer && Math.floor(now * 10) !== lastVoiceTick) {
     lastVoiceTick = Math.floor(now * 10);
     voice.update(me, multiplayer.net.players);
+    $('#mic-button').classList.toggle('is-speaking', voice.micOn && voice.speaking().has(multiplayer.net.id));
   }
   updateLabels();
   updateHud();

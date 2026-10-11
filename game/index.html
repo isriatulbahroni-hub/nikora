@@ -23,13 +23,8 @@
           <button id="home-button" class="icon-button" type="button" aria-label="Kembali ke pintu masuk" title="Ke pintu masuk (R)">⌂</button>
         </div>
 
-        <div class="match-hud hall-hud" aria-live="polite">
-          <div class="match-state">
-            <span class="round-label">AULA RESEPSI</span>
-            <strong id="hall-status">MASUK</strong>
-          </div>
-          <span id="hall-guests" class="hall-guests">Offline</span>
-        </div>
+        <div class="online-pill" aria-live="polite"><i id="online-dot"></i><span id="hall-guests">…</span></div>
+        <span id="hall-status" hidden></span>
 
         <div id="join-overlay" class="result-overlay">
           <form id="join-form" class="result-panel" autocomplete="off">

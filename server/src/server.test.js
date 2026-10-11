@@ -164,3 +164,51 @@ test('voice: tanpa konfigurasi LiveKit token tidak dibuat; dengan konfigurasi be
   assert.equal(payload.video.room, 'orbit-hall');
   assert.equal(payload.video.canPublish, true);
 });
+
+test('integrasi WebSocket: salaman diajak, diterima, keduanya berpasangan; token suara nonaktif tanpa LiveKit, aktif dengan LiveKit', async () => {
+  const server = createGameServer({
+    port: 0,
+    host: '127.0.0.1',
+    tickRate: 50,
+    voiceEnv: { LIVEKIT_URL: 'wss://x.livekit.cloud', LIVEKIT_API_KEY: 'k', LIVEKIT_API_SECRET: 'secret-secret-secret-secret-1234' },
+  });
+  await server.ready;
+  const a = await connect(server);
+  const b = await connect(server);
+  a.send(JSON.stringify({ t: 'join', name: 'A' }));
+  b.send(JSON.stringify({ t: 'join', name: 'B' }));
+  const wa = await waitFor(() => find(a, 'welcome'));
+  const wb = await waitFor(() => find(b, 'welcome'));
+  // dekatkan keduanya langsung lewat room (posisi spawn bisa berjauhan)
+  Object.assign(server.room.players.get(wa.id), { x: 0, z: 0 });
+  Object.assign(server.room.players.get(wb.id), { x: 1.2, z: 0 });
+
+  a.send(JSON.stringify({ t: 'greet', to: wb.id, kind: 'handshake' }));
+  const req = await waitFor(() => find(b, 'greet-req'));
+  assert.equal(req.from, wa.id);
+  b.send(JSON.stringify({ t: 'greet-reply', from: wa.id, accept: true }));
+  await waitFor(() => find(a, 'state', (m) => m.players.find((p) => p.id === wa.id)?.act === 'handshake'));
+  const st = find(b, 'state', (m) => m.players.find((p) => p.id === wb.id)?.with === wa.id);
+  assert.ok(st);
+
+  a.send(JSON.stringify({ t: 'voice-token' }));
+  const v = await waitFor(() => find(a, 'voice'));
+  assert.equal(v.enabled, true);
+  assert.ok(v.token.split('.').length === 3);
+
+  a.close();
+  b.close();
+  await server.close();
+});
+
+test('integrasi WebSocket: voice-token tanpa konfigurasi membalas enabled:false', async () => {
+  const server = createGameServer({ port: 0, host: '127.0.0.1', tickRate: 50, voiceEnv: {} });
+  await server.ready;
+  const a = await connect(server);
+  a.send(JSON.stringify({ t: 'join', name: 'A' }));
+  await waitFor(() => find(a, 'welcome'));
+  a.send(JSON.stringify({ t: 'voice-token' }));
+  assert.equal((await waitFor(() => find(a, 'voice'))).enabled, false);
+  a.close();
+  await server.close();
+});
