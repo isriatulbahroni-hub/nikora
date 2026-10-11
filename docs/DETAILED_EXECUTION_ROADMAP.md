@@ -29,6 +29,12 @@ Atas instruksi pengguna, proyek offline pertama kini berada di `game/` dan memak
 - Playwright desktop/mobile belum lulus: Chromium tidak dapat diluncurkan karena container tidak memiliki `libatk-1.0.so.0`.
 - Gate Fase 1 belum dinyatakan lulus dan gate Fase 2 belum lulus. Belum ada multiplayer, server game, akun, atau sinkronisasi online di prototipe ini.
 
+### Pembaruan status Fase 3 (awal)
+
+- `server/` berisi server WebSocket otoritatif (satu ruang, hingga 50 pemain) dengan 12 tes lulus: sinkronisasi dua klien, input tidak valid, anti speed-hack, payload besar, rate limit, ruang penuh.
+- `game/src/net-client.js` adalah klien jaringan yang dites terhadap server di Node; belum dihubungkan ke render/UI game.
+- Belum ada: reconnect, simulasi latency/packet loss, akun, uji browser. Gate Fase 2 dan Fase 3 belum lulus.
+
 ### Aturan gate
 
 1. Fase berjalan berurutan. Pekerjaan dokumentasi yang tidak mengubah sistem boleh disiapkan lebih awal, tetapi tidak menggantikan gate.
