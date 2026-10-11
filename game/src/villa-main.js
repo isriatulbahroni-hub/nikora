@@ -208,9 +208,11 @@ async function start() {
   camera.position.set(me.x, 14, me.z + 11);
 
   let multiplayer = null;
-  startMultiplayer({ scene, search: window.location.search, name, world: 'villa' })
+  let netStatus = 'Menyambung…'; // alasan ditampilkan bila gagal terhubung
+  startMultiplayer({ scene, search: window.location.search, name, world: 'villa', onError: (m) => { netStatus = `Offline · ${m}`; } })
     .then((session) => {
       multiplayer = session;
+      if (!session && netStatus === 'Menyambung…') netStatus = 'Offline';
       session?.net.setAvatar?.(toWire(avatarConfig));
     })
     .catch((error) => console.warn('[multiplayer]', error));
@@ -263,7 +265,7 @@ async function start() {
     }
     const others = multiplayer ? multiplayer.net.players.filter((p) => p.id !== multiplayer.net.id) : [];
     drawMap(me, others);
-    $('online').textContent = multiplayer ? `Online: ${others.length + 1}` : 'Offline';
+    $('online').textContent = multiplayer ? `Online: ${others.length + 1}` : netStatus;
   }
   requestAnimationFrame(frame);
 
