@@ -115,3 +115,18 @@ test('duduk ditolak bila jauh atau id kursi tidak valid', async () => {
   assert.equal(room.setInput('a', { x: 0, z: 0, rot: 0, seq: 4, sit: 1.5 }), false);
   assert.equal(room.setInput('a', { x: 0, z: 0, rot: 0, seq: 5, sit: '3' }), false);
 });
+
+test('chat dibersihkan, dibatasi panjang dan frekuensi', async () => {
+  const { sanitizeChat } = await import('./room.js');
+  assert.equal(sanitizeChat('  halo   <b>dunia</b>\n'), 'halo bdunia/b');
+  assert.equal(sanitizeChat(42), '');
+  assert.equal(sanitizeChat('x'.repeat(500)).length, ROOM_RULES.maxChatLength);
+  const room = new Room();
+  room.addPlayer('a', 'Ani');
+  const first = room.chat('a', 'Halo semua', 1000);
+  assert.deepEqual(first, { id: 'a', name: 'Ani', text: 'Halo semua', ts: 1000 });
+  assert.equal(room.chat('a', 'spam', 1200), null); // terlalu cepat
+  assert.ok(room.chat('a', 'oke', 1000 + ROOM_RULES.chatIntervalMs));
+  assert.equal(room.chat('a', '   ', 5000), null); // kosong
+  assert.equal(room.chat('nobody', 'hai', 5000), null);
+});

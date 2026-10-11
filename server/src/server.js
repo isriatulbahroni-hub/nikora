@@ -3,7 +3,7 @@ import { WebSocketServer } from 'ws';
 import { Room } from './room.js';
 
 const LIMITS = Object.freeze({
-  maxPayload: 512,
+  maxPayload: 1024,
   joinTimeoutMs: 5000,
   idleTimeoutMs: 15000,
   maxMessagesPerSecond: 60,
@@ -63,6 +63,11 @@ export function createGameServer({ port = 8080, host = '0.0.0.0', tickRate = 20,
       } else if (msg.t === 'input') {
         if (!id) return send(ws, { t: 'error', reason: 'join first' });
         if (!room.setInput(id, msg)) send(ws, { t: 'error', reason: 'invalid input' });
+      } else if (msg.t === 'chat') {
+        if (!id) return send(ws, { t: 'error', reason: 'join first' });
+        const chat = room.chat(id, msg.text, now);
+        if (!chat) return send(ws, { t: 'error', reason: 'invalid chat' });
+        broadcast({ t: 'chat', ...chat });
       } else if (msg.t === 'ping') {
         send(ws, { t: 'pong', ts: msg.ts });
       } else {

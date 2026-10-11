@@ -18,6 +18,7 @@
 
         <div class="arena-topline">
           <button id="mute-button" class="icon-button" type="button" aria-label="Matikan suara" aria-pressed="false" title="Suara (M)">♪</button>
+          <button id="chat-button" class="icon-button" type="button" aria-label="Buka obrolan" title="Obrolan (Enter)">💬</button>
           <button id="home-button" class="icon-button" type="button" aria-label="Kembali ke pintu masuk" title="Ke pintu masuk (R)">⌂</button>
         </div>
 
@@ -39,8 +40,16 @@
           </form>
         </div>
 
+        <div id="chat-box" class="chat-box">
+          <ol id="chat-log" class="chat-log" aria-live="polite"></ol>
+          <form id="chat-form" class="chat-form" hidden autocomplete="off">
+            <input id="chat-input" class="chat-input" type="text" maxlength="160" placeholder="Ketik pesan…" aria-label="Pesan obrolan" enterkeyhint="send" />
+            <button class="chat-send" type="submit" aria-label="Kirim">➤</button>
+          </form>
+        </div>
+
         <div class="arena-footer">
-          <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> berjalan <span class="footer-divider">/</span> <kbd>E</kbd> duduk · berdiri <span class="footer-divider">/</span> <kbd>Space</kbd> tepuk tangan <span class="footer-divider">/</span> <kbd>Q</kbd><kbd>Z</kbd> putar kamera <span class="footer-divider">/</span> <kbd>R</kbd> pintu masuk <span class="footer-divider">/</span> <kbd>M</kbd> suara</p>
+          <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> berjalan <span class="footer-divider">/</span> <kbd>Enter</kbd> obrolan <span class="footer-divider">/</span> <kbd>E</kbd> duduk · berdiri <span class="footer-divider">/</span> <kbd>Space</kbd> tepuk tangan <span class="footer-divider">/</span> <kbd>Q</kbd><kbd>Z</kbd> putar kamera <span class="footer-divider">/</span> <kbd>R</kbd> pintu masuk <span class="footer-divider">/</span> <kbd>M</kbd> suara</p>
         </div>
 
         <div class="controls" aria-label="Kontrol sentuh">

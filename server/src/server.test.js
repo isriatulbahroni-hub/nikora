@@ -118,3 +118,33 @@ test('rate limit memutus klien yang membanjiri server', async () => {
   assert.equal(await code, 4008);
   await server.close();
 });
+
+test('chat disiarkan ke semua pemain; pesan kosong, spam, dan sebelum join ditolak', async () => {
+  const server = createGameServer({ port: 0, host: '127.0.0.1', tickRate: 50 });
+  await server.ready;
+  const a = await connect(server);
+  const b = await connect(server);
+  const lurker = await connect(server);
+  a.send(JSON.stringify({ t: 'join', name: 'Ani' }));
+  b.send(JSON.stringify({ t: 'join', name: 'Budi' }));
+  const wa = await waitFor(() => find(a, 'welcome'));
+  await waitFor(() => find(b, 'welcome'));
+
+  lurker.send(JSON.stringify({ t: 'chat', text: 'belum join' }));
+  await waitFor(() => find(lurker, 'error', (m) => m.reason === 'join first'));
+
+  a.send(JSON.stringify({ t: 'chat', text: 'Halo <semua>' }));
+  const got = await waitFor(() => find(b, 'chat'));
+  assert.equal(got.id, wa.id);
+  assert.equal(got.name, 'Ani');
+  assert.equal(got.text, 'Halo semua');
+  assert.ok(find(a, 'chat')); // pengirim juga menerima (server sebagai sumber kebenaran)
+
+  a.send(JSON.stringify({ t: 'chat', text: 'terlalu cepat' }));
+  await waitFor(() => find(a, 'error', (m) => m.reason === 'invalid chat'));
+  b.send(JSON.stringify({ t: 'chat', text: '   ' }));
+  await waitFor(() => find(b, 'error', (m) => m.reason === 'invalid chat'));
+
+  a.close(); b.close(); lurker.close();
+  await server.close();
+});

@@ -5,7 +5,14 @@ export const ROOM_RULES = Object.freeze({
   maxPlayers: 50,
   playerSpeed: 5.2, // sama dengan PLAYER_SPEED di game offline
   maxNameLength: 24,
+  maxChatLength: 160,
+  chatIntervalMs: 800, // jeda minimum antar pesan per pemain (anti-spam)
 });
+
+export function sanitizeChat(raw, maxLength = ROOM_RULES.maxChatLength) {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
 
 export function sanitizeName(raw) {
   if (typeof raw !== 'string') return 'Tamu';
@@ -40,6 +47,17 @@ export class Room {
     };
     this.players.set(id, player);
     return player;
+  }
+
+  /** Pesan obrolan: dibersihkan, dibatasi panjang dan frekuensinya. Mengembalikan pesan atau null. */
+  chat(id, rawText, nowMs = Date.now()) {
+    const p = this.players.get(id);
+    if (!p) return null;
+    const text = sanitizeChat(rawText, this.rules.maxChatLength);
+    if (!text) return null;
+    if (nowMs - (p.lastChatAt ?? -Infinity) < this.rules.chatIntervalMs) return null;
+    p.lastChatAt = nowMs;
+    return { id: p.id, name: p.name, text, ts: nowMs };
   }
 
   removePlayer(id) {

@@ -88,3 +88,24 @@ test('mobile: kontrol sentuh aula tampil dan joystick menggerakkan avatar', asyn
   await page.mouse.up();
   expect(pageErrors).toEqual([]);
 });
+
+test('obrolan: pesan tampil di log (mode offline) dan tidak menjalankan HTML', async ({ page }) => {
+  const pageErrors = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/');
+  await page.locator('#name-input').fill('Penguji');
+  await page.getByRole('button', { name: /Masuk/ }).click();
+
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#chat-input')).toBeFocused();
+  await page.keyboard.type('Halo <b>semua</b>');
+  await page.keyboard.press('Enter');
+  const line = page.locator('#chat-log .chat-line').first();
+  await expect(line).toContainText('Penguji');
+  await expect(line).toContainText('Halo <b>semua</b>'); // tampil apa adanya sebagai teks
+  await expect(page.locator('#chat-log b', { hasText: 'semua' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#chat-form')).toBeHidden();
+  expect(pageErrors).toEqual([]);
+});

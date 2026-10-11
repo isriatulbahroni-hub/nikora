@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { createAvatar } from './avatar.js';
+import { createAvatar, makeBubble } from './avatar.js';
 import { GAME_RULES, cameraRelativeMovement, normalizeMovement } from './game-rules.js';
 import { HALL, SEATS, TABLES, facingAngle, findNearestSeat, resolveCollisions } from './hall-layout.js';
-import { startMultiplayer } from './multiplayer-view.js';
+import { resolveServerUrl, startMultiplayer } from './multiplayer-view.js';
 import './style.css';
 
 const $ = (selector) => document.querySelector(selector);
@@ -19,11 +19,16 @@ const ui = {
   sitLabel: $('#sit-label'),
   clapButton: $('#touch-clap'),
   muteButton: $('#mute-button'),
+  chatBox: $('#chat-box'),
+  chatLog: $('#chat-log'),
+  chatForm: $('#chat-form'),
+  chatInput: $('#chat-input'),
+  chatButton: $('#chat-button'),
 };
 
 const PLAYER_SPEED = GAME_RULES.playerSpeed;
 const START = Object.freeze({ x: 0, z: 9.4 });
-const OFFLINE = !new URLSearchParams(window.location.search).has('server');
+const OFFLINE = !resolveServerUrl(window.location.search);
 const heldKeys = new Set();
 const joystick = { x: 0, z: 0 };
 const JOY_RADIUS = 52;
@@ -376,6 +381,76 @@ function updateHud() {
   }
 }
 
+// ---- Obrolan ----
+const CHAT_LINE_TTL = 9000; // pesan memudar dari log setelah 9 detik (kecuali kolom ketik terbuka)
+const CHAT_KEEP = 40;
+const bubbles = new Map(); // id pemain -> { sprite, timer }
+
+function avatarFor(id) {
+  if (id === (multiplayer?.net.id ?? 'self')) return playerAvatar;
+  return multiplayer?.view.getAvatar(id) ?? null;
+}
+
+function showBubble(id, text) {
+  const group = avatarFor(id);
+  const sprite = makeBubble(text);
+  if (!group || !sprite) return;
+  const old = bubbles.get(id);
+  if (old) {
+    old.group.remove(old.sprite);
+    old.sprite.material.map?.dispose();
+    old.sprite.material.dispose();
+    window.clearTimeout(old.timer);
+  }
+  group.add(sprite);
+  const timer = window.setTimeout(() => {
+    group.remove(sprite);
+    sprite.material.map?.dispose();
+    sprite.material.dispose();
+    bubbles.delete(id);
+  }, 6000);
+  bubbles.set(id, { group, sprite, timer });
+}
+
+function addChatLine({ id, name, text }) {
+  const self = id === (multiplayer?.net.id ?? 'self');
+  const item = document.createElement('li');
+  item.className = `chat-line${self ? ' is-self' : ''}`;
+  const who = document.createElement('b');
+  who.textContent = name;
+  item.append(who, document.createTextNode(text)); // textContent saja: tidak ada HTML dari pemain lain
+  ui.chatLog.append(item);
+  while (ui.chatLog.children.length > CHAT_KEEP) ui.chatLog.firstChild.remove();
+  window.setTimeout(() => item.classList.add('is-old'), CHAT_LINE_TTL);
+  showBubble(id, text);
+}
+
+function openChat(open) {
+  ui.chatForm.hidden = !open;
+  ui.chatBox.classList.toggle('is-open', open);
+  if (open) {
+    heldKeys.clear();
+    ui.chatInput.focus();
+  } else {
+    ui.chatInput.blur();
+  }
+}
+
+function setupChat() {
+  ui.chatButton.addEventListener('click', () => joined && openChat(ui.chatForm.hidden));
+  ui.chatForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const text = ui.chatInput.value.replace(/\s+/g, ' ').trim().slice(0, 160);
+    ui.chatInput.value = '';
+    if (!text) return;
+    if (multiplayer) multiplayer.sendChat(text); // server menyiarkan balik ke semua, termasuk kita
+    else addChatLine({ id: 'self', name: playerName, text }); // mode offline: hanya terlihat lokal
+  });
+  ui.chatInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') openChat(false);
+  });
+}
+
 function showHud(ms = 2400) {
   ui.hud.classList.add('is-visible');
   window.clearTimeout(hudTimer);
@@ -572,6 +647,10 @@ function setupInput() {
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) event.preventDefault();
     heldKeys.add(event.code);
     if (event.repeat) return;
+    if (event.code === 'Enter' && joined) {
+      event.preventDefault();
+      openChat(true);
+    }
     if (event.code === 'KeyE') toggleSit(clock());
     if (event.code === 'Space') clap(clock());
     if (event.code === 'KeyR' && joined) goToEntrance(clock());
@@ -635,6 +714,7 @@ function setupJoin() {
     startMultiplayer({ scene, search: window.location.search, name: playerName })
       .then((session) => {
         multiplayer = session;
+        session?.net.on('chat', addChatLine);
       })
       .catch((error) => console.warn('[multiplayer]', error));
   });
@@ -658,6 +738,7 @@ async function startGame() {
     stage = 'input';
     setupInput();
     setupJoin();
+    setupChat();
     requestAnimationFrame(renderFrame);
   } catch (error) {
     console.error(`[startup:${stage}]`, error);

@@ -44,3 +44,46 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null } 
   }
   return group;
 }
+
+/** Gelembung obrolan (sprite) di atas kepala avatar. Teks dipotong dan dibungkus maksimal 3 baris. */
+export function makeBubble(text) {
+  if (typeof document === 'undefined') return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 160;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.font = '600 30px sans-serif';
+  const lines = [];
+  let line = '';
+  for (const word of String(text).split(' ')) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width > 440 && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  const shown = lines.slice(0, 3);
+  if (lines.length > 3) shown[2] = `${shown[2].slice(0, 28)}…`;
+  const height = 28 + shown.length * 38;
+  const top = 160 - height - 14;
+  ctx.fillStyle = 'rgba(255,255,255,0.94)';
+  if (ctx.roundRect) {
+    ctx.beginPath();
+    ctx.roundRect(24, top, 464, height, 22);
+    ctx.fill();
+  } else {
+    ctx.fillRect(24, top, 464, height); // browser lama tanpa roundRect
+  }
+  ctx.fillStyle = '#1b1620';
+  ctx.textAlign = 'center';
+  shown.forEach((l, i) => ctx.fillText(l, 256, top + 46 + i * 38));
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthTest: false }));
+  sprite.scale.set(3.2, 1, 1);
+  sprite.position.y = 2.95;
+  sprite.renderOrder = 10;
+  return sprite;
+}

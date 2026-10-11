@@ -8,7 +8,7 @@ export class NetClient {
     this.id = null;
     this.seq = 0;
     this.players = [];
-    this.handlers = { welcome: [], state: [], left: [], close: [], error: [] };
+    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [] };
     this.pingTimer = null;
   }
 
@@ -53,6 +53,8 @@ export class NetClient {
           this.#emit('state', msg);
         } else if (msg.t === 'left') {
           this.#emit('left', msg);
+        } else if (msg.t === 'chat') {
+          this.#emit('chat', msg);
         }
       };
     });
@@ -67,6 +69,10 @@ export class NetClient {
     const msg = { t: 'input', x, z, rot, seq: ++this.seq };
     if (sit !== undefined) msg.sit = sit;
     this.#send(msg);
+  }
+
+  sendChat(text) {
+    this.#send({ t: 'chat', text });
   }
 
   close() {

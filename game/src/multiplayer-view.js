@@ -7,9 +7,9 @@ const SMOOTHING = 12; // semakin besar, semakin cepat avatar mengejar posisi ser
 const SEND_INTERVAL_MS = 50;
 const PALETTE = [0xf2a65a, 0x6ab8e8, 0xc77dff, 0xf25f5c, 0x70c1b3, 0xffe066];
 
-/** Baca ?server=ws://host:port dari query string. Hanya ws:// atau wss://. */
-export function resolveServerUrl(search) {
-  const value = new URLSearchParams(search ?? '').get('server');
+/** Baca ?server=ws://host:port dari query string, atau VITE_SERVER_URL saat build. Hanya ws:// atau wss://. */
+export function resolveServerUrl(search, fallback = import.meta.env?.VITE_SERVER_URL) {
+  const value = new URLSearchParams(search ?? '').get('server') || fallback;
   if (!value) return null;
   try {
     const url = new URL(value);
@@ -108,6 +108,9 @@ export async function startMultiplayer({ scene, search, name = 'Tamu', NetClient
   return {
     net,
     view,
+    sendChat(text) {
+      net.sendChat(text);
+    },
     sendInput(x, z, rot, nowMs, sit) {
       if (nowMs - lastSent < SEND_INTERVAL_MS) return;
       lastSent = nowMs;

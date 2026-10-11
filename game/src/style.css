@@ -481,3 +481,19 @@ body.joined .game-header,body.joined .page-footer{opacity:0;pointer-events:none;
 #touch-sit{right:calc(28px + env(safe-area-inset-right));bottom:calc(112px + env(safe-area-inset-bottom));width:84px;height:84px}
 #touch-clap{right:calc(28px + env(safe-area-inset-right));bottom:calc(34px + env(safe-area-inset-bottom));width:64px;height:64px;opacity:.7}
 @media (max-height:480px){#touch-sit{bottom:calc(88px + env(safe-area-inset-bottom));width:70px;height:70px}#touch-clap{bottom:calc(20px + env(safe-area-inset-bottom));width:52px;height:52px}}
+
+/* ---- Obrolan ---- */
+.chat-box{position:absolute;z-index:5;left:calc(14px + env(safe-area-inset-left));bottom:calc(14px + env(safe-area-inset-bottom));width:min(360px,calc(100vw - 28px));display:flex;flex-direction:column;gap:6px;pointer-events:none}
+body[data-input=touch] .chat-box{bottom:calc(190px + env(safe-area-inset-bottom));width:min(300px,calc(100vw - 150px))}
+.chat-log{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;max-height:34vh;overflow:hidden}
+.chat-line{padding:5px 10px;border-radius:12px;background:rgba(14,22,20,.55);backdrop-filter:blur(4px);color:#f1efe4;font-size:.86rem;line-height:1.25;overflow-wrap:anywhere;transition:opacity .6s;pointer-events:auto}
+.chat-line b{color:#f3d58a;font-weight:700;margin-right:6px}
+.chat-line.is-self b{color:#a8ecc9}
+.chat-line.is-old{opacity:0}
+.chat-box.is-open .chat-line.is-old{opacity:1}
+.chat-form{display:flex;gap:6px;pointer-events:auto}
+.chat-form[hidden]{display:none}
+.chat-input{flex:1;min-width:0;box-sizing:border-box;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(14,22,20,.82);color:var(--ink);font:500 .95rem var(--mono);outline:none}
+.chat-input:focus{border-color:var(--mint)}
+.chat-send{width:42px;border:0;border-radius:12px;background:var(--mint);color:#10231b;font-size:1rem}
+@media (max-height:480px){body[data-input=touch] .chat-box{bottom:calc(14px + env(safe-area-inset-bottom));width:min(260px,40vw)}}
