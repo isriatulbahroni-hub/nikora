@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101a1d" />
+    <title>NEXORA | Offline Arena Prototype</title>
+  </head>
+  <body>
+    <main class="game-shell">
+      <header class="game-header">
+        <a class="wordmark" href="../index.html" aria-label="Kembali ke NEXORA">NEXORA</a>
+        <div class="build-label"><span></span> Offline prototype</div>
+      </header>
+
+      <section class="arena-frame" aria-label="Arena game NEXORA">
+        <div id="game-root"></div>
+
+        <div class="arena-topline">
+          <div>
+            <p class="eyebrow">GAME PROTOTYPE / 01</p>
+            <h1>Trial Grounds</h1>
+          </div>
+          <button id="restart-button" class="icon-button" type="button" aria-label="Mulai ulang pertandingan" title="Mulai ulang">↻</button>
+        </div>
+
+        <div class="match-hud" aria-live="polite">
+          <div class="combatant player-hud">
+            <div class="combatant-line"><span>YOU</span><strong id="player-health-label">100</strong></div>
+            <div class="health-track"><div id="player-health-bar" class="health-fill player-fill"></div></div>
+          </div>
+          <div class="match-state">
+            <span class="round-label">SOLO TRIAL</span>
+            <strong id="match-status">READY</strong>
+          </div>
+          <div class="combatant enemy-hud">
+            <div class="combatant-line"><span>RIVAL</span><strong id="enemy-health-label">100</strong></div>
+            <div class="health-track"><div id="enemy-health-bar" class="health-fill enemy-fill"></div></div>
+          </div>
+        </div>
+
+        <div id="result-overlay" class="result-overlay" hidden>
+          <div class="result-panel">
+            <p class="eyebrow">MATCH COMPLETE</p>
+            <h2 id="result-title">Victory</h2>
+            <p id="result-copy">Trial selesai.</p>
+            <button id="play-again-button" class="action-button" type="button">Main lagi <span>↗</span></button>
+          </div>
+        </div>
+
+        <div class="arena-footer">
+          <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> bergerak <span class="footer-divider">/</span> <kbd>Space</kbd> serang</p>
+          <p class="arena-note">Satu arena · satu bot · tanpa jaringan</p>
+        </div>
+
+        <div class="touch-controls" aria-label="Kontrol sentuh">
+          <div class="dpad">
+            <button type="button" data-direction="up" aria-label="Bergerak ke atas">↑</button>
+            <button type="button" data-direction="left" aria-label="Bergerak ke kiri">←</button>
+            <button type="button" data-direction="down" aria-label="Bergerak ke bawah">↓</button>
+            <button type="button" data-direction="right" aria-label="Bergerak ke kanan">→</button>
+          </div>
+          <button id="touch-attack" class="touch-attack" type="button" aria-label="Serang">Hit</button>
+        </div>
+      </section>
+
+      <footer class="page-footer">
+        <span>BUILD 0.1 / LOCAL SIMULATION</span>
+        <span>Offline mechanics prototype</span>
+      </footer>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
