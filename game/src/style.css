@@ -490,3 +490,11 @@ a:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+.render-error code {
+  display: block;
+  margin-top: 0.75rem;
+  max-width: 90%;
+  font-size: 0.75rem;
+  word-break: break-word;
+  opacity: 0.85;
+}

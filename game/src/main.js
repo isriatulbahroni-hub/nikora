@@ -47,9 +47,29 @@ let facing = { x: 0, z: -1 };
 let accumulator = 0;
 let priorFrameTime = 0;
 
-function showStartupError(message) {
-  root.innerHTML = `<div class="render-error"><strong>Prototype tidak dapat dimulai.</strong><span>${message}</span></div>`;
+function showStartupError(message, detail = '') {
+  const box = document.createElement('div');
+  box.className = 'render-error';
+  const title = document.createElement('strong');
+  title.textContent = 'Prototype tidak dapat dimulai.';
+  const text = document.createElement('span');
+  text.textContent = message;
+  box.append(title, text);
+  if (detail) {
+    const code = document.createElement('code');
+    code.textContent = detail;
+    box.append(code);
+  }
+  root.replaceChildren(box);
   ui.matchStatus.textContent = 'ERROR';
+}
+
+function hasWebGL2() {
+  try {
+    return Boolean(document.createElement('canvas').getContext('webgl2'));
+  } catch {
+    return false;
+  }
 }
 
 function addStaticBox(position, halfExtents, material, castShadow = true) {
@@ -486,16 +506,25 @@ function setupInput() {
 }
 
 async function startGame() {
+  let stage = 'webgl-check';
   try {
+    if (!hasWebGL2()) {
+      showStartupError('Browser ini tidak menyediakan WebGL 2. Aktifkan akselerasi perangkat keras di pengaturan browser, lalu muat ulang.');
+      return;
+    }
+    stage = 'physics-init';
     await RAPIER.init({});
+    stage = 'scene';
     createScene();
+    stage = 'physics-setup';
     setupPhysics();
+    stage = 'input';
     setupInput();
     updateHealthHud();
     requestAnimationFrame(renderFrame);
   } catch (error) {
-    console.error(error);
-    showStartupError('Periksa dukungan WebGL dan muat ulang halaman.');
+    console.error(`[startup:${stage}]`, error);
+    showStartupError('Terjadi kesalahan saat memulai. Kirim detail di bawah ini ke pengembang.', `${stage}: ${error?.message ?? error}`);
   }
 }
 
