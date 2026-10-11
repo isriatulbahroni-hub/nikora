@@ -52,6 +52,7 @@ let scene;
 let camera;
 let playerAvatar;
 let npcs = [];
+let netError = '';
 const focus = new THREE.Vector3(START.x, 0.5, START.z);
 let priorFrameTime = 0;
 let idleAngle = 0;
@@ -285,6 +286,15 @@ function addSeatedNpc(seatId, color, name, { x, y, z, rot } = {}) {
   npcs.push({ avatar, baseY: avatar.position.y, phase: Math.random() * 6.28, seatId });
 }
 
+// Tamu simulasi duduk dihapus begitu tersambung ke tamu sungguhan (mempelai di panggung tetap sebagai dekor).
+function clearSimulatedGuests() {
+  npcs = npcs.filter((n) => {
+    if (n.seatId == null) return true;
+    scene.remove(n.avatar);
+    return false;
+  });
+}
+
 function populateOfflineGuests() {
   // Tamu simulasi hanya di mode offline agar tidak bentrok dengan kursi pemain sungguhan di server.
   const colors = [0xf2a65a, 0x6ab8e8, 0xc77dff, 0xf25f5c, 0x70c1b3, 0xffe066];
@@ -504,7 +514,7 @@ function updateHud() {
   ui.sitButton.classList.toggle('is-ready', canAct);
   ui.sitLabel.textContent = me.sit !== null ? 'BERDIRI' : 'DUDUK';
   const remote = multiplayer?.view.count ?? 0;
-  ui.guests.textContent = multiplayer ? `${remote + 1}` : OFFLINE ? 'offline' : '…';
+  ui.guests.textContent = multiplayer ? `${remote + 1}` : netError ? `offline · ${netError}` : joined ? '…' : 'offline';
   $('#online-dot').classList.toggle('is-online', Boolean(multiplayer));
 }
 
@@ -847,9 +857,10 @@ function setupJoin() {
     joined = true;
     ui.joinOverlay.hidden = true;
     sfx.join();
-    startMultiplayer({ scene, search: window.location.search, name: playerName })
+    startMultiplayer({ scene, search: window.location.search, name: playerName, onError: (m) => { netError = m; } })
       .then((session) => {
         multiplayer = session;
+        if (session) clearSimulatedGuests();
         session?.net.on('chat', addChatLine);
         session?.net.on('greet-req', (msg) => showGreetRequest(msg));
         setupVoice(session);

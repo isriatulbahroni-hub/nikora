@@ -47,9 +47,9 @@ export class LiveKitNet {
 
   async connect(_url, name = 'Tamu') {
     const res = await this.fetch(this.tokenUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name }) });
-    if (!res.ok) throw new Error('token gagal');
+    if (!res.ok) throw new Error(`api/token HTTP ${res.status}`);
     const cred = await res.json();
-    if (!cred.enabled) throw new Error('LiveKit belum dikonfigurasi');
+    if (!cred.enabled) throw new Error('env LiveKit belum terbaca');
     const LiveKit = this.LiveKit ?? (await import('livekit-client'));
     const { Room, RoomEvent } = LiveKit;
     const room = new Room({ adaptiveStream: true, dynacast: true, audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });

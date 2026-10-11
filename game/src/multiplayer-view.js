@@ -96,7 +96,7 @@ export function createRemotePlayers(scene) {
 }
 
 /** Sambung ke server jika ?server= ada. Tidak pernah melempar error; game offline tetap jalan. */
-export async function startMultiplayer({ scene, search, name = 'Tamu', NetClientImpl = NetClient, LiveKitImpl = LiveKitNet, useLiveKit = !import.meta.env?.VITE_DISABLE_LIVEKIT }) {
+export async function startMultiplayer({ scene, search, name = 'Tamu', NetClientImpl = NetClient, LiveKitImpl = LiveKitNet, useLiveKit = !import.meta.env?.VITE_DISABLE_LIVEKIT, onError = () => {} }) {
   // ?server=ws://... memakai server WebSocket sendiri; selain itu coba LiveKit lewat /api/token (cukup Vercel).
   const url = resolveServerUrl(search);
   if (!url && !useLiveKit) return null;
@@ -109,6 +109,7 @@ export async function startMultiplayer({ scene, search, name = 'Tamu', NetClient
     await net.connect(url, name);
   } catch (error) {
     console.warn('[multiplayer] gagal terhubung, lanjut offline:', error?.message ?? error);
+    onError(String(error?.message ?? error).slice(0, 40));
     view.dispose();
     return null;
   }
