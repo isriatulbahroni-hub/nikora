@@ -3,6 +3,8 @@ import { applyPose, createAvatar } from './avatar.js';
 import { loadConfig, toWire } from './avatar-config.js';
 import { startMultiplayer } from './multiplayer-view.js';
 import { loadEventInfo, parseEventParams } from './event-context.js';
+import './gate.css';
+import { mountGate, shouldShowGate } from './gate.js';
 import { findNearestSpot, getVillaWorld, roomAt, spotPose } from './villa-layout.js';
 import { VoiceChat } from './voice.js';
 import { buildVillaWorld } from './villa-world.js';
@@ -165,6 +167,9 @@ function createMinimap() {
 
 // ---------- start ----------
 async function start() {
+  const supabase = { url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_ANON_KEY };
+  // Tamu dari undangan melewati gerbang dulu; dunia tetap memuat di belakangnya.
+  const gate = shouldShowGate(window.location.search) ? mountGate({ world: 'villa', search: window.location.search, supabase }) : null;
   if (!hasWebGL2()) {
     showError('Browser ini tidak mendukung WebGL 2. Aktifkan akselerasi perangkat keras lalu muat ulang.');
     return;
@@ -335,7 +340,8 @@ async function start() {
 
   // ---------- jaringan ----------
   let netStatus = 'Menyambung…'; // alasan ditampilkan bila gagal terhubung
-  startMultiplayer({ scene, search: window.location.search, name, world: 'villa', poseFor, onError: (m) => { netStatus = `Offline · ${m}`; } })
+  (gate ? gate.passed : Promise.resolve())
+    .then(() => startMultiplayer({ scene, search: window.location.search, name, world: 'villa', poseFor, onError: (m) => { netStatus = `Offline · ${m}`; } }))
     .then((session) => {
       multiplayer = session;
       if (!session && netStatus === 'Menyambung…') netStatus = 'Offline';

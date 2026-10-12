@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { VoiceChat } from './voice.js';
 import { loadEventInfo, parseEventParams } from './event-context.js';
+import './gate.css';
+import { mountGate, shouldShowGate } from './gate.js';
 import { applyPose, createAvatar, makeBubble, setAvatarConfig, setStageRing } from './avatar.js';
 import { createPartyController, speakerIds } from './party.js';
 import { loadConfig, saveConfig, toWire } from './avatar-config.js';
@@ -49,6 +51,9 @@ const me = { x: START.x, z: START.z, rot: Math.PI, sit: null };
 let joined = false;
 let playerName = 'Tamu';
 const eventParams = parseEventParams(window.location.search);
+if (shouldShowGate(window.location.search)) {
+  mountGate({ world: 'hall', search: window.location.search, supabase: { url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_ANON_KEY } });
+}
 // Judul acara dari undangan ditampilkan sebagai sapaan di kartu masuk (tanpa menambah HUD saat bermain).
 if (eventParams.slug) {
   loadEventInfo(eventParams.slug, { url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_ANON_KEY }).then((info) => {
