@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LiveKitNet } from './livekit-net.js';
+import { LiveKitNet, describeCredFailure } from './livekit-net.js';
 import { createPartyController } from './party.js';
 
 // Hub palsu yang meniru Room LiveKit: mengantar data antar-peserta dan memicu event.
@@ -205,4 +205,11 @@ test('LiveKitNet: joget terlihat pemain lain, bisa dihentikan, dan tidak bisa sa
   a.self.sit = 3; // di kursi: tidak bisa joget
   a.setDance(true);
   assert.equal(a.self.act, null);
+});
+
+test('describeCredFailure: pesan jelas untuk konfigurasi kurang, acara tak ada, dan default; nama ngawur disaring', () => {
+  assert.equal(describeCredFailure({ enabled: false, reason: 'config', missing: ['LIVEKIT_API_SECRET'] }), 'server belum dikonfigurasi, kurang: LIVEKIT_API_SECRET');
+  assert.equal(describeCredFailure({ enabled: false, reason: 'config', missing: ['LIVEKIT_URL', '<script>'] }), 'server belum dikonfigurasi, kurang: LIVEKIT_URL');
+  assert.equal(describeCredFailure({ enabled: false, reason: 'event' }), 'undangan tidak ditemukan');
+  assert.equal(describeCredFailure({ enabled: false }), 'env LiveKit belum terbaca');
 });

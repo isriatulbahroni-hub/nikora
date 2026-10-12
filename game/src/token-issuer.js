@@ -1,6 +1,15 @@
 import { randomUUID } from 'node:crypto';
 import { AccessToken } from 'livekit-server-sdk';
 
+export const LIVEKIT_VARS = ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'];
+
+/** Baca variabel lingkungan: buang spasi/baris baru di ujung dan tanda kutip pembungkus (salah tempel yang umum). */
+export function readEnv(env, name) {
+  const raw = env?.[name];
+  if (typeof raw !== 'string') return '';
+  return raw.trim().replace(/^(['"])(.*)\1$/, '$2').trim();
+}
+
 export const VOICE_ROOM = 'orbit-hall';
 export const ROOMS = Object.freeze({ hall: VOICE_ROOM, villa: 'nikora-villa' });
 
@@ -38,8 +47,10 @@ export function cleanName(raw) {
 
 /** Terbitkan identitas + token LiveKit untuk satu tamu. { enabled:false } bila LiveKit belum dikonfigurasi. */
 export async function issueToken({ env = process.env, name, world, event, fetchImpl } = {}) {
-  const { LIVEKIT_URL: url, LIVEKIT_API_KEY: key, LIVEKIT_API_SECRET: secret } = env;
-  if (!url || !key || !secret) return { enabled: false };
+  const [url, key, secret] = LIVEKIT_VARS.map((name) => readEnv(env, name));
+  const missing = LIVEKIT_VARS.filter((_, i) => ![url, key, secret][i]);
+  // Hanya NAMA variabel yang kurang yang dikirim (tidak pernah nilainya), supaya salah konfigurasi bisa didiagnosis dari HP.
+  if (missing.length) return { enabled: false, reason: 'config', missing };
   if (event !== undefined && event !== null && event !== '') {
     if (!isEventSlug(event) || !(await eventExists(event, { env, ...(fetchImpl ? { fetchImpl } : {}) }))) return { enabled: false, reason: 'event' };
   }

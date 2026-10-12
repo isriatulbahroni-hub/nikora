@@ -18,6 +18,15 @@ const dec = new TextDecoder();
 const normAngle = (a) => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
 const num = (v, fallback = 0) => (Number.isFinite(v) ? v : fallback);
 
+/** Pesan yang bisa ditindaklanjuti untuk kegagalan kredensial (tidak membocorkan nilai rahasia). */
+export function describeCredFailure(cred) {
+  if (cred?.reason === 'event') return 'undangan tidak ditemukan';
+  if (cred?.reason === 'config' && Array.isArray(cred.missing) && cred.missing.length) {
+    return `server belum dikonfigurasi, kurang: ${cred.missing.filter((m) => /^LIVEKIT_[A-Z_]+$/.test(m)).join(', ')}`;
+  }
+  return 'env LiveKit belum terbaca';
+}
+
 export class LiveKitNet {
   constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl, world, event } = {}) {
     this.event = event ?? null; // slug acara dari undangan
@@ -56,7 +65,7 @@ export class LiveKitNet {
     const res = await this.fetch(this.tokenUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, world: this.world, event: this.event }) });
     if (!res.ok) throw new Error(`api/token HTTP ${res.status}`);
     const cred = await res.json();
-    if (!cred.enabled) throw new Error(cred.reason === 'event' ? 'undangan tidak ditemukan' : 'env LiveKit belum terbaca');
+    if (!cred.enabled) throw new Error(describeCredFailure(cred));
     const LiveKit = this.LiveKit ?? (await import('livekit-client'));
     const { Room, RoomEvent } = LiveKit;
     const room = new Room({ adaptiveStream: true, dynacast: true, audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
