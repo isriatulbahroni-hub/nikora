@@ -8,7 +8,7 @@ const MAX_FILE = 2 * 1024 ** 3;
  * Pengendali Layar Tancap. Memegang state bersama (operator, sumber, posisi), mengirim lewat net.sendScreen,
  * dan memutar: YouTube/TikTok di panel embed resmi; video dari HP dan siaran kamera langsung di layar 3D lewat LiveKit.
  */
-export function createScreenController({ net, mesh, doc = document, now = () => Date.now(), fetchImpl, nameOf = (id) => id, onChange = () => {}, storage }) {
+export function createScreenController({ net, mesh, doc = document, now = () => Date.now(), fetchImpl, nameOf = (id) => id, onChange = () => {}, storage, embedHost = null }) {
   let state = emptyScreen();
   let lastSync = 0;
   let status = '';
@@ -24,23 +24,31 @@ export function createScreenController({ net, mesh, doc = document, now = () => 
   let volume = Number.isFinite(saved) && storage?.getItem?.('orbit-screen-vol') !== null ? Math.min(1, Math.max(0, saved)) : 0.8;
   let muted = false;
 
-  // ---------- panel embed (YouTube/TikTok) ----------
+  // ---------- pemutar embed (YouTube/TikTok) ----------
+  // Dengan embedHost (CSS3D) video menempel di layar 3D. Tanpa itu (cadangan) jatuh ke panel mengambang kecil.
   const embed = doc.createElement('div');
-  embed.className = 'screen-embed';
-  embed.hidden = true;
   const frame = doc.createElement('iframe');
   frame.className = 'screen-embed-frame';
   frame.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
   frame.referrerPolicy = 'strict-origin-when-cross-origin';
   frame.title = 'Video layar acara';
-  const closeBtn = doc.createElement('button');
-  closeBtn.type = 'button';
-  closeBtn.className = 'screen-embed-close';
-  closeBtn.textContent = '✕';
-  closeBtn.setAttribute('aria-label', 'Sembunyikan video');
-  closeBtn.addEventListener('click', () => { embed.hidden = true; });
-  embed.append(frame, closeBtn);
-  doc.body.append(embed);
+  if (embedHost) {
+    embedHost.container.append(frame);
+  } else {
+    embed.className = 'screen-embed';
+    embed.hidden = true;
+    const closeBtn = doc.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'screen-embed-close';
+    closeBtn.textContent = '✕';
+    closeBtn.setAttribute('aria-label', 'Sembunyikan video');
+    closeBtn.addEventListener('click', () => { embed.hidden = true; });
+    embed.append(frame, closeBtn);
+    doc.body.append(embed);
+  }
+  const setEmbedVisible = (on) => {
+    if (embedHost) { embedHost.setActive(on); mesh.showHole?.(on); } else embed.hidden = !on;
+  };
 
   const ytCmd = (func, args = []) => frame.contentWindow?.postMessage(JSON.stringify({ event: 'command', func, args }), YT_ORIGIN);
   const onMessage = (event) => {
@@ -96,14 +104,14 @@ export function createScreenController({ net, mesh, doc = document, now = () => 
   function showEmbed() {
     const url = embedUrl(state.src);
     const key = state.src ? `${state.src.type}:${state.src.id}:${state.src.start ?? 0}` : '';
-    if (!url) { embed.hidden = true; frame.src = 'about:blank'; embedKey = ''; return; }
+    if (!url) { setEmbedVisible(false); frame.src = 'about:blank'; embedKey = ''; return; }
     if (key !== embedKey) {
       embedKey = key;
       ytReady = false;
       ytTime = null;
       frame.src = url;
     }
-    embed.hidden = false;
+    setEmbedVisible(true);
   }
 
   function trackEl(track, tag) {
@@ -137,7 +145,7 @@ export function createScreenController({ net, mesh, doc = document, now = () => 
     if (src.type === 'youtube' || src.type === 'tiktok') {
       releaseMedia();
       showEmbed();
-      mesh.showIdle({ title: src.type === 'youtube' ? 'YouTube' : 'TikTok', sub: 'Sedang diputar di panel video' });
+      if (!embedHost) mesh.showIdle({ title: src.type === 'youtube' ? 'YouTube' : 'TikTok', sub: 'Sedang diputar di panel video' });
       if (src.type === 'youtube') followYouTube();
       return;
     }
@@ -156,7 +164,7 @@ export function createScreenController({ net, mesh, doc = document, now = () => 
     applyVolume();
   }
   function showEmbedOff() {
-    if (embedKey) { embed.hidden = true; frame.src = 'about:blank'; embedKey = ''; }
+    if (embedKey) { setEmbedVisible(false); frame.src = 'about:blank'; embedKey = ''; }
   }
 
   net.on('screen', ({ from, msg }) => set(applyMessage(state, from, msg, present(), now())));
@@ -188,8 +196,8 @@ export function createScreenController({ net, mesh, doc = document, now = () => 
     get volume() { return muted ? 0 : volume; },
     get muted() { return muted; },
     get localKind() { return local?.kind ?? null; },
-    get embedHidden() { return embed.hidden; },
-    showEmbedAgain() { if (embedKey) embed.hidden = false; },
+    get embedHidden() { return embedHost ? false : embed.hidden; },
+    showEmbedAgain() { if (embedKey && !embedHost) embed.hidden = false; },
     claim: () => act({ k: 'claim' }),
     async release() { await stopLocal(); act({ k: 'release' }); },
 
@@ -280,6 +288,7 @@ export function createScreenController({ net, mesh, doc = document, now = () => 
       doc.defaultView?.removeEventListener('message', onMessage);
       releaseMedia();
       embed.remove();
+      if (embedHost) embedHost.setActive(false);
       stopLocal();
     },
   };

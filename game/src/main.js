@@ -231,7 +231,8 @@ function createScene() {
   camera = new THREE.PerspectiveCamera(46, size.width / size.height, 0.1, 90);
   camera.position.set(0, 12, 20);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  renderer.setClearAlpha(1);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
   renderer.setSize(size.width, size.height);
   renderer.shadowMap.enabled = true;
@@ -269,7 +270,8 @@ function createScene() {
   box(0.35, 1.1, 23, wall, -11.65, 0.55, 0);
   box(0.35, 1.1, 23, wall, 11.65, 0.55, 0);
   box(24, 0.7, 0.35, wall, 0, 0.35, 11.65);
-  hallScreen = createScreen({ scene, spec: { x: 0, y: 4.3, z: -11.45, width: 8, height: 4.5 } }); // layar tancap aula
+  hallScreen = createScreen({ scene, renderer, host: root, spec: { x: 0, y: 4.3, z: -11.45, width: 8, height: 4.5 } });
+  hallScreen.resize(size.width, size.height); // layar tancap aula
 
   buildStage();
   for (const table of TABLES) buildTable(table);
@@ -780,6 +782,7 @@ function renderFrame(time) {
   updateHud();
   updateCamera(delta, now);
   renderer.render(scene, camera);
+  hallScreen?.render(scene, camera);
 }
 
 // ---- Kontrol ----
@@ -962,6 +965,7 @@ function setupInput() {
     camera.aspect = size.width / size.height;
     camera.updateProjectionMatrix();
     renderer.setSize(size.width, size.height);
+    hallScreen?.resize(size.width, size.height);
   });
 }
 

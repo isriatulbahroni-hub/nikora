@@ -253,7 +253,8 @@ async function start() {
     return;
   }
   const root = $('villa-root');
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setClearAlpha(1);
   const coarse = window.matchMedia?.('(pointer: coarse)').matches;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarse ? 1.75 : 2));
   renderer.shadowMap.enabled = true;
@@ -275,8 +276,10 @@ async function start() {
     camState.pitch = CAM_PRESETS[preset].pitch;
     camState.dist = CAM_PRESETS[preset].dist;
   };
+  let screen = null; // layar tancap; dibuat setelah dunia siap
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
+    screen?.resize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
   };
@@ -307,7 +310,8 @@ async function start() {
     if (info?.title) document.title = `${info.title} · NIKORA Villa`;
   });
   const name = (params.get('name') || eventParams.to || store('orbit-name') || `Tamu-${Math.floor(Math.random() * 900 + 100)}`).replace(/[<>]/g, '').slice(0, 24);
-  const screen = createScreen({ scene, spec: VILLA_SCREEN }); // layar tancap besar di belakang pelaminan
+  screen = createScreen({ scene, renderer, host: root, spec: VILLA_SCREEN });
+  screen.resize(window.innerWidth, window.innerHeight); // layar tancap besar di belakang pelaminan
   const avatarConfig = loadConfig(storage); // avatar yang sama dengan yang dibuat di aula
   const avatar = createAvatar({ config: avatarConfig, name });
   avatar.rotation.order = 'YXZ'; // miring (tidur) dulu, lalu arah hadap
@@ -569,6 +573,7 @@ async function start() {
     holePoint.set(me.x, avatar.position.y + 1.0, me.z).project(camera);
     built.hole.value.set((holePoint.x * 0.5 + 0.5) * bufferSize.x, (holePoint.y * 0.5 + 0.5) * bufferSize.y, 0.36 * Math.min(bufferSize.x, bufferSize.y), me.y + 2.35);
     renderer.render(scene, camera);
+    screen.render(scene, camera);
 
     const near = nearestSpot();
     setActLabel(seat !== null ? 'Berdiri' : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : '');

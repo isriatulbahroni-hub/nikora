@@ -26,6 +26,8 @@ export function createScreenMesh({ x = 0, y = 4.3, z = -11.45, ry = 0, width = 8
   const idleTexture = new THREE.CanvasTexture(canvas);
   idleTexture.colorSpace = THREE.SRGBColorSpace;
   const material = new THREE.MeshBasicMaterial({ map: idleTexture, toneMapped: false });
+  // Bahan "lubang": menulis alpha 0 sehingga lapisan CSS3D (video embed) di belakang kanvas terlihat tembus di bidang layar.
+  const holeMaterial = new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0, blending: THREE.NoBlending, side: THREE.DoubleSide });
   const plane = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material);
   group.add(plane);
 
@@ -45,8 +47,13 @@ export function createScreenMesh({ x = 0, y = 4.3, z = -11.45, ry = 0, width = 8
 
   return {
     group,
+    /** true: bidang layar jadi lubang untuk video embed CSS3D; false: kembali menampilkan kartu/video 3D. */
+    showHole(on) {
+      plane.material = on ? holeMaterial : material;
+    },
     /** Kartu diam: judul besar + keterangan kecil. */
     showIdle({ title = 'LAYAR ACARA', sub = '' } = {}) {
+      plane.material = material;
       if (currentVideo) this.clearVideo();
       const w = canvas.width;
       const h = canvas.height;
@@ -71,6 +78,7 @@ export function createScreenMesh({ x = 0, y = 4.3, z = -11.45, ry = 0, width = 8
     },
     /** Tampilkan elemen <video> (track LiveKit atau file lokal) di layar. */
     showVideo(video) {
+      plane.material = material;
       if (currentVideo === video) return;
       videoTexture?.dispose();
       videoTexture = new THREE.VideoTexture(video);
@@ -90,6 +98,7 @@ export function createScreenMesh({ x = 0, y = 4.3, z = -11.45, ry = 0, width = 8
       this.clearVideo();
       idleTexture.dispose();
       material.dispose();
+      holeMaterial.dispose();
     },
   };
 }

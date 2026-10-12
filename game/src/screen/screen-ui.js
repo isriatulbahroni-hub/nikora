@@ -1,5 +1,8 @@
 // Tombol 🎬 + panel kontrol Layar Tancap. Sengaja minimal: tamu hanya melihat volume; operator melihat kontrol putar.
 export function mountScreenUI({ ctl, net, doc = document, parent = doc.body }) {
+  // Tombol ikut barisan tombol yang sudah ada (aula: .arena-topline, villa: baris .rb) agar tampil menyatu.
+  const bar = doc.querySelector('.arena-topline') ?? doc.querySelector('.rb')?.parentElement ?? null;
+  const siblingClass = bar?.querySelector('.icon-button') ? 'icon-button' : bar?.querySelector('.rb') ? 'rb' : '';
   const el = (tag, cls, text) => {
     const n = doc.createElement(tag);
     if (cls) n.className = cls;
@@ -13,7 +16,7 @@ export function mountScreenUI({ ctl, net, doc = document, parent = doc.body }) {
     return b;
   };
 
-  const toggle = el('button', 'sc-toggle', '🎬');
+  const toggle = el('button', siblingClass ? `${siblingClass} sc-toggle-in-bar` : 'sc-toggle', '🎬');
   toggle.type = 'button';
   toggle.setAttribute('aria-label', 'Layar acara');
   toggle.title = 'Layar acara';
@@ -21,7 +24,9 @@ export function mountScreenUI({ ctl, net, doc = document, parent = doc.body }) {
   panel.hidden = true;
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', 'Layar acara');
-  parent.append(toggle, panel);
+  if (bar) bar.insertBefore(toggle, bar.querySelector('#party-button') ?? bar.querySelector('#chat-button') ?? null);
+  else parent.append(toggle);
+  parent.append(panel);
   toggle.addEventListener('click', () => { panel.hidden = !panel.hidden; if (!panel.hidden) render(); });
 
   const nameOf = (id) => net.players.find((p) => p.id === id)?.name ?? 'Tamu';
@@ -53,7 +58,7 @@ export function mountScreenUI({ ctl, net, doc = document, parent = doc.body }) {
     panel.append(head);
 
     if (s.src) panel.append(el('p', 'sc-now', `${SRC_LABEL[s.src.type] ?? 'Video'}${s.st === 'paused' ? ' · dijeda' : ''}`));
-    if (!ctl.embedHidden === false && s.src && (s.src.type === 'youtube' || s.src.type === 'tiktok')) panel.append(btn('Tampilkan video', () => ctl.showEmbedAgain(), true));
+    if (ctl.embedHidden && s.src && (s.src.type === 'youtube' || s.src.type === 'tiktok')) panel.append(btn('Tampilkan video', () => ctl.showEmbedAgain(), true));
 
     if (!s.op) {
       panel.append(el('p', 'sc-hint', 'Belum ada operator. Operator bisa memutar video YouTube/TikTok, video dari HP, atau siaran langsung untuk semua tamu.'), btn('Jadi operator layar', () => ctl.claim()));
