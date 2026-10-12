@@ -1,0 +1,17 @@
+.env3d { position: absolute; inset: 0; overflow: hidden; background: #05080a; color: var(--stage-ink, #f4e3b8); font-family: var(--font-body, Georgia, serif); text-align: center; touch-action: none; user-select: none; -webkit-user-select: none; }
+.env3d .env-particles { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.e3-top { position: absolute; left: 0; right: 0; top: calc(env(safe-area-inset-top) + 62px); pointer-events: none; text-shadow: 0 2px 14px rgba(0,0,0,.8); transition: opacity .5s; }
+.e3-bottom { position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom) + 30px); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 0 22px; text-shadow: 0 2px 14px rgba(0,0,0,.8); }
+.e3-bottom .env-tagline, .e3-bottom .env-hint { margin: 0; }
+.e3-seal { position: absolute; z-index: 3; width: 112px; height: 112px; margin: -56px 0 0 -56px; border: 0; border-radius: 50%; background: transparent; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.e3-seal::before { content: ""; position: absolute; inset: 14px; border-radius: 50%; border: 2px solid var(--glow, #ffd98a); opacity: .85; animation: e3-ring 2s ease-out infinite; }
+@keyframes e3-ring { 0% { transform: scale(.7); opacity: .9; } 100% { transform: scale(1.25); opacity: 0; } }
+.e3-seal:focus-visible { outline: 3px solid var(--glow, #ffd98a); outline-offset: 2px; }
+.e3-flash { position: absolute; inset: 0; z-index: 4; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at 50% 42%, rgba(255,240,205,1), rgba(255,214,140,.55) 50%, rgba(255,200,120,0) 85%); mix-blend-mode: screen; }
+.e3-vig { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 46%, transparent 52%, rgba(0,0,0,.55) 100%); }
+.env3d .cta { position: relative; z-index: 5; margin-top: 4px; }
+.env3d[data-state="reading"] .cta { opacity: 1; transform: none; pointer-events: auto; visibility: visible; }
+.env3d:not([data-state="idle"]) .e3-seal, .env3d:not([data-state="idle"]) .env-hint, .env3d:not([data-state="idle"]) .env-tagline { opacity: 0; pointer-events: none; animation: none; }
+.env3d:not([data-state="idle"]):not([data-state="opening"]) .env-skip { display: none; }
+.env3d[data-state="reading"] .e3-top, .env3d[data-state="diving"] .e3-top { opacity: 0; }
+.env3d-loading { position: absolute; inset: 0; display: grid; place-items: center; font: 13px/1 system-ui, sans-serif; letter-spacing: .2em; text-transform: uppercase; color: rgba(255,255,255,.55); }

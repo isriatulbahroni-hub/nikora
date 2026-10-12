@@ -16,7 +16,7 @@ const rng = (seed) => { let s = seed >>> 0; return () => (s = (s * 1664525 + 101
 const V = (a) => new THREE.Vector3(...a);
 
 /* kunci kamera per amplop: [waktu, posisi relatif, titik pandang relatif] */
-const CAM = [
+export const CAM = [
   [0.0, [-6, 16, 42], [0, 0, 0]],
   [1.0, [-3, 13, 34], [0, 0, 0]],
   [1.6, [0.8, 7.5, 19], [0, 0.5, 1]],
@@ -35,7 +35,7 @@ function buildKeys() {
   keys.push({ t: TOTAL, p: c.clone().add(V([0, 13, -132])), l: c.clone().add(V([0, 14, -260])) });
   return keys;
 }
-function hermite(keys, t, field, out) {
+export function hermite(keys, t, field, out) {
   let i = 0; while (i < keys.length - 2 && t >= keys[i + 1].t) i++;
   const a = keys[i], b = keys[i + 1], dt = b.t - a.t, s = clamp((t - a.t) / dt);
   const tan = (j) => { const p = keys[Math.max(0, j - 1)], n = keys[Math.min(keys.length - 1, j + 1)]; return n[field].clone().sub(p[field]).divideScalar(Math.max(1e-6, n.t - p.t)); };
@@ -45,10 +45,10 @@ function hermite(keys, t, field, out) {
 }
 
 /* partikel kedalaman (bokeh emas melayang) */
-function makeBokeh(tex) {
-  const R = rng(11), n = 1700, pos = new Float32Array(n * 3), seed = new Float32Array(n * 4);
+export function makeBokeh(tex, n = 1700, zRange = 620) {
+  const R = rng(11), pos = new Float32Array(n * 3), seed = new Float32Array(n * 4);
   for (let i = 0; i < n; i++) {
-    pos.set([(R() - .5) * 100, R() * 36 + .3, 50 - R() * 620], i * 3);
+    pos.set([(R() - .5) * 100, R() * 36 + .3, 50 - R() * zRange], i * 3);
     seed.set([R(), 0.35 + R() * .9, 0.35 + R() * 1.9, .12 + R() * .4], i * 4);
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aSeed', new THREE.BufferAttribute(seed, 4));

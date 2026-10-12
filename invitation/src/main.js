@@ -6,7 +6,7 @@ import { buildView } from './engine/config.js';
 import { loadInvitation } from './engine/data.js';
 import { demoInvitation, demoScenes } from './engine/demo.js';
 import { THEMES } from './themes/index.js';
-import { mountEnvelope } from './scenes/envelope.js';
+import { mountEnvelopeAuto } from './scenes/envelope-auto.js';
 import { mountRsvp, mountGuestbook, mountGifts } from './scenes/guest.js';
 import { mountSurat } from './scenes/surat.js';
 import { mountCover } from './scenes/cover.js';
@@ -16,7 +16,7 @@ import { mountGaleri } from './scenes/galeri.js';
 import { mountPenutup } from './scenes/penutup.js';
 import { worldUrl } from './engine/world-link.js';
 
-registerScene('amplop', mountEnvelope);
+registerScene('amplop', mountEnvelopeAuto);   // 3D interaktif bila perangkat mampu, jika tidak 2D
 registerScene('surat', mountSurat);
 registerScene('cover', mountCover);
 registerScene('kisah', mountKisah);

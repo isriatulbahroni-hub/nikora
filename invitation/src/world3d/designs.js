@@ -72,3 +72,20 @@ export const FLAP_PTS = {
   arch: [[0, 0], [100, 0], [100, 35], [88, 62], [70, 84], [56, 98], [50, 100], [44, 98], [30, 84], [12, 62], [0, 35]],
 };
 export const POCKET_PTS = [[0, 0], [50, 42], [100, 0], [100, 100], [0, 100]];
+
+/** Padanan tema undangan -> desain amplop 3D. Tema tanpa padanan (minimalis, futuristik, ulang tahun) tetap 2D. */
+export const THEME_DESIGN = {
+  'pernikahan-adat-sasak': 'gapura',
+  'pernikahan-islami': 'navyemas',
+  'pernikahan-taman': 'sage',
+  'pernikahan-kerajaan': 'bordeaux',
+  'pernikahan-fantasi': 'biru',
+};
+
+/** Pilihan editor (config.design3d) menang atas padanan tema. null = pakai amplop 2D. */
+export function designFor(view, override) {
+  const sc = view && view.scenes && view.scenes.find((x) => x.kind === 'amplop');
+  const wanted = [override, sc && sc.config && sc.config.design3d].find((v) => typeof v === 'string' && DESIGNS.some((d) => d.id === v));
+  const id = wanted || THEME_DESIGN[view && view.theme && view.theme.id];
+  return DESIGNS.find((d) => d.id === id) || null;
+}

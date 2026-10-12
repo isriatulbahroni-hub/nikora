@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { EW, EH, FH, LW, LH, FLAP_PTS, POCKET_PTS } from './designs.js';
-import { pocketTextures, flapFrontTextures, flapBackTextures, letterTextures, sealFace, glowSprite } from './textures.js';
+import { pocketTextures, flapFrontTextures, flapBackTextures, letterTextures, sealFace, DEFAULT_CONTENT } from './textures.js';
 
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const seg = (t, a, b) => clamp((t - a) / (b - a));
@@ -13,7 +13,7 @@ const shapeOf = (pts, w, h, oy) => { const s = new THREE.Shape(); pts.forEach(([
 function fixUV(g, w, h, oy) { const p = g.attributes.position, uv = g.attributes.uv; for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) / w + .5, (p.getY(i) - oy) / h + 1); uv.needsUpdate = true; }
 const metalMat = (t) => new THREE.MeshStandardMaterial({ map: t.map, roughnessMap: t.mr, metalnessMap: t.mr, roughness: 1, metalness: 1 });
 
-function sealMesh(d) {
+function sealMesh(d, content) {
   const g = new THREE.Group(), s = d.seal;
   const goldMat = new THREE.MeshStandardMaterial({ color: s.base, metalness: .9, roughness: .3 });
   let geo, top = .16, face;
@@ -31,20 +31,20 @@ function sealMesh(d) {
   const mat = s.kind === 'holo' ? new THREE.MeshPhysicalMaterial({ color: 0xdfe6ff, metalness: .55, roughness: .22, iridescence: 1, iridescenceIOR: 1.7, iridescenceThicknessRange: [180, 820], clearcoat: 1 }) : goldMat;
   const body = new THREE.Mesh(geo, mat); body.castShadow = true; g.add(body);
   const plane = s.kind === 'holo' ? new THREE.PlaneGeometry(4.6, 1.7) : new THREE.CircleGeometry(1.25, 48);
-  const faceMesh = new THREE.Mesh(plane, new THREE.MeshStandardMaterial({ map: sealFace(d, s.kind === 'holo'), transparent: true, roughness: .4, metalness: .5, polygonOffset: true, polygonOffsetFactor: -2 }));
+  const faceMesh = new THREE.Mesh(plane, new THREE.MeshStandardMaterial({ map: sealFace(d, s.kind === 'holo', content), transparent: true, roughness: .4, metalness: .5, polygonOffset: true, polygonOffsetFactor: -2 }));
   faceMesh.position.z = top + .01; g.add(faceMesh);
   return g;
 }
 
 /** Bangun satu amplop 3D di atas lantai. Semua animasi lewat update(lt, ...). */
-export function buildEnvelope(d, glowTex) {
+export function buildEnvelope(d, glowTex, content = DEFAULT_CONTENT) {
   const root = new THREE.Group();
   const flat = new THREE.Group(); flat.rotation.x = -Math.PI / 2; flat.position.y = 0.12; root.add(flat);
   const plain = (c, r = .85) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
 
   const back = new THREE.Mesh(new THREE.BoxGeometry(EW, EH, .08), plain(d.dark)); back.position.z = -.06; back.receiveShadow = true; flat.add(back);
 
-  const pt = pocketTextures(d), pg = new THREE.ExtrudeGeometry(shapeOf(POCKET_PTS, EW, EH, EH / 2), { depth: .1, bevelEnabled: true, bevelThickness: .02, bevelSize: .02, bevelSegments: 1 });
+  const pt = pocketTextures(d, content), pg = new THREE.ExtrudeGeometry(shapeOf(POCKET_PTS, EW, EH, EH / 2), { depth: .1, bevelEnabled: true, bevelThickness: .02, bevelSize: .02, bevelSegments: 1 });
   fixUV(pg, EW, EH, EH / 2);
   const pocket = new THREE.Mesh(pg, [metalMat(pt), plain(d.body)]); pocket.castShadow = pocket.receiveShadow = true; flat.add(pocket);
 
@@ -56,9 +56,9 @@ export function buildEnvelope(d, glowTex) {
   const bg = new THREE.ShapeGeometry(fs); fixUV(bg, EW, FH, 0); bg.rotateY(Math.PI);
   const bt = flapBackTextures(d); const backFace = new THREE.Mesh(bg, new THREE.MeshStandardMaterial({ map: bt.map, roughness: .75 })); backFace.position.z = -.002; hinge.add(backFace);
 
-  const seal = sealMesh(d); seal.position.set(0, EH / 2 - FH, .165); flat.add(seal);
+  const seal = sealMesh(d, content); seal.position.set(0, EH / 2 - FH, .165); flat.add(seal);
 
-  const lt = letterTextures(d);
+  const lt = letterTextures(d, content);
   const lm = new THREE.MeshStandardMaterial({ map: lt.map, roughnessMap: lt.mr, metalnessMap: lt.mr, roughness: 1, metalness: 1 });
   const side = plain(d.letterBg, .9);
   const letter = new THREE.Mesh(new THREE.BoxGeometry(LW, LH, .03), [side, side, side, side, lm, plain(d.letterBg, .9)]);
@@ -71,6 +71,14 @@ export function buildEnvelope(d, glowTex) {
 
   const api = {
     root, sealWorld, letterWorld: new THREE.Vector3(0, 5, -2.5), glowStrength: 0,
+    /** Sebelum dibuka: segel berdenyut pelan dan bersinar lembut (waktu nyata, detik). */
+    idle(tm) {
+      const pulse = .5 + .5 * Math.sin(tm * 2.4);
+      api.glowStrength = .3 + .3 * pulse;
+      glow.material.opacity = .22 + .2 * pulse; glow.scale.setScalar(4 + pulse * 1.6);
+      seal.visible = true; seal.rotation.z = 0; seal.scale.setScalar(1 + .035 * pulse);
+      hinge.rotation.x = 0; letter.position.set(0, .108, 0); letter.rotation.set(-Math.PI / 2, 0, 0);
+    },
     update(t) {
       const g = t < TL.brk[0] ? seg(t, ...TL.glow) * (.65 + .35 * Math.sin((t - TL.glow[0]) * 13)) : 1 - seg(t, TL.brk[0], TL.brk[1] + .45);
       api.glowStrength = clamp(g);
@@ -95,4 +103,13 @@ export function buildEnvelope(d, glowTex) {
   };
   api.update(0);
   return api;
+}
+
+/** Bebaskan memori GPU: geometri, material, dan semua tekstur di bawah objek. */
+export function disposeObject(root) {
+  root.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+    for (const m of mats) { for (const v of Object.values(m)) if (v && v.isTexture) v.dispose(); m.dispose(); }
+  });
 }

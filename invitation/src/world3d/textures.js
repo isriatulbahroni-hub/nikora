@@ -1,6 +1,29 @@
 import * as THREE from 'three';
 import { PEONY, FLAP_PTS } from './designs.js';
 
+export const DEFAULT_CONTENT = {
+  title: 'Rani & Dimas', eyebrow: 'UNDANGAN PERNIKAHAN', mono: 'R·D',
+  lead: 'Dengan penuh rasa syukur, kami mengundang Anda untuk hadir', date: 'SABTU, 12 DESEMBER 2026',
+};
+
+/** Pecah teks menjadi baris selebar max (measure = fungsi pengukur lebar). Lebih dari maxLines dipotong dengan "…". */
+export function wrapLines(measure, text, max, maxLines = 3) {
+  const words = String(text || '').split(/\s+/).filter(Boolean), lines = [];
+  let cur = '';
+  for (const w of words) {
+    const t = cur ? `${cur} ${w}` : w;
+    if (!cur || measure(t) <= max) cur = t; else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  if (lines.length <= maxLines) return lines;
+  let last = lines.slice(maxLines - 1).join(' ');
+  while (last.length > 1 && measure(`${last}…`) > max) last = last.slice(0, -1);
+  return [...lines.slice(0, maxLines - 1), `${last.trimEnd()}…`];
+}
+
+/** Ukuran huruf terbesar (<= base) agar teks muat dalam lebar max. */
+export const fitSize = (measureAt, base, max) => { const w = measureAt(base); return w <= max ? base : Math.max(base * .45, base * max / w); };
+
 /* Setiap permukaan = dua kanvas: warna (albedo) + ORM (G=kekasaran, B=logam).
    Foil emas digambar ke keduanya sehingga memantulkan cahaya seperti logam sungguhan. */
 const GOLD = [[0, '#8a6420'], [.28, '#f3d985'], [.5, '#b8892f'], [.72, '#fff1b8'], [1, '#8f6a22']];
@@ -66,7 +89,7 @@ function paintPattern(L, d, k, w, h) {
 }
 
 /* ---------- permukaan ---------- */
-export function pocketTextures(d) {
+export function pocketTextures(d, c = DEFAULT_CONTENT) {
   const k = 2.5, w = 440 * k, h = 290 * k, L = layer(w, h), x = L.x;
   x.fillStyle = d.body; x.fillRect(0, 0, w, h);
   paintPattern(L, d, k, 440, 290);
@@ -76,7 +99,7 @@ export function pocketTextures(d) {
   x.strokeStyle = 'rgba(255,255,255,.24)'; x.lineWidth = 1.1 * k; x.beginPath(); x.moveTo(0, h - 3 * k); x.lineTo(w / 2, h * .42 - 3 * k); x.lineTo(w, h - 3 * k); x.stroke();
   (d.pocketCorners || []).forEach(c => both(L, (ctx, p) => corner(ctx, p, ...c, k)));
   (d.pocketFlowers || []).forEach(f => peony(x, f[0], f[1], f[2], PEONY[f[3]], k));
-  if (d.pkName) both(L, (ctx, p) => { ctx.font = `${22 * k}px GV`; ctx.textAlign = 'center'; ctx.fillStyle = p; ctx.fillText('Rani & Dimas', 220 * k, 272 * k); });
+  if (d.pkName) both(L, (ctx, p) => { const sz = fitSize((b) => { ctx.font = `${b * k}px GV`; return ctx.measureText(c.title).width / k; }, 22, 230); ctx.font = `${sz * k}px GV`; ctx.textAlign = 'center'; ctx.fillStyle = p; ctx.fillText(c.title, 220 * k, 272 * k); });
   return pair(L);
 }
 
@@ -102,7 +125,7 @@ export function flapBackTextures(d) {
 }
 
 const LK = 4;
-export function letterTextures(d) {
+export function letterTextures(d, c = DEFAULT_CONTENT) {
   const k = LK, w = 387 * k, h = 255 * k, L = layer(w, h), x = L.x, o = d.letter;
   x.fillStyle = d.letterBg; x.fillRect(0, 0, w, h);
   // serat kertas halus
@@ -115,19 +138,22 @@ export function letterTextures(d) {
   if (o.dots) { x.fillStyle = '#f3cd5b'; o.dots.forEach(([px, py]) => { x.beginPath(); x.arc(px * k, py * k, 5 * k, 0, 6.283); x.fill(); }); }
   if (o.gapura) both(L, (ctx, p) => gapura(ctx, p, ...o.gapura, k));
   x.textAlign = 'center'; x.textBaseline = 'alphabetic';
-  x.fillStyle = d.ink; x.globalAlpha = .82; x.font = `600 ${9.5 * k}px Cin`; x.letterSpacing = `${2.9 * k}px`; x.fillText('UNDANGAN PERNIKAHAN', (193.5 + 1.5) * k, 66 * k); x.letterSpacing = '0px'; x.globalAlpha = 1;
-  x.fillStyle = d.nameColor; x.font = `${58 * k}px GV`; x.fillText('Rani & Dimas', 193.5 * k, 126 * k);
+  x.fillStyle = d.ink; x.globalAlpha = .82; x.font = `600 ${9.5 * k}px Cin`; x.letterSpacing = `${2.9 * k}px`; x.fillText(c.eyebrow, (193.5 + 1.5) * k, 66 * k); x.letterSpacing = '0px'; x.globalAlpha = 1;
+  const nameMax = o.arch ? 215 : 300, nameSz = fitSize((b) => { x.font = `${b * k}px GV`; return x.measureText(c.title).width / k; }, 58, nameMax);
+  x.fillStyle = d.nameColor; x.font = `${nameSz * k}px GV`; x.fillText(c.title, 193.5 * k, 126 * k);
   x.fillRect(161 * k, 139 * k, 64 * k, 1.5 * k);
-  x.fillStyle = d.ink; x.globalAlpha = .9; x.font = `italic 500 ${14 * k}px Cor`; x.fillText('Dengan penuh rasa syukur, kami mengundang', 193.5 * k, 160 * k); x.fillText('Anda untuk hadir', 193.5 * k, 177 * k); x.globalAlpha = 1;
-  x.fillStyle = d.nameColor; x.font = `600 ${11 * k}px Cin`; x.letterSpacing = `${1.5 * k}px`; x.fillText('SABTU, 12 DESEMBER 2026', 194 * k, 202 * k);
+  x.fillStyle = d.ink; x.globalAlpha = .9; x.font = `italic 500 ${14 * k}px Cor`;
+  const lines = wrapLines((t) => x.measureText(t).width / k, c.lead, o.arch ? 220 : 290, 3);
+  lines.forEach((ln, i) => x.fillText(ln, 193.5 * k, (160 + 17 * i) * k)); x.globalAlpha = 1;
+  if (c.date) { x.fillStyle = d.nameColor; x.font = `600 ${11 * k}px Cin`; x.letterSpacing = `${1.5 * k}px`; x.fillText(c.date, 194 * k, (160 + 17 * (lines.length - 1) + 25) * k); }
   return pair(L);
 }
 
-export function sealFace(d, wide = false) {
+export function sealFace(d, wide = false, content = DEFAULT_CONTENT) {
   const w = wide ? 512 : 256, h = wide ? 192 : 256, c = document.createElement('canvas'); c.width = w; c.height = h;
   const x = c.getContext('2d'); x.textAlign = 'center'; x.fillStyle = d.seal.ink; x.strokeStyle = d.seal.ink;
-  if (!wide) { x.globalAlpha = .6; x.lineWidth = 4; x.beginPath(); x.arc(128, 128, 98, 0, 6.283); x.stroke(); x.globalAlpha = 1; x.font = '600 74px Cin'; x.fillText('R·D', 128, 152); }
-  else { x.globalAlpha = .55; x.lineWidth = 3; x.strokeRect(14, 14, w - 28, h - 28); x.globalAlpha = 1; x.font = '600 70px Cin'; x.letterSpacing = '12px'; x.fillText('R&D', w / 2 + 6, 124); }
+  if (!wide) { x.globalAlpha = .6; x.lineWidth = 4; x.beginPath(); x.arc(128, 128, 98, 0, 6.283); x.stroke(); x.globalAlpha = 1; const m = content.mono || ''; x.font = `600 ${m.length > 3 ? 56 : 74}px Cin`; x.fillText(m, 128, m.length > 3 ? 146 : 152); }
+  else { x.globalAlpha = .55; x.lineWidth = 3; x.strokeRect(14, 14, w - 28, h - 28); x.globalAlpha = 1; x.font = '600 70px Cin'; x.letterSpacing = '12px'; x.fillText(content.mono || '', w / 2 + 6, 124); }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
