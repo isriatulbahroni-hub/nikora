@@ -4,6 +4,7 @@ import { configFromId, sameConfig } from './avatar-config.js';
 import { HALL } from './hall-layout.js';
 import { NetClient } from './net-client.js';
 import { LiveKitNet } from './livekit-net.js';
+import { parseEventParams } from './event-context.js';
 
 const SMOOTHING = 12; // semakin besar, semakin cepat avatar mengejar posisi server
 const SEND_INTERVAL_MS = 50;
@@ -108,7 +109,7 @@ export async function startMultiplayer({ scene, search, name = 'Tamu', world, po
   const url = resolveServerUrl(search);
   if (!url && !useLiveKit) return null;
   const view = createRemotePlayers(scene, { poseFor });
-  const net = url ? new NetClientImpl() : new LiveKitImpl(world ? { world } : undefined);
+  const net = url ? new NetClientImpl() : new LiveKitImpl({ world, event: parseEventParams(search).slug });
   net.on('state', (msg) => view.sync(msg.players, net.id));
   net.on('welcome', (msg) => view.sync(msg.players, msg.id));
   net.on('left', () => {});

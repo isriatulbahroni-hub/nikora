@@ -10,14 +10,26 @@ const GREET_RANGE = 2.6; // sedikit longgar dari 2,2 m di UI karena latensi
 const GREET_TTL_MS = 8000;
 const GREET_DURATION_MS = 2600;
 const KINDS = ['handshake', 'highfive', 'wave', 'bow'];
+const DANCE_MS = 45_000;
+const REMOTE_ACTS = [...KINDS, 'dance'];
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
 const normAngle = (a) => ((a % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
 const num = (v, fallback = 0) => (Number.isFinite(v) ? v : fallback);
 
+/** Pesan yang bisa ditindaklanjuti untuk kegagalan kredensial (tidak membocorkan nilai rahasia). */
+export function describeCredFailure(cred) {
+  if (cred?.reason === 'event') return 'undangan tidak ditemukan';
+  if (cred?.reason === 'config' && Array.isArray(cred.missing) && cred.missing.length) {
+    return `server belum dikonfigurasi, kurang: ${cred.missing.filter((m) => /^LIVEKIT_[A-Z_]+$/.test(m)).join(', ')}`;
+  }
+  return 'env LiveKit belum terbaca';
+}
+
 export class LiveKitNet {
-  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl, world } = {}) {
+  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl, world, event } = {}) {
+    this.event = event ?? null; // slug acara dari undangan
     this.world = world; // 'villa' memakai kanal terpisah dari aula
     this.LiveKit = LiveKit;
     this.now = now;
@@ -50,10 +62,10 @@ export class LiveKitNet {
   }
 
   async connect(_url, name = 'Tamu') {
-    const res = await this.fetch(this.tokenUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, world: this.world }) });
+    const res = await this.fetch(this.tokenUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, world: this.world, event: this.event }) });
     if (!res.ok) throw new Error(`api/token HTTP ${res.status}`);
     const cred = await res.json();
-    if (!cred.enabled) throw new Error('env LiveKit belum terbaca');
+    if (!cred.enabled) throw new Error(describeCredFailure(cred));
     const LiveKit = this.LiveKit ?? (await import('livekit-client'));
     const { Room, RoomEvent } = LiveKit;
     const room = new Room({ adaptiveStream: true, dynacast: true, audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
@@ -98,7 +110,7 @@ export class LiveKitNet {
     const id = participant.identity;
     if (m.t === 's') {
       const prev = this.remotes.get(id) ?? this.#blank(participant);
-      const kind = KINDS.includes(m.a) ? m.a : null;
+      const kind = REMOTE_ACTS.includes(m.a) ? m.a : null;
       this.remotes.set(id, {
         ...prev,
         name: participant.name || prev.name,
@@ -206,7 +218,7 @@ export class LiveKitNet {
 
   /** Avatar buatan pemain (array wire). Disiarkan segera lalu ikut tiap heartbeat untuk tamu yang baru masuk. */
   setAvatar(wire) {
-    this.self.av = Array.isArray(wire) ? wire.slice(0, 5) : null;
+    this.self.av = Array.isArray(wire) ? wire.slice(0, 6) : null;
     this.#publishState({ reliable: true });
   }
 
@@ -223,6 +235,19 @@ export class LiveKitNet {
     this.lastChatAt = t;
     this.#send({ t: 'c', x: clean }, { reliable: true });
     this.#emit('chat', { t: 'chat', id: this.id, name: this.self.name, text: clean, ts: t }); // gema lokal
+  }
+
+  /** Joget solo: terlihat semua orang, berhenti sendiri setelah 45 detik atau saat pemain bergerak/duduk. */
+  setDance(on) {
+    if (on && this.self.sit === null && !this.self.act) {
+      this.self.act = 'dance';
+      this.self.with = null;
+      this.self.until = this.now() + DANCE_MS;
+      this.#publishState({ reliable: true });
+    } else if (!on && this.self.act === 'dance') {
+      this.self.act = null;
+      this.#publishState({ reliable: true });
+    }
   }
 
   sendGreet(to, kind) {

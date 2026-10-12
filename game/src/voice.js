@@ -2,6 +2,13 @@
 // volume tiap lawan bicara diatur dari jarak di dunia 3D.
 export const VOICE = Object.freeze({ fullRange: 2.5, maxRange: 12 });
 
+/**
+ * Aturan untuk acara ramai: hanya tamu yang benar-benar dekat yang terdengar (penuh sampai 1,5 m, hening di 6 m)
+ * dan paling banyak 4 pembicara terdekat sekaligus supaya percakapan banyak orang tidak menumpuk.
+ * MC dan pembicara panggung dikecualikan: selalu terdengar penuh di mana pun.
+ */
+export const VOICE_CROWD = Object.freeze({ ranges: Object.freeze({ fullRange: 1.5, maxRange: 6 }), maxListeners: 4 });
+
 /** Volume 0..1 menurut jarak (m): penuh sampai fullRange, turun halus (kurva kuadrat) sampai hening di maxRange. */
 export function voiceGain(distance, { fullRange, maxRange } = VOICE) {
   if (!Number.isFinite(distance) || distance >= maxRange) return 0;
@@ -71,13 +78,25 @@ export class VoiceChat {
   }
 
   /** Panggil tiap beberapa frame: self {x,z}, players [{id,x,z,sit}] dari snapshot server. */
-  update(self, players, stage = new Set()) {
+  update(self, players, stage = new Set(), { ranges = VOICE, maxListeners = Infinity, canHear = () => true } = {}) {
+    const heard = [];
     for (const p of players) {
       const el = this.audio.get(p.id);
       if (!el) continue;
-      // Pembicara di panggung terdengar penuh di seluruh aula; yang lain tetap berdasarkan jarak.
-      el.volume = stage.has(p.id) ? 1 : voiceGain(Math.hypot(p.x - self.x, p.z - self.z, ((p.y ?? 0) - (self.y ?? 0)) * 2.5));
+      // Pembicara di panggung terdengar penuh di mana pun; yang lain berdasarkan jarak.
+      if (stage.has(p.id)) {
+        el.volume = 1;
+        continue;
+      }
+      const distance = Math.hypot(p.x - self.x, p.z - self.z, ((p.y ?? 0) - (self.y ?? 0)) * 2.5); // beda lantai = jauh
+      const gain = canHear(p) ? voiceGain(distance, ranges) : 0;
+      if (gain > 0) heard.push({ el, gain, distance });
+      else el.volume = 0;
     }
+    heard.sort((a, b) => a.distance - b.distance);
+    heard.forEach((h, i) => {
+      h.el.volume = i < maxListeners ? h.gain : 0;
+    });
   }
 
   /** Identitas pemain yang sedang bicara (untuk ikon kecil di atas avatar). */

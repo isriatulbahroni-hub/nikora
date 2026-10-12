@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BOUNDS, PLAYER_RADIUS, ROOMS, DOORS, SPAWN, SIT_RANGE, LEVEL_HEIGHT, LEVEL_COUNT, UPPER_ROOMS, TOWERS, STAIRS,
-  findNearestSpot, getVillaWorld, isWalkable, levelY, moveWithCollisions, resolveMove, roomAt, spotPose,
+  findNearestSpot, getVillaWorld, isWalkable, levelY, moveWithCollisions, resolveMove, roomAt, sameVoiceSpace, spotPose,
 } from './villa-layout.js';
 
 const world = getVillaWorld();
@@ -247,4 +247,18 @@ test('roomAt mengenali ruangan di lantai atas', () => {
   assert.equal(roomAt(32, -17, 2).id, 'presidential');
   assert.equal(roomAt(-25, -10, 2).kind, 'terrace');
   assert.equal(roomAt(0, 9, 1).id, 'grounds');
+});
+
+test('sameVoiceSpace: ruangan berbeda tidak saling dengar, satu ruangan dan area terbuka boleh', () => {
+  assert.equal(sameVoiceSpace({ x: 0, z: -10 }, { x: 5, z: -10 }), true, 'sama-sama di aula');
+  assert.equal(sameVoiceSpace({ x: 13, z: -10 }, { x: 15, z: -10 }), false, 'aula vs lobi, dibatasi dinding');
+  assert.equal(sameVoiceSpace({ x: 19, z: 8 }, { x: 24, z: 8 }), false, 'dua kamar tamu berbeda');
+  assert.equal(sameVoiceSpace({ x: 0, z: 20 }, { x: 8, z: 35 }), true, 'taman dan halaman terbuka');
+  assert.equal(sameVoiceSpace({ x: 0, z: -10 }, { x: 0, z: -1 }), false, 'dalam aula vs teras luar');
+});
+
+test('sameVoiceSpace: beda lantai tidak saling dengar walau berada di titik x,z yang sama', () => {
+  assert.equal(sameVoiceSpace({ x: 20, z: 8, level: 1 }, { x: 20, z: 8, level: 1 }), true);
+  assert.equal(sameVoiceSpace({ x: 20, z: 8, y: 0 }, { x: 20, z: 8, y: 3.4 }), false);
+  assert.equal(sameVoiceSpace({ x: 30, z: 12, y: 6.8 }, { x: 20, z: 8, y: 6.8 }), true); // sama-sama di teras terbuka
 });

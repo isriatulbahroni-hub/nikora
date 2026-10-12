@@ -1,5 +1,5 @@
 // Konfigurasi avatar buatan pemain (murni, tanpa THREE/DOM supaya mudah diuji).
-// Dikirim ke pemain lain sebagai array kecil [pakaian, kulit, gaya rambut, warna rambut, aksesori].
+// Dikirim ke pemain lain sebagai array kecil [pakaian, kulit, gaya rambut, warna rambut, aksesori, karakter].
 export const OUTFITS = [
   { name: 'Hijau Zamrud', hex: 0x2e9e6b }, { name: 'Maroon', hex: 0x8c2f39 }, { name: 'Emas', hex: 0xd4a84b },
   { name: 'Biru Navy', hex: 0x2f4a7a }, { name: 'Putih Gading', hex: 0xf2e4cf }, { name: 'Hitam', hex: 0x2a2a30 },
@@ -18,11 +18,13 @@ export const HAIR_COLORS = [
   { name: 'Maroon', hex: 0x8c2f39 }, { name: 'Hijau', hex: 0x2e9e6b }, { name: 'Emas', hex: 0xd4a84b },
 ];
 export const ACCESSORIES = ['Tanpa', 'Kacamata', 'Peci', 'Kerudung', 'Blangkon', 'Mahkota', 'Topi'];
+// Karakter: 0 = avatar sederhana yang bisa dikustomisasi; 1.. = model manusia (urutan sama dengan HUMAN_MODELS).
+export const CHARACTERS = [{ id: null, name: 'Sederhana' }, { id: 'michelle', name: 'Michelle' }];
 
-const SIZES = [OUTFITS.length, SKINS.length, HAIR_STYLES.length, HAIR_COLORS.length, ACCESSORIES.length];
-export const FIELDS = ['o', 's', 'h', 'k', 'a'];
+const SIZES = [OUTFITS.length, SKINS.length, HAIR_STYLES.length, HAIR_COLORS.length, ACCESSORIES.length, CHARACTERS.length];
+export const FIELDS = ['o', 's', 'h', 'k', 'a', 'm'];
 
-export const defaultConfig = () => ({ o: 0, s: 1, h: 1, k: 0, a: 0 });
+export const defaultConfig = () => ({ o: 0, s: 1, h: 1, k: 0, a: 0, m: 0 });
 
 const clampIndex = (v, size, fallback) => (Number.isInteger(v) && v >= 0 && v < size ? v : fallback);
 
@@ -43,12 +45,13 @@ export function configFromId(id) {
   let h = 2166136261;
   for (const c of String(id)) h = Math.imul(h ^ c.charCodeAt(0), 16777619) >>> 0;
   const pick = (size) => { h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0; return h % size; };
-  return { o: pick(SIZES[0]), s: pick(SIZES[1]), h: pick(SIZES[2]), k: pick(SIZES[3]), a: pick(SIZES[4]) };
+  return { o: pick(SIZES[0]), s: pick(SIZES[1]), h: pick(SIZES[2]), k: pick(SIZES[3]), a: pick(SIZES[4]), m: 0 };
 }
 
 export function randomConfig(rng = Math.random) {
   const cfg = {};
   FIELDS.forEach((f, i) => { cfg[f] = Math.min(SIZES[i] - 1, Math.floor(rng() * SIZES[i])); });
+  cfg.m = 0; // acak hanya mengacak avatar sederhana; karakter manusia dipilih sengaja
   return cfg;
 }
 

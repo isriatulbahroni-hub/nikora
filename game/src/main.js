@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import { VoiceChat } from './voice.js';
+import { VOICE_CROWD, VoiceChat } from './voice.js';
+import { loadEventInfo, parseEventParams } from './event-context.js';
+import './gate.css';
+import { mountGate, shouldShowGate } from './gate.js';
 import { applyPose, createAvatar, makeBubble, setAvatarConfig, setStageRing } from './avatar.js';
 import { createPartyController, speakerIds } from './party.js';
 import { loadConfig, saveConfig, toWire } from './avatar-config.js';
@@ -22,6 +25,7 @@ const ui = {
   sitButton: $('#touch-sit'),
   sitLabel: $('#sit-label'),
   clapButton: $('#touch-clap'),
+  danceButton: $('#touch-dance'),
   muteButton: $('#mute-button'),
   chatBox: $('#chat-box'),
   chatLog: $('#chat-log'),
@@ -47,9 +51,23 @@ const JOY_DEADZONE = 0.14;
 const me = { x: START.x, z: START.z, rot: Math.PI, sit: null };
 let joined = false;
 let playerName = 'Tamu';
+const eventParams = parseEventParams(window.location.search);
+if (shouldShowGate(window.location.search)) {
+  mountGate({ world: 'hall', search: window.location.search, supabase: { url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_ANON_KEY } });
+}
+// Judul acara dari undangan ditampilkan sebagai sapaan di kartu masuk (tanpa menambah HUD saat bermain).
+if (eventParams.slug) {
+  loadEventInfo(eventParams.slug, { url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_ANON_KEY }).then((info) => {
+    if (!info?.title) return;
+    document.title = `${info.title} · ORBIT`;
+    const eyebrow = document.querySelector('#join-form .eyebrow');
+    if (eyebrow) eyebrow.textContent = info.title;
+  });
+}
 let multiplayer = null;
 let sitSince = 0;
 let clapUntil = 0;
+let danceUntil = 0; // hanya dipakai saat offline; saat online, joget mengikuti act jaringan
 let renderer;
 let scene;
 let camera;
@@ -333,8 +351,23 @@ function standUp(now) {
   sfx.stand();
 }
 
+function isDancing(now) {
+  return multiplayer ? selfState()?.act === 'dance' : now < danceUntil;
+}
+
+function setDancing(on, now) {
+  if (multiplayer) multiplayer.net.setDance?.(on);
+  else danceUntil = on ? now + 45 : 0;
+}
+
+function toggleDance(now) {
+  if (!joined || me.sit !== null) return;
+  setDancing(!isDancing(now), now);
+}
+
 function toggleSit(now) {
   if (!joined) return;
+  if (isDancing(now)) setDancing(false, now);
   if (me.sit !== null) return standUp(now);
   const seat = findNearestSeat(me, occupiedSeats());
   if (!seat) return;
@@ -737,8 +770,10 @@ function renderFrame(time) {
   priorFrameTime = time;
 
   const walking = joined ? updatePlayer(delta, now) : false;
+  if (walking && isDancing(now)) setDancing(false, now); // bergerak menghentikan joget
   const selfAct = selfState()?.act ?? null;
-  applyPose(playerAvatar, selfAct ?? (now < clapUntil ? 'clap' : walking ? 'walk' : null), now, delta);
+  const pose = isDancing(now) ? 'dance' : selfAct ?? (now < clapUntil ? 'clap' : walking ? 'walk' : null);
+  applyPose(playerAvatar, pose, now, delta);
   const bob = walking ? Math.abs(Math.sin(now * 13)) * 0.09 : 0;
   const hop = now < clapUntil ? Math.abs(Math.sin((clapUntil - now) * 14)) * 0.12 : 0;
   const k = 1 - Math.exp(-14 * delta);
@@ -754,7 +789,7 @@ function renderFrame(time) {
   multiplayer?.view.update(delta, now);
   if (voice && multiplayer && Math.floor(now * 10) !== lastVoiceTick) {
     lastVoiceTick = Math.floor(now * 10);
-    voice.update(me, multiplayer.net.players, party ? speakerIds(party.state) : undefined);
+    voice.update(me, multiplayer.net.players, party ? speakerIds(party.state) : undefined, VOICE_CROWD);
     $('#mic-button').classList.toggle('is-speaking', voice.micOn && voice.speaking().has(multiplayer.net.id));
   }
   if (party && Math.floor(now * 2) !== lastPartyTick) {
@@ -908,6 +943,7 @@ function setupInput() {
     if (event.code === 'KeyM') toggleMute();
     if (event.code === 'KeyV') toggleMic();
     if (event.code === 'KeyP' && joined) togglePartyPanel();
+    if (event.code === 'KeyG' && !event.repeat) toggleDance(clock());
   });
   const turn = () => {
     if (heldKeys.has('KeyQ')) yaw += 0.03;
@@ -928,6 +964,10 @@ function setupInput() {
     event.preventDefault();
     navigator.vibrate?.(12);
     toggleSit(clock());
+  });
+  ui.danceButton.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    toggleDance(clock());
   });
   ui.clapButton.addEventListener('pointerdown', (event) => {
     event.preventDefault();
@@ -963,8 +1003,10 @@ function setupJoin() {
     tabsEl: $('#editor-tabs'),
     optionsEl: $('#editor-options'),
     initial: avatarCfg,
+    onChange: (cfg) => { $('#editor-dance').hidden = cfg.m === 0; },
   });
   $('#editor-random').addEventListener('click', () => avatarEditor.randomize());
+  $('#editor-dance').addEventListener('click', () => avatarEditor.toggleDance());
   $('#editor-cancel').addEventListener('click', () => {
     avatarEditor.stop();
     ui.joinOverlay.hidden = true;
@@ -972,7 +1014,7 @@ function setupJoin() {
   $('#avatar-button').addEventListener('click', () => openAvatarEditor(true));
   avatarEditor.start();
   try {
-    ui.nameInput.value = window.localStorage.getItem('orbit-name') ?? '';
+    ui.nameInput.value = eventParams.to ?? window.localStorage.getItem('orbit-name') ?? '';
   } catch {
     /* penyimpanan tidak tersedia */
   }

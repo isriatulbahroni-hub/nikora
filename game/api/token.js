@@ -1,4 +1,4 @@
-// Fungsi serverless Vercel: POST /api/token { name } -> { enabled, url, token, id }
+// Fungsi serverless Vercel: POST /api/token { name, world, event } -> { enabled, url, token, id }
 import { issueToken } from '../src/token-issuer.js';
 
 export default async function handler(req, res) {
@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     }
   }
   try {
-    return res.status(200).json(await issueToken({ name: body?.name, world: body?.world }));
+    return res.status(200).json(await issueToken({ name: body?.name, world: body?.world, event: body?.event }));
   } catch (error) {
     console.error('[token]', error);
     return res.status(500).json({ enabled: false });

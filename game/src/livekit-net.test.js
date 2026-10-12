@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LiveKitNet } from './livekit-net.js';
+import { LiveKitNet, describeCredFailure } from './livekit-net.js';
 import { createPartyController } from './party.js';
 
 // Hub palsu yang meniru Room LiveKit: mengantar data antar-peserta dan memicu event.
@@ -186,7 +186,30 @@ test('LiveKitNet: avatar buatan pemain sampai ke pemain lain, data ngawur dibers
   await b.connect('', 'Budi'); // Budi masuk belakangan
   clock.t += 1100;
   a.sendInput(0, 0, 0, undefined, { x: 1, z: 1 }); // heartbeat membawa avatar ke tamu baru
-  assert.deepEqual(b.players.find((p) => p.id === 'aaaa').av, { o: 3, s: 2, h: 5, k: 4, a: 6 });
+  assert.deepEqual(b.players.find((p) => p.id === 'aaaa').av, { o: 3, s: 2, h: 5, k: 4, a: 6, m: 0 });
   a.setAvatar([99, -5, 'x', 1e9, null]);
-  assert.deepEqual(b.players.find((p) => p.id === 'aaaa').av, { o: 0, s: 1, h: 1, k: 0, a: 0 });
+  assert.deepEqual(b.players.find((p) => p.id === 'aaaa').av, { o: 0, s: 1, h: 1, k: 0, a: 0, m: 0 });
+});
+
+test('LiveKitNet: joget terlihat pemain lain, bisa dihentikan, dan tidak bisa saat duduk', async () => {
+  const hub = makeHub();
+  const clock = { t: 1000 };
+  const a = makeNet(hub, 'aaaa', 'Ani', clock);
+  const b = makeNet(hub, 'bbbb', 'Budi', clock);
+  await a.connect('', 'Ani');
+  await b.connect('', 'Budi');
+  a.setDance(true);
+  assert.equal(b.players.find((p) => p.id === 'aaaa').act, 'dance');
+  a.setDance(false);
+  assert.equal(b.players.find((p) => p.id === 'aaaa').act, null);
+  a.self.sit = 3; // di kursi: tidak bisa joget
+  a.setDance(true);
+  assert.equal(a.self.act, null);
+});
+
+test('describeCredFailure: pesan jelas untuk konfigurasi kurang, acara tak ada, dan default; nama ngawur disaring', () => {
+  assert.equal(describeCredFailure({ enabled: false, reason: 'config', missing: ['LIVEKIT_API_SECRET'] }), 'server belum dikonfigurasi, kurang: LIVEKIT_API_SECRET');
+  assert.equal(describeCredFailure({ enabled: false, reason: 'config', missing: ['LIVEKIT_URL', '<script>'] }), 'server belum dikonfigurasi, kurang: LIVEKIT_URL');
+  assert.equal(describeCredFailure({ enabled: false, reason: 'event' }), 'undangan tidak ditemukan');
+  assert.equal(describeCredFailure({ enabled: false }), 'env LiveKit belum terbaca');
 });

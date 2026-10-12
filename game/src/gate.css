@@ -1,0 +1,18 @@
+.gate { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; overflow: hidden; color: var(--ink); font-family: var(--display); background: radial-gradient(ellipse at 50% 35%, color-mix(in srgb, var(--glow) 22%, transparent), transparent 60%), linear-gradient(160deg, var(--bg1), var(--bg2)); }
+.gate-door { position: absolute; top: 0; bottom: 0; width: 50.2%; background: linear-gradient(180deg, color-mix(in srgb, var(--bg1) 88%, #000), color-mix(in srgb, var(--bg2) 80%, #000)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent2) 55%, transparent); transition: transform 0.95s cubic-bezier(0.7, 0, 0.2, 1); }
+.gate-door::after { content: ''; position: absolute; inset: 14px; border: 1px solid color-mix(in srgb, var(--accent2) 45%, transparent); border-radius: 4px; }
+.gate-door.left { left: 0; } .gate-door.right { right: 0; }
+.gate-card { position: relative; z-index: 1; width: min(88vw, 420px); text-align: center; padding: 28px 22px; transition: opacity 0.4s ease, transform 0.6s ease; }
+.gate-kicker { margin: 0 0 10px; font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent2); }
+.gate-title { margin: 0 0 8px; font-size: clamp(30px, 8vw, 44px); font-weight: 500; line-height: 1.15; text-wrap: balance; text-shadow: 0 0 26px color-mix(in srgb, var(--glow) 40%, transparent); }
+.gate-meta { margin: 0 0 22px; font-size: 15px; opacity: 0.85; min-height: 1.2em; }
+.gate-hello { margin: 0 0 26px; font-size: 16px; font-style: italic; opacity: 0.9; }
+.gate-enter { appearance: none; border: 0; cursor: pointer; padding: 14px 34px; border-radius: 999px; font: 600 16px var(--display); letter-spacing: 0.04em; background: var(--accent2); color: var(--on-accent); box-shadow: 0 6px 24px color-mix(in srgb, var(--glow) 35%, transparent); }
+.gate-enter:active { transform: scale(0.97); }
+.gate-enter:focus-visible { outline: 3px solid var(--glow); outline-offset: 3px; }
+.gate-note { margin: 18px 0 0; font: 12px/1.5 system-ui, sans-serif; opacity: 0.6; }
+.gate.open .gate-door.left { transform: translateX(-102%); }
+.gate.open .gate-door.right { transform: translateX(102%); }
+.gate.open .gate-card { opacity: 0; transform: scale(1.06); }
+.gate.open { background: transparent; pointer-events: none; transition: background 0.4s ease 0.6s; }
+@media (prefers-reduced-motion: reduce) { .gate-door, .gate-card, .gate { transition: none !important; } }

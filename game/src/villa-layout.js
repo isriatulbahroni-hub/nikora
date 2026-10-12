@@ -423,6 +423,20 @@ export function getStair(id) {
   return STAIR_BY_ID.get(id) ?? null;
 }
 
+/**
+ * Suara hanya menembus ruang yang sama: dua orang di ruangan berbeda (dibatasi dinding) tidak saling dengar,
+ * walau jaraknya dekat. Dua orang di area terbuka (halaman, taman, parkir) boleh saling dengar menurut jarak.
+ */
+export function sameVoiceSpace(a, b) {
+  const la = a.level ?? Math.round((a.y ?? 0) / LEVEL_HEIGHT);
+  const lb = b.level ?? Math.round((b.y ?? 0) / LEVEL_HEIGHT);
+  if (la !== lb) return false; // beda lantai dipisahkan pelat lantai
+  const ra = roomAt(a.x, a.z, la);
+  const rb = roomAt(b.x, b.z, lb);
+  if (ra.indoor || rb.indoor) return ra.id === rb.id;
+  return true;
+}
+
 let cached = null;
 export function getVillaWorld() {
   if (cached) return cached;
