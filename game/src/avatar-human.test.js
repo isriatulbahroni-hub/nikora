@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { boneKeyOf, buildClip, neutralToLocal, proceduralPose, readRest } from './avatar-human.js';
+import { HumanRig, boneKeyOf, buildClip, neutralToLocal, proceduralPose, readRest } from './avatar-human.js';
 
 /** Rig mini: Hips(rotasi rest -90 derajat X) -> Spine -> LeftArm (rest berotasi), dibungkus 'Character' berskala 0.01. */
 function miniRig() {
@@ -56,4 +56,13 @@ test('proceduralPose: duduk menekuk kaki, aksi tangan menyentuh tulang yang bena
   assert.ok('LeftArm' in proceduralPose('clap', 0.2, false) && 'RightArm' in proceduralPose('clap', 0.2, false));
   assert.ok('Spine' in proceduralPose('bow', 0, false));
   assert.deepEqual(proceduralPose('ngawur', 0, false), {});
+});
+
+test('HumanRig: model dihadapkan ke -Z (depan game), bukan +Z bawaan Mixamo', () => {
+  const holder = new THREE.Group();
+  holder.add(miniRig());
+  const rest = readRest(holder);
+  const rig = new HumanRig({ holder, rest, clips: {} });
+  const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(rig.root.quaternion); // +Z model -> arah dunia
+  assert.ok(forward.z < -0.99, `depan model harus -Z, dapat z=${forward.z}`);
 });

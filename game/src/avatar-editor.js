@@ -82,7 +82,7 @@ export function createAvatarEditor({ canvas, tabsEl, optionsEl, initial, onChang
     camera.position.set(0, 1.25, 4.2);
     camera.lookAt(0, 1.0, 0);
     avatar = createAvatar({ config: cfg });
-    avatar.rotation.y = -0.5;
+    avatar.rotation.y = Math.PI - 0.5; // depan avatar (-Z) menghadap kamera pratinjau
     scene.add(avatar);
     canvas.addEventListener('pointerdown', (e) => { dragging = true; lastX = e.clientX; canvas.setPointerCapture(e.pointerId); });
     canvas.addEventListener('pointermove', (e) => { if (dragging) { avatar.rotation.y += (e.clientX - lastX) * 0.012; lastX = e.clientX; } });

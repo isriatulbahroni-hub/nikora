@@ -146,6 +146,8 @@ export class HumanRig {
   constructor(model) {
     this.model = model;
     this.root = cloneSkinned(model.holder);
+    // Model Mixamo menghadap +Z, sedangkan game memakai -Z sebagai depan (gerak, kursi, avatar sederhana).
+    this.root.rotation.y = Math.PI;
     this.mixer = new THREE.AnimationMixer(this.root);
     this.actions = {};
     for (const [name, clip] of Object.entries(model.clips)) {
