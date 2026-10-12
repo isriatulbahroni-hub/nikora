@@ -472,8 +472,6 @@ async function start() {
     .catch((error) => console.warn('[multiplayer]', error));
 
   const drawMap = createMinimap();
-  const bufferSize = new THREE.Vector2();
-  const holePoint = new THREE.Vector3();
   let last = performance.now();
   let walkClock = 0;
   let placeId = '';
@@ -514,6 +512,12 @@ async function start() {
       }
       if (mine && seat !== null && time - seatSince > 800 && mine.sit !== seat) standUp(); // server menolak
       multiplayer.view.update(delta, time / 1000);
+      // pemain di lantai yang sedang dilipat tidak digambar (agar tidak melayang di udara)
+      for (const p of multiplayer.net.players) {
+        if (p.id === multiplayer.net.id) continue;
+        const g = multiplayer.view.getAvatar(p.id);
+        if (g) g.visible = !built.isHidden(p.x, p.z, Math.round((p.y ?? 0) / LEVEL_HEIGHT));
+      }
       screen.tick(time);
       if (party && time - partyTick > 500) {
         partyTick = time;
@@ -562,12 +566,7 @@ async function start() {
     const cp = Math.cos(camNow.pitch);
     camera.position.set(me.x + Math.sin(camNow.yaw) * cp * d, me.y + 0.8 + Math.sin(camNow.pitch) * d, me.z + Math.cos(camNow.yaw) * cp * d);
     camera.lookAt(me.x, me.y + 0.8, me.z);
-    built.update(me.x, me.z, delta, me.level, { x: Math.sin(camNow.yaw), z: Math.cos(camNow.yaw) }, camNow.pitch);
-    // lubang intip: buang bagian bangunan di atas kepala dalam lingkaran di sekitar avatar
-    camera.updateMatrixWorld();
-    renderer.getDrawingBufferSize(bufferSize);
-    holePoint.set(me.x, avatar.position.y + 1.0, me.z).project(camera);
-    built.hole.value.set((holePoint.x * 0.5 + 0.5) * bufferSize.x, (holePoint.y * 0.5 + 0.5) * bufferSize.y, 0.36 * Math.min(bufferSize.x, bufferSize.y), me.y + 2.35);
+    built.update(me.x, me.z, delta, me.level, { x: Math.sin(camNow.yaw), z: Math.cos(camNow.yaw) }, camNow.pitch, me.y);
     renderer.render(scene, camera);
 
     const near = nearestSpot();
