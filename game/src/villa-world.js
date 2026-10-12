@@ -639,19 +639,19 @@ function buildRailings(rooms, parent, mats) {
   parent.add(instanced(new THREE.BoxGeometry(1, 0.03, 0.03), mats.white, mid));
 }
 
-/** Delapan lengan tangga beton dengan pegangan tangan. Tinggi mengikuti levelY (koordinat dunia). */
-function buildStairs(parent, mats) {
+/** Lengan tangga beton dengan pegangan tangan. Tinggi relatif terhadap induk (asal induk = lantai asal tangga). */
+function buildStairs(flights, parent, mats) {
   const N = 18;
   const blocks = [];
   const treads = [];
   const posts = [];
   const rails = [];
-  for (const s of STAIRS) {
+  for (const s of flights) {
     const w = s.x2 - s.x1;
     const cx = (s.x1 + s.x2) / 2;
     const run = Math.abs(s.zBottom - s.zTop);
     const dir = Math.sign(s.zBottom - s.zTop);
-    const base = levelY(s.from);
+    const base = 0;
     const rise = LEVEL_HEIGHT / N;
     const depth = run / N;
     for (let i = 0; i < N; i++) {
@@ -684,6 +684,26 @@ function buildStairs(parent, mats) {
   parent.add(railMesh);
 }
 
+// Tiap bangunan punya grup per lantai atas yang "dilipat" (diskalakan ke lantainya) saat pemain berada di dalamnya.
+const BUILDINGS = [
+  { id: 'north', rect: [-42, -21, 42, -2], towers: ['tower_w', 'tower_e'] },
+  { id: 'guest', rect: [15, 3, 42, 23], towers: ['tower_g'] },
+  { id: 'west', rect: [-42, 3, -15, 23], towers: ['tower_r'] },
+];
+const within = (b, x, z, m = 0) => x > b.rect[0] - m && x < b.rect[2] + m && z > b.rect[1] - m && z < b.rect[3] + m;
+
+function splitLevel(data, b) {
+  const wallMid = (w) => (w.orient === 'h' ? [(w.a + w.b) / 2, w.coord] : [w.coord, (w.a + w.b) / 2]);
+  const roomMid = (r) => [(r.rect[0] + r.rect[2]) / 2, (r.rect[1] + r.rect[3]) / 2];
+  const ok = ([x, z]) => within(b, x, z);
+  return {
+    rooms: data.rooms.filter((r) => ok(roomMid(r))),
+    walls: data.walls.filter((w) => ok(wallMid(w))),
+    doors: data.doors.filter((d) => ok([d.x, d.z])),
+    props: data.props.filter((p) => ok([p.x, p.z])),
+  };
+}
+
 const TERRACE_PLANTS = {
   terrace_w: [[-36.5, -18.5], [-15.5, -18.5], [-15.5, -4.5], [-36.5, -4.5]],
   terrace_e: [[15.5, -18.5], [24.5, -18.5], [15.5, -4.5], [24.5, -4.5]],
@@ -710,40 +730,6 @@ function buildUpperLevel(level, data, group, mats, floors, rand) {
     group.add(rug);
   }
   return updateWalls;
-}
-
-/** "Lubang" intip: bagian bangunan di atas kepala pemain dibuang dalam lingkaran layar di sekitar avatar. */
-function applyCutaway(root, hole) {
-  const done = new Set();
-  root.traverse((o) => {
-    if (!o.isMesh) return;
-    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
-      if (done.has(m) || !(m.isMeshStandardMaterial || m.isMeshBasicMaterial)) continue;
-      done.add(m);
-      m.onBeforeCompile = (shader) => {
-        shader.uniforms.uHole = hole;
-        shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', '#include <common>\nvarying float vCutY;')
-          .replace('#include <project_vertex>', `#include <project_vertex>
-  vec4 cutWorld = vec4(transformed, 1.0);
-  #ifdef USE_INSTANCING
-    cutWorld = instanceMatrix * cutWorld;
-  #endif
-  vCutY = (modelMatrix * cutWorld).y;`);
-        shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', '#include <common>\nvarying float vCutY;\nuniform vec4 uHole;')
-          .replace('void main() {', `void main() {
-  if (vCutY > uHole.w) {
-    float cutD = distance(gl_FragCoord.xy, uHole.xy) / uHole.z;
-    if (cutD < 1.0) {
-      float cutN = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
-      if (cutD < 0.76 || cutN > (cutD - 0.76) / 0.24) discard;
-    }
-  }`);
-      };
-      m.needsUpdate = true;
-    }
-  });
 }
 
 function buildLanterns(parent, mats) {
@@ -919,33 +905,62 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
   buildGreenery(world, root, mats, rand);
   buildProps(groundLevel.props, root, mats, rand);
   buildLanterns(root, mats);
-  buildStairs(root, mats);
+  buildStairs(STAIRS.filter((s) => s.from === 0), root, mats);
+  const folds = []; // { level, building, group, scale, updateWalls }
   for (let level = 1; level < world.levels.length; level++) {
-    const group = new THREE.Group();
-    group.position.y = levelY(level);
-    root.add(group);
-    updaters.push(buildUpperLevel(level, world.levels[level], group, mats, floors, rand));
+    for (const b of BUILDINGS) {
+      const data = splitLevel(world.levels[level], b);
+      if (!data.rooms.length) continue;
+      const group = new THREE.Group();
+      group.position.y = levelY(level);
+      root.add(group);
+      const updateWalls = buildUpperLevel(level, data, group, mats, floors, rand);
+      const flights = STAIRS.filter((s) => s.from === level && b.towers.includes(s.tower));
+      if (flights.length) buildStairs(flights, group, mats);
+      folds.push({ level, building: b, group, scale: 1, updateWalls });
+    }
   }
-  const cutHole = { value: new THREE.Vector4(0, 0, 0, 1e5) };
-  applyCutaway(root, cutHole);
+  const buildingAt = (x, z) => BUILDINGS.find((b) => within(b, x, z, 1.5)) ?? null;
 
+  const labels = [];
   for (const r of world.rooms) {
     if (r.kind === 'corridor' || r.kind === 'guest') continue;
     const sprite = label(r.name, (r.rect[0] + r.rect[2]) / 2, r.rect[1] + 1.6);
-    if (sprite) root.add(sprite);
+    if (sprite) {
+      root.add(sprite);
+      labels.push(sprite);
+    }
   }
   for (const [text, x, z] of [['Pool & Garden', -3.5, 7], ['Parking Area', 30, 33], ['Guest Rooms', 27, 13]]) {
     const sprite = label(text, x, z);
-    if (sprite) root.add(sprite);
+    if (sprite) {
+      root.add(sprite);
+      labels.push(sprite);
+    }
   }
 
   let clock = 0;
   return {
     root,
-    hole: cutHole,
-    update(px, pz, delta = 0.016, level = 0, camDir, pitch) {
+    /** Apakah lantai `level` di titik (x,z) sedang dilipat (disembunyikan) sehingga isinya tidak terlihat? */
+    isHidden(x, z, level) {
+      if (level < 1) return false;
+      return folds.some((f) => f.level === level && within(f.building, x, z, 0.5) && f.scale < 0.5);
+    },
+    update(px, pz, delta = 0.016, level = 0, camDir, pitch, y = levelY(level)) {
       clock += delta;
-      updaters.forEach((update, l) => update(px, pz, delta, l === level, camDir, pitch));
+      for (const l of labels) l.visible = level === 0; // label lantai dasar tidak melayang di atas lantai atas
+      updaters[0](px, pz, delta, level === 0, camDir, pitch);
+      // Lantai di atas pemain dilipat bila pemain berada di dalam bangunannya; bangunan lain tetap utuh dan solid.
+      const seen = Math.floor((y + 2.5) / LEVEL_HEIGHT); // lantai berikutnya muncul setelah naik ~0.9 m di tangga
+      const k = Math.min(1, delta * 9);
+      for (const f of folds) {
+        const inside = within(f.building, px, pz, 1.5);
+        f.scale += ((inside && f.level > seen ? 0 : 1) - f.scale) * k;
+        f.group.scale.y = Math.max(0.001, f.scale);
+        f.group.visible = f.scale > 0.02;
+        f.updateWalls(px, pz, delta, inside && f.level === level, camDir, pitch);
+      }
       tex.waterNormal.offset.x += delta * 0.018;
       tex.waterNormal.offset.y += delta * 0.011;
       for (const fn of anim) fn(clock);
