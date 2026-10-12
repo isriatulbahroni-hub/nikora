@@ -32,5 +32,10 @@ Gerbang memakai palet dan huruf tema undangan yang sama. Salinannya di `game/src
 - Proyek dunia (nikora-ten): `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`.
 - Proyek undangan: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_WORLD_URL`.
 
+## Studio pembuat undangan (`invitation/studio.html`)
+Login/daftar (Supabase Auth), buat undangan (`invitations` + 12 baris `invitation_scenes` bawaan), daftar tamu dengan link personal `?slug=<slug>&to=<nama>` (salin / WhatsApp), ringkasan RSVP, dan hadiah. Kode: `invitation/src/studio/`. Semua akses lewat anon key + sesi pengguna, dijaga RLS yang sudah ada; tidak ada service key di browser.
+
+Adegan tamu `rsvp`, `bukutamu`, `hadiah` ada di `invitation/src/scenes/guest.js`. Buku tamu = kolom `wish` pada `rsvps` (hanya nama + ucapan yang dibaca publik). Adegan `hadiah` otomatis dilewati bila tidak ada hadiah aktif.
+
 ## Catatan untuk pekerjaan undangan
 Kartu akhir di `scene-engine.js` kini punya tombol "Masuk ke dunia" sebagai jembatan sementara. Saat adegan RSVP/hari acara selesai, pindahkan tombol itu ke sana (pakai `worldUrl`) dan hapus dari kartu akhir.
