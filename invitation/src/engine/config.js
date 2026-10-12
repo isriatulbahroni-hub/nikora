@@ -90,6 +90,9 @@ export function buildView({ invitation, scenes = [], query = {} }) {
     theme,
     title: titleOf(inv),
     dateText: formatDate(inv.event_date, extra.tz),
+    eventDate: inv.event_date || null,
+    tz: cleanText(extra.tz, 40),
+    extra,
     recipient: cleanText(query.to, 60),
     scenes: list,
   };

@@ -1,18 +1,31 @@
 import './style.css';
+import './scenes.css';
 import { h } from './engine/dom.js';
 import { createEngine, registerScene } from './engine/scene-engine.js';
 import { buildView } from './engine/config.js';
 import { loadInvitation } from './engine/data.js';
-import { demoInvitation } from './engine/demo.js';
+import { demoInvitation, demoScenes } from './engine/demo.js';
 import { THEMES } from './themes/index.js';
 import { mountEnvelope } from './scenes/envelope.js';
 import { mountRsvp, mountGuestbook, mountGifts } from './scenes/guest.js';
+import { mountSurat } from './scenes/surat.js';
+import { mountCover } from './scenes/cover.js';
+import { mountKisah } from './scenes/kisah.js';
+import { mountDetail } from './scenes/detail.js';
+import { mountGaleri } from './scenes/galeri.js';
+import { mountPenutup } from './scenes/penutup.js';
 import { worldUrl } from './engine/world-link.js';
 
 registerScene('amplop', mountEnvelope);
+registerScene('surat', mountSurat);
+registerScene('cover', mountCover);
+registerScene('kisah', mountKisah);
+registerScene('detail', mountDetail);
+registerScene('galeri', mountGaleri);
 registerScene('rsvp', mountRsvp);
 registerScene('bukutamu', mountGuestbook);
 registerScene('hadiah', mountGifts);
+registerScene('penutup', mountPenutup);
 
 const app = document.getElementById('app');
 const query = Object.fromEntries(new URLSearchParams(location.search));
@@ -57,11 +70,12 @@ async function boot() {
     url.searchParams.set('tema', themeId);
     history.replaceState(null, '', url);
     for (const b of switcher.children) b.setAttribute('aria-pressed', String(b.dataset.id === themeId));
-    play(buildView({ invitation: demoInvitation(themeId), query: { to: query.to || 'Bapak Ahmad dan keluarga' } }));
+    play(buildView({ invitation: demoInvitation(themeId), scenes: demoScenes(themeId), query: { to: query.to || 'Bapak Ahmad dan keluarga' } }));
   };
   const switcher = h('div', { class: 'demo-switcher', role: 'group', 'aria-label': 'Pilih tema contoh' },
     THEMES.map((t) => h('button', { type: 'button', 'data-id': t.id, 'aria-pressed': 'false', text: t.label, onclick: () => show(t.id) })));
   document.body.append(switcher);
+  document.body.classList.add('has-switcher');
   show(THEMES.some((t) => t.id === query.tema) ? query.tema : THEMES[0].id);
 }
 
