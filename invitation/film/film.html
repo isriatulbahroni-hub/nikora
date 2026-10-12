@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="id"><head><meta charset="utf-8">
+<style>
+@font-face{font-family:'GV';src:url('/node_modules/@fontsource/great-vibes/files/great-vibes-latin-400-normal.woff2')}
+@font-face{font-family:'Cin';font-weight:400;src:url('/node_modules/@fontsource/cinzel/files/cinzel-latin-400-normal.woff2')}
+@font-face{font-family:'Cin';font-weight:600;src:url('/node_modules/@fontsource/cinzel/files/cinzel-latin-600-normal.woff2')}
+@font-face{font-family:'Cor';font-weight:500;font-style:italic;src:url('/node_modules/@fontsource/cormorant-garamond/files/cormorant-garamond-latin-500-italic.woff2')}
+@font-face{font-family:'Cor';font-weight:500;src:url('/node_modules/@fontsource/cormorant-garamond/files/cormorant-garamond-latin-500-normal.woff2')}
+html,body{margin:0;width:720px;height:1280px;overflow:hidden;background:#000}
+#cv{position:absolute;left:0;top:0;width:720px;height:1280px}
+#ui{position:absolute;left:0;top:0;width:540px;height:960px;transform:scale(1.33333);transform-origin:0 0;pointer-events:none}
+#ui>*{position:absolute}
+#vig{inset:0;background:radial-gradient(ellipse at 50% 46%,transparent 50%,rgba(0,0,0,.6) 100%)}
+#flash{inset:0;background:radial-gradient(ellipse at 50% 42%,rgba(255,240,205,1),rgba(255,214,140,.55) 50%,rgba(255,200,120,0) 85%);opacity:0;mix-blend-mode:screen}
+#fade{inset:0;background:#000;opacity:1}
+.cap{position:absolute;left:0;right:0;top:820px;text-align:center;opacity:0;color:#f4e3b8;text-shadow:0 2px 12px rgba(0,0,0,.8)}
+.cap b{display:block;font:600 14px 'Cin',serif;letter-spacing:.34em;text-indent:.34em}
+.cap i{display:block;margin-top:8px;font:italic 500 16px 'Cor',serif;opacity:.85}
+.o1{left:0;right:0;top:360px;text-align:center;font:66px/1.08 'GV',cursive;opacity:0;color:#fff0c4;text-shadow:0 0 24px rgba(255,200,110,.6),0 2px 10px rgba(0,0,0,.6)}
+.o2{left:0;right:0;top:600px;text-align:center;font:600 15px 'Cin',serif;letter-spacing:.7em;text-indent:.7em;opacity:0;color:#f3d985;text-shadow:0 0 14px rgba(255,200,110,.5)}
+</style></head>
+<body>
+<canvas id="cv" width="720" height="1280"></canvas>
+<div id="ui"><div id="vig"></div><div id="caps" style="left:0;top:0;width:540px;height:960px"></div><div class="o1">Satu undangan.<br>Satu dunia.</div><div class="o2">ORBIT</div><div id="flash"></div><div id="fade"></div></div>
+<script type="module" src="./main.js"></script>
+</body></html>
