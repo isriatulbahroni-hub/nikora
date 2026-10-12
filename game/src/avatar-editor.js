@@ -1,10 +1,11 @@
 // Editor avatar ala pemilihan hero: pratinjau 3D yang bisa diputar + tab pilihan + acak.
 import * as THREE from 'three';
-import { ACCESSORIES, HAIR_COLORS, HAIR_STYLES, OUTFITS, SKINS, randomConfig, sanitizeConfig } from './avatar-config.js';
-import { createAvatar, setAvatarConfig } from './avatar.js';
+import { ACCESSORIES, CHARACTERS, HAIR_COLORS, HAIR_STYLES, OUTFITS, SKINS, randomConfig, sanitizeConfig } from './avatar-config.js';
+import { applyPose, createAvatar, setAvatarConfig } from './avatar.js';
 
 const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
 export const TABS = [
+  { id: 'm', label: 'Karakter', swatch: false, items: CHARACTERS.map(({ name }) => ({ name })) },
   { id: 'o', label: 'Pakaian', swatch: true, items: OUTFITS },
   { id: 's', label: 'Kulit', swatch: true, items: SKINS },
   { id: 'h', label: 'Rambut', swatch: false, items: HAIR_STYLES.map((name) => ({ name })) },
@@ -15,6 +16,8 @@ export const TABS = [
 export function createAvatarEditor({ canvas, tabsEl, optionsEl, initial, onChange = () => {} }) {
   let cfg = sanitizeConfig(initial);
   let tab = TABS[0].id;
+  let dancing = false;
+  let clock = 0;
   let renderer = null;
   let scene;
   let camera;
@@ -26,7 +29,10 @@ export function createAvatarEditor({ canvas, tabsEl, optionsEl, initial, onChang
 
   function renderOptions() {
     tabsEl.replaceChildren();
-    for (const t of TABS) {
+    // Model manusia tidak punya pakaian/rambut yang bisa diubah: hanya tab Karakter yang tampil.
+    const visible = cfg.m > 0 ? TABS.filter((t) => t.id === 'm') : TABS;
+    if (!visible.some((t) => t.id === tab)) tab = 'm';
+    for (const t of visible) {
       const b = document.createElement('button');
       b.type = 'button';
       b.role = 'tab';
@@ -94,6 +100,8 @@ export function createAvatarEditor({ canvas, tabsEl, optionsEl, initial, onChang
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     }
+    clock += dt;
+    applyPose(avatar, dancing && cfg.m > 0 ? 'dance' : null, clock, dt);
     if (!dragging) avatar.rotation.y += dt * 0.6;
     renderer.render(scene, camera);
   }
@@ -108,5 +116,7 @@ export function createAvatarEditor({ canvas, tabsEl, optionsEl, initial, onChang
       if (renderer && !raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
     },
     stop() { cancelAnimationFrame(raf); raf = 0; },
+    toggleDance() { dancing = !dancing; return dancing; },
+    get isHuman() { return cfg.m > 0; },
   };
 }

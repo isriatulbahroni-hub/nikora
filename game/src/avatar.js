@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { HAIR_COLORS, OUTFITS, SKINS, sanitizeConfig } from './avatar-config.js';
+import { CHARACTERS, HAIR_COLORS, OUTFITS, SKINS, sanitizeConfig } from './avatar-config.js';
+import { HumanRig, loadHumanModel } from './avatar-human.js';
 
 export function makeLabel(text) {
   if (typeof document === 'undefined') return null;
@@ -62,6 +63,7 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
   group.userData.tint = [bodyMaterial, markerMaterial, armMaterial];
   group.userData.skin = skinMaterial;
   group.userData.body = body;
+  group.userData.parts = [...group.children]; // bagian avatar sederhana (disembunyikan saat memakai model manusia)
   if (cfg) setAvatarConfig(group, cfg);
   if (name) {
     const label = makeLabel(name);
@@ -136,6 +138,11 @@ const lerp = (a, b, k) => a + (b - a) * k;
  * t: waktu (detik). Dipanggil tiap frame; halus karena memakai peluruhan eksponensial menuju target.
  */
 export function applyPose(group, act, t, delta = 1 / 60) {
+  const human = group.userData?.human;
+  if (human) {
+    human.update(act, t, delta, group.position.y < -0.1); // y turun = duduk di kursi
+    return;
+  }
   const arms = group.userData?.arms;
   if (!arms) return;
   const k = 1 - Math.exp(-14 * Math.max(0, delta));
@@ -155,6 +162,11 @@ export function applyPose(group, act, t, delta = 1 / 60) {
     const c = Math.abs(Math.sin(t * 14));
     r = { x: 1.2, z: -0.35 + c * 0.3 };
     l = { x: 1.2, z: 0.35 - c * 0.3 };
+  } else if (act === 'dance') {
+    const s = Math.sin(t * 8);
+    r = { x: 2.6 + s * 0.3, z: -0.4 + s * 0.3 };
+    l = { x: 2.6 - s * 0.3, z: 0.4 - s * 0.3 };
+    lean = s * 0.12;
   } else if (act === 'walk') {
     const sw = Math.sin(t * 9) * 0.7;
     r = { x: -sw, z: -0.08 };
@@ -247,6 +259,38 @@ export function setAvatarConfig(group, rawConfig) {
     disposeGear(group.userData.gear);
   }
   group.userData.gear = buildGear(cfg);
+  group.userData.gear.visible = !CHARACTERS[cfg.m]?.id;
   group.add(group.userData.gear);
   group.userData.config = cfg;
+  applyHuman(group, cfg);
+}
+
+/** Pasang/lepas model manusia sesuai pilihan karakter. Pemuatan asinkron; avatar sederhana tampil sementara. */
+function applyHuman(group, cfg) {
+  const id = CHARACTERS[cfg.m]?.id ?? null;
+  if (group.userData.humanId === id) return;
+  group.userData.humanId = id;
+  const old = group.userData.human;
+  if (old) {
+    group.remove(old.root);
+    old.dispose();
+    group.userData.human = null;
+  }
+  const showSimple = (on) => {
+    for (const part of group.userData.parts ?? []) part.visible = on;
+    if (group.userData.gear) group.userData.gear.visible = on;
+  };
+  if (!id) {
+    showSimple(true);
+    return;
+  }
+  loadHumanModel(id)
+    .then((model) => {
+      if (group.userData.humanId !== id) return; // sudah ganti pilihan
+      const rig = new HumanRig(model);
+      group.add(rig.root);
+      group.userData.human = rig;
+      showSimple(false);
+    })
+    .catch((error) => console.warn('[avatar] model manusia gagal dimuat, memakai avatar sederhana', error));
 }

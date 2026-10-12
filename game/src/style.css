@@ -577,3 +577,6 @@ body{background:radial-gradient(120% 90% at 50% 0%,#2b2030,#1d1722 70%)}
 @media (max-width:640px){.editor-layout{grid-template-columns:1fr}.avatar-preview{height:210px}.editor-panel{padding:16px}}
 @media (max-height:520px) and (orientation:landscape){.editor-layout{grid-template-columns:minmax(0,.9fr) minmax(0,1.4fr)}.avatar-preview{height:220px}}
 #join-overlay{z-index:9}
+
+#touch-dance{right:calc(104px + env(safe-area-inset-right));bottom:calc(34px + env(safe-area-inset-bottom));width:64px;height:64px;opacity:.85}
+@media (max-height:480px){#touch-dance{right:calc(92px + env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom));width:52px;height:52px}}
