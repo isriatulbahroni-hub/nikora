@@ -1,6 +1,6 @@
 import { h } from '../engine/dom.js';
 import { detailContent, icsFor } from '../engine/content.js';
-import { createShell, heading, rv, skippedScene } from './shell.js';
+import { createShell, heading, rv, skippedScene, text3d } from './shell.js';
 
 /** Unduh satu acara sebagai berkas kalender (.ics). */
 function saveToCalendar(ev, view, index) {
@@ -26,7 +26,7 @@ export function mountDetail(container, ctx) {
   let i = 3;
 
   const cards = c.events.map((ev, idx) => rv(h('article', { class: 'dt-card' },
-    h('h3', { class: 'dt-label', text: ev.label }),
+    text3d('h3', { class: 'dt-label' }, ev.label),
     ev.dateText ? h('p', { class: 'dt-date', text: ev.dateText }) : null,
     ev.timeText ? h('p', { class: 'dt-time', text: ev.timeText }) : null,
     ev.venue ? h('p', { class: 'dt-venue', text: ev.venue }) : null,

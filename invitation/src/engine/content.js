@@ -39,6 +39,9 @@ const BASE = {
   galleryEyebrow: 'Momen', galleryTitle: 'Galeri', galleryCta: 'Lanjut',
   closingEyebrow: 'Sampai Jumpa', closingTitle: 'Terima Kasih', closingSign: 'Salam hangat,', closingCta: 'Selesai',
   closingBody: 'Kehadiran dan doa Anda adalah hadiah terindah bagi kami. Sampai bertemu di hari istimewa ini.',
+  dayEyebrow: 'Hari Acara', dayTitle: 'Acara Hari Ini', dayCta: 'Lanjut',
+  archiveEyebrow: 'Arsip Kenangan', archiveTitle: 'Kenangan Hari Itu', archiveCta: 'Lanjut',
+  archiveBody: 'Terima kasih telah hadir dan mendoakan. Kenangan hari itu tersimpan di sini.',
 };
 
 const BY_TYPE = {
@@ -315,5 +318,71 @@ export function closingContent(view) {
     signature: cleanText(cfg.signature, 80) || view.title,
     hosts: cleanText(cfg.hosts, 160) || cleanText(extraOf(view).hosts, 160),
     cta: text(view, cfg, copy, 'closingCta', 30, 'cta'),
+  };
+}
+
+/* ---------- hari acara & arsip ---------- */
+const HOUR = 3600000;
+
+/** Rentang acara dari semua rangkaian (atau event_date). null bila tanggal tidak ada. */
+export function eventWindow(view) {
+  const evs = detailContent(view).events.filter((e) => e.start);
+  if (evs.length) {
+    return { start: new Date(Math.min(...evs.map((e) => e.start.getTime()))), end: new Date(Math.max(...evs.map((e) => e.start.getTime() + e.duration * 60000))) };
+  }
+  const d = parseDate(view.eventDate);
+  return d ? { start: d, end: new Date(d.getTime() + 2 * HOUR) } : null;
+}
+
+/** before (>24 jam), soon (<24 jam), live, after (<=6 jam setelah selesai), past, unknown. */
+export function phaseOf(view, now = Date.now()) {
+  const w = eventWindow(view);
+  if (!w) return 'unknown';
+  if (now < w.start.getTime() - 24 * HOUR) return 'before';
+  if (now < w.start.getTime()) return 'soon';
+  if (now <= w.end.getTime()) return 'live';
+  if (now <= w.end.getTime() + 6 * HOUR) return 'after';
+  return 'past';
+}
+
+const STATUS = { soon: 'Segera dimulai', live: 'Sedang berlangsung', after: 'Baru saja selesai' };
+
+export function dayContent(view, now = Date.now()) {
+  const cfg = sceneCfg(view, 'hari_acara');
+  const copy = copyFor(view);
+  const phase = phaseOf(view, now);
+  const show = cfg.always === true || ['soon', 'live', 'after'].includes(phase);
+  const w = eventWindow(view);
+  const rundown = (Array.isArray(cfg.rundown) ? cfg.rundown : []).slice(0, 30).map((r) => {
+    const o = r && typeof r === 'object' ? r : {};
+    return { time: cleanText(o.time, 20), title: cleanText(o.title, 100), start: parseDate(o.start) };
+  }).filter((r) => r.title).slice(0, 10);
+  const started = rundown.filter((r) => r.start && r.start.getTime() <= now);
+  const current = started.length ? rundown.indexOf(started[started.length - 1]) : -1;
+  return {
+    show, phase, start: w ? w.start : null,
+    status: STATUS[phase] || (cfg.always === true ? 'Segera dimulai' : null),
+    eyebrow: text(view, cfg, copy, 'dayEyebrow', 60, 'eyebrow'),
+    title: text(view, cfg, copy, 'dayTitle', 80, 'title'),
+    cta: text(view, cfg, copy, 'dayCta', 30, 'cta'),
+    streamUrl: safeUrl(cfg.streamUrl),
+    rundown, current,
+  };
+}
+
+export function archiveContent(view, now = Date.now()) {
+  const cfg = sceneCfg(view, 'arsip');
+  const copy = copyFor(view);
+  const show = cfg.always === true || phaseOf(view, now) === 'past';
+  const own = (Array.isArray(cfg.images) ? cfg.images : []).map((it) => ({ src: safeUrl(it && it.src, 1000), alt: cleanText(it && it.alt, 120) || 'Kenangan' })).filter((i) => i.src);
+  const photos = own.length ? own : galleryContent(view).images.filter((i) => i.src).map((i) => ({ src: i.src, alt: i.alt }));
+  return {
+    show,
+    eyebrow: text(view, cfg, copy, 'archiveEyebrow', 60, 'eyebrow'),
+    title: text(view, cfg, copy, 'archiveTitle', 80, 'title'),
+    body: text(view, cfg, copy, 'archiveBody', 400, 'body'),
+    cta: text(view, cfg, copy, 'archiveCta', 30, 'cta'),
+    photos: photos.slice(0, 6),
+    messages: (Array.isArray(cfg.messages) ? cfg.messages : []).slice(0, 30).map((m) => ({ name: cleanText(m && m.name, 60), text: cleanText(m && m.text, 240) })).filter((m) => m.text).slice(0, 6),
   };
 }

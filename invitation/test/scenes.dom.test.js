@@ -18,6 +18,10 @@ const { mountKisah } = await import('../src/scenes/kisah.js');
 const { mountDetail } = await import('../src/scenes/detail.js');
 const { mountGaleri } = await import('../src/scenes/galeri.js');
 const { mountPenutup } = await import('../src/scenes/penutup.js');
+const { mountHariAcara } = await import('../src/scenes/hari.js');
+const { mountArsip } = await import('../src/scenes/arsip.js');
+const { text3d } = await import('../src/engine/text3d.js');
+const { createAvatar, heroRoles } = await import('../src/engine/avatars.js');
 const { buildScenery, SCENERY_KINDS } = await import('../src/engine/scenery.js');
 
 const env = { reduced: true };
@@ -157,7 +161,7 @@ test('mesin: adegan kosong dilewati tanpa transisi dan urutan tetap, lalu kartu 
 test('setiap tema merender semua adegan baru tanpa galat', () => {
   for (const t of THEMES) {
     const view = demo(t.id);
-    for (const fn of [mountSurat, mountCover, mountKisah, mountDetail, mountGaleri, mountPenutup]) {
+    for (const fn of [mountSurat, mountCover, mountKisah, mountDetail, mountGaleri, mountHariAcara, mountArsip, mountPenutup]) {
       const { scene } = mount(fn, view);
       assert.ok(!scene.skipped, `${t.id} ${fn.name} dilewati`);
       scene.destroy();
@@ -172,4 +176,54 @@ test('pemandangan: semua resep menghasilkan 3 lapis berisi bentuk', () => {
     for (const svg of el.querySelectorAll('svg')) assert.ok(svg.children.length > 0, `${kind} lapisan kosong`);
   }
   assert.equal(buildScenery('tidak-ada').dataset.kind, 'bukit');
+});
+
+test('hari acara: status, rundown, tautan dunia dan tombol lanjut; di luar jendela = dilewati', async () => {
+  const view = { ...demo('pernikahan-taman'), worldUrl: 'https://dunia.example/villa.html?e=demo' };
+  const { root, scene } = mount(mountHariAcara, view);
+  assert.ok(root.querySelector('.hr-status'));
+  assert.equal(root.querySelectorAll('.hr-run li').length, 3);
+  const links = [...root.querySelectorAll('a.pg-cta')];
+  assert.equal(links.length, 1);
+  assert.match(links[0].getAttribute('href'), /^https:\/\/dunia\.example/);
+  let done = false; scene.done.then(() => { done = true; });
+  root.querySelector('button.pg-cta').click();
+  await new Promise((r) => setTimeout(r, 5));
+  assert.ok(done);
+  scene.destroy();
+  const off = { ...view, scenes: view.scenes.map((s) => (s.kind === 'hari_acara' ? { ...s, config: {} } : s)) };
+  assert.equal(mountHariAcara(document.createElement('div'), { view: off, env }).skipped, true);
+});
+
+test('arsip: ucapan dan tautan kenangan; belum lewat = dilewati', () => {
+  const view = { ...demo('pernikahan-taman'), worldUrl: 'https://dunia.example/villa.html' };
+  const { root, scene } = mount(mountArsip, view);
+  assert.equal(root.querySelectorAll('.ar-wishes li').length, 2);
+  assert.equal(root.querySelector('a.pg-cta').textContent, 'Kunjungi dunia kenangan');
+  scene.destroy();
+  const off = { ...view, scenes: view.scenes.map((s) => (s.kind === 'arsip' ? { ...s, config: {} } : s)) };
+  assert.equal(mountArsip(document.createElement('div'), { view: off, env }).skipped, true);
+});
+
+test('teks 3D: dipecah per huruf, aria-label utuh, teks panjang tidak dipecah, tidak ada HTML', () => {
+  const el = text3d('h2', { class: 'x' }, 'Dimas & Rani');
+  assert.equal(el.getAttribute('aria-label'), 'Dimas & Rani');
+  assert.equal(el.querySelectorAll('.ch').length, 'Dimas&Rani'.length);
+  assert.ok(el.classList.contains('t3d'));
+  const long = text3d('p', {}, 'x'.repeat(100));
+  assert.equal(long.querySelectorAll('.ch').length, 0);
+  assert.equal(long.textContent.length, 100);
+  const evil = text3d('p', {}, '<img src=x onerror=1>');
+  assert.equal(evil.querySelector('img'), null);
+});
+
+test('avatar: setiap peran menghasilkan SVG tersembunyi dari pembaca layar', () => {
+  for (const role of ['groom', 'bride', 'child', 'qari', 'singer', 'guest']) {
+    const svg = createAvatar({ role, seed: 3, walking: true });
+    assert.equal(svg.getAttribute('aria-hidden'), 'true');
+    assert.ok(svg.querySelector('.av-body'));
+    assert.ok(svg.classList.contains('is-walking'));
+  }
+  assert.deepEqual(heroRoles('pernikahan'), ['groom', 'bride']);
+  assert.equal(heroRoles('khitanan').length, 1);
 });

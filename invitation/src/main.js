@@ -14,6 +14,8 @@ import { mountKisah } from './scenes/kisah.js';
 import { mountDetail } from './scenes/detail.js';
 import { mountGaleri } from './scenes/galeri.js';
 import { mountPenutup } from './scenes/penutup.js';
+import { mountHariAcara } from './scenes/hari.js';
+import { mountArsip } from './scenes/arsip.js';
 import { worldUrl } from './engine/world-link.js';
 
 registerScene('amplop', mountEnvelopeAuto);   // 3D interaktif bila perangkat mampu, jika tidak 2D
@@ -25,7 +27,9 @@ registerScene('galeri', mountGaleri);
 registerScene('rsvp', mountRsvp);
 registerScene('bukutamu', mountGuestbook);
 registerScene('hadiah', mountGifts);
+registerScene('hari_acara', mountHariAcara);
 registerScene('penutup', mountPenutup);
+registerScene('arsip', mountArsip);
 
 const app = document.getElementById('app');
 const query = Object.fromEntries(new URLSearchParams(location.search));

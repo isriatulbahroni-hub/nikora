@@ -22,3 +22,13 @@
 .s-item { display: grid; gap: 2px; text-align: left; background: none; border: 0; font: inherit; cursor: pointer; padding: 0; width: 100%; color: inherit; }
 .s-link-row { display: grid; gap: 4px; } .s-link-row code { word-break: break-all; font-size: .8rem; background: #f0e9d8; padding: 6px 8px; border-radius: 8px; }
 @media (max-width: 480px) { .s-guest { grid-template-columns: 1fr 1fr; } .s-guest span { grid-column: 1 / -1; } }
+
+.s-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+.s-tab { flex: none; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--s-accent); background: transparent; color: var(--s-accent); font: inherit; font-size: .85rem; cursor: pointer; }
+.s-tab[aria-selected="true"] { background: var(--s-accent); color: #fff; }
+.s-editor, .s-rows, .s-group { display: grid; gap: 10px; }
+.s-group > strong { font-size: .95rem; }
+.s-row-card { display: grid; gap: 8px; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--s-gold) 12%, white); }
+.s-check { display: flex; gap: 8px; align-items: center; }
+.s-photo img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; }
+textarea.s-input { resize: vertical; }

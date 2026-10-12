@@ -121,7 +121,7 @@ export function listView({ items, onOpen, onNew, onSignOut, email }) {
 }
 
 /** Dasbor satu undangan: link bagikan, daftar tamu, RSVP, hadiah. */
-export function detailView({ client, slug, inviteBase, worldBase, onBack }) {
+export function detailView({ client, slug, inviteBase, worldBase, onBack, onEdit }) {
   const links = shareLinks({ slug, inviteBase, worldBase });
   const root = h('div', { class: 's-card' });
   const msg = h('p', { class: 's-msg', role: 'status', 'aria-live': 'polite' });
@@ -176,6 +176,7 @@ export function detailView({ client, slug, inviteBase, worldBase, onBack }) {
   root.append(
     h('div', { class: 's-row s-between' }, h('h1', { text: slug }), h('button', { class: 's-link', type: 'button', text: 'Kembali', onclick: onBack })),
     linkRow('Link undangan', links.invite), linkRow('Link dunia 3D', links.world),
+    onEdit ? h('button', { class: 's-btn', type: 'button', text: 'Isi undangan (kisah, acara, galeri, ...)', onclick: onEdit }) : null,
     msg, guestsBox, rsvpBox, giftBox);
   const guard = (fn) => fn().catch((e) => { msg.textContent = e.message; });
   guard(renderGuests); guard(renderRsvp); guard(renderGifts);

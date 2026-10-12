@@ -4,6 +4,7 @@ import { buildView } from '../src/engine/config.js';
 import { demoInvitation, demoScenes } from '../src/engine/demo.js';
 import {
   safeUrl, countdownParts, icsFor, detailContent, galleryContent, storyContent, suratContent, coverContent, closingContent, copyFor, timeText,
+  eventWindow, phaseOf, dayContent, archiveContent,
 } from '../src/engine/content.js';
 
 const inv = (over = {}, scenes = []) => buildView({
@@ -123,4 +124,48 @@ test('demo: setiap tema punya kisah, detail, dan galeri contoh', () => {
     assert.ok(detailContent(view).events.length >= 1, `${id} detail`);
     assert.ok(galleryContent(view).images.length >= 3, `${id} galeri`);
   }
+});
+
+test('fase acara: sebelum, segera, berlangsung, baru selesai, lewat', () => {
+  const view = inv();
+  const start = new Date('2026-12-12T10:00:00+08:00').getTime();
+  const H = 3600000;
+  assert.equal(phaseOf(view, start - 30 * H), 'before');
+  assert.equal(phaseOf(view, start - 2 * H), 'soon');
+  assert.equal(phaseOf(view, start + 1 * H), 'live');
+  assert.equal(phaseOf(view, start + 4 * H), 'after');
+  assert.equal(phaseOf(view, start + 20 * H), 'past');
+  assert.equal(phaseOf(inv({ event_date: null }), start), 'unknown');
+  const w = eventWindow(inv({}, sc('detail', { events: [{ start: '2026-12-12T08:00:00+08:00', duration: 60 }, { start: '2026-12-12T11:00:00+08:00', duration: 120 }] })));
+  assert.equal(w.start.toISOString(), '2026-12-12T00:00:00.000Z');
+  assert.equal(w.end.toISOString(), '2026-12-12T05:00:00.000Z');
+});
+
+test('hari acara: tampil hanya di jendelanya, rundown dan penanda sekarang, siaran https', () => {
+  const view = inv({}, sc('hari_acara', { rundown: [
+    { time: '08.00', title: 'Akad', start: '2026-12-12T08:00:00+08:00' },
+    { time: '10.00', title: 'Resepsi', start: '2026-12-12T10:00:00+08:00' },
+    { title: '' },
+  ], streamUrl: 'https://youtu.be/abc' }));
+  const t = new Date('2026-12-12T10:30:00+08:00').getTime();
+  const live = dayContent(view, t);
+  assert.equal(live.show, true);
+  assert.equal(live.status, 'Sedang berlangsung');
+  assert.equal(live.rundown.length, 2);
+  assert.equal(live.current, 1);
+  assert.equal(live.streamUrl, 'https://youtu.be/abc');
+  assert.equal(dayContent(view, t - 10 * 86400000).show, false);
+  assert.equal(dayContent(view, t + 5 * 86400000).show, false);
+  assert.equal(dayContent(inv({}, sc('hari_acara', { always: true, streamUrl: 'javascript:alert(1)' })), t - 10 * 86400000).streamUrl, null);
+});
+
+test('arsip: tampil setelah acara lewat; foto https; ucapan dibatasi', () => {
+  const t = new Date('2026-12-12T10:00:00+08:00').getTime();
+  const view = inv({}, sc('arsip', { images: [{ src: 'https://i.example/a.jpg' }, { src: 'http://x/y.jpg' }], messages: [{ name: 'A', text: 'Selamat' }, { text: '' }] }));
+  assert.equal(archiveContent(view, t).show, false);
+  const a = archiveContent(view, t + 3 * 86400000);
+  assert.equal(a.show, true);
+  assert.equal(a.photos.length, 1);
+  assert.equal(a.messages.length, 1);
+  assert.equal(archiveContent(inv({}, sc('arsip', { always: true })), t).show, true);
 });

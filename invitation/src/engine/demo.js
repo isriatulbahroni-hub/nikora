@@ -80,6 +80,8 @@ export function demoScenes(themeId) {
     if (s.kind === 'kisah') return { ...s, config: cfg.kisah };
     if (s.kind === 'detail') return { ...s, config: cfg.detail };
     if (s.kind === 'galeri') return { ...s, config: { images: GALLERY } };
+    if (s.kind === 'hari_acara') return { ...s, config: { always: true, rundown: [{ time: '08.00', title: 'Tamu mulai hadir' }, { time: '09.00', title: 'Acara inti' }, { time: '11.00', title: 'Jamuan bersama' }] } };
+    if (s.kind === 'arsip') return { ...s, config: { always: true, messages: [{ name: 'Sahabat', text: 'Terima kasih atas undangannya, acaranya indah sekali!' }, { name: 'Tante Rina', text: 'Semoga berkah dan bahagia selalu.' }] } };
     return s;
   });
 }

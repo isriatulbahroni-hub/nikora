@@ -1,6 +1,6 @@
 import { h } from '../engine/dom.js';
 import { storyContent } from '../engine/content.js';
-import { createShell, heading, rv, skippedScene } from './shell.js';
+import { createShell, heading, rv, skippedScene, text3d } from './shell.js';
 
 /**
  * Adegan 04 - Kisah. Kartu cerita yang digeser mendatar (snap), dengan penanda titik dan tombol
@@ -16,7 +16,7 @@ export function mountKisah(container, ctx) {
   const cards = c.items.map((it, idx) => h('li', { class: 'ks-card' },
     h('div', { class: 'ks-inner', 'data-n': String(idx + 1) },
       it.when ? h('span', { class: 'ks-when', text: it.when }) : null,
-      it.title ? h('h3', { class: 'ks-title', text: it.title }) : null,
+      it.title ? text3d('h3', { class: 'ks-title' }, it.title) : null,
       it.text ? h('p', { class: 'ks-text', text: it.text }) : null)));
   const track = h('ol', { class: 'ks-track', tabindex: '0', 'aria-label': c.title }, cards);
   const dots = c.items.map((_, idx) => h('button', { class: 'ks-dot', type: 'button', 'aria-label': `Kisah ${idx + 1}`, onclick: () => go(idx) }));

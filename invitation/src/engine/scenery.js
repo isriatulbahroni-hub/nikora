@@ -153,8 +153,10 @@ function drawLayer(items) {
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
   svg.setAttribute('preserveAspectRatio', 'xMidYMax meet');
   svg.setAttribute('aria-hidden', 'true');
+  let n = 0;
   for (const { tag, a } of items) {
     const el = document.createElementNS(NS, tag);
+    if (a.class === 'lit') el.setAttribute('style', `animation-delay:${((n++ * 37) % 29) / 10}s`);
     for (const [k, v] of Object.entries(a)) if (v != null) el.setAttribute(k, String(v));
     svg.append(el);
   }
@@ -162,7 +164,7 @@ function drawLayer(items) {
 }
 
 /** Elemen latar siap pakai: <div class="scenery"> berisi tiga lapisan + cahaya bulan/matahari. */
-export function buildScenery(kind, seed = 7) {
+export function buildScenery(kind, seed = 7, { hero = null } = {}) {
   const recipe = RECIPES[kind] || RECIPES.bukit;
   const layers = recipe(rng(seed));
   const root = document.createElement('div');
@@ -172,7 +174,31 @@ export function buildScenery(kind, seed = 7) {
   const orb = document.createElement('div');
   orb.className = 'sc-orb';
   root.append(orb);
+  // awan melintas + burung terbang: gerak latar yang tidak bergantung pada sentuhan
+  const sky = document.createElement('div');
+  sky.className = 'sc-sky';
+  for (let i = 0; i < 3; i++) {
+    const c = document.createElement('i');
+    c.className = 'sc-cloud';
+    c.style.cssText = `--y:${10 + i * 13}%;--dur:${70 + i * 28}s;--delay:${-i * 31}s;--w:${90 + i * 36}px`;
+    sky.append(c);
+  }
+  if (['taman', 'bukit', 'pulau', 'lumbung', 'masjid'].includes(root.dataset.kind)) {
+    for (let i = 0; i < 3; i++) {
+      const b = document.createElement('b');
+      b.className = 'sc-bird';
+      b.style.cssText = `--y:${18 + i * 7}%;--dur:${24 + i * 6}s;--delay:${-i * 9}s`;
+      sky.append(b);
+    }
+  }
+  root.append(sky);
   for (const depth of ['far', 'mid', 'near']) {
+    if (depth === 'near' && hero) {
+      const slot = document.createElement('div');
+      slot.className = 'sc-hero';
+      slot.append(hero);
+      root.append(slot);
+    }
     const layer = document.createElement('div');
     layer.className = `sc-layer sc-${depth}`;
     layer.append(drawLayer(layers[depth]));

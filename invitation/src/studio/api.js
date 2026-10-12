@@ -1,4 +1,4 @@
-import { cleanText, defaultScenes } from '../engine/config.js';
+import { cleanText, defaultScenes, SCENE_KINDS } from '../engine/config.js';
 import { EVENT_TYPES, getTheme } from '../themes/index.js';
 import { WORLDS, DEFAULT_WORLD_URL } from '../engine/world-link.js';
 
@@ -66,6 +66,39 @@ export function shareLinks({ slug, inviteBase, worldBase = DEFAULT_WORLD_URL }) 
     world: (() => { const u = new URL(`${String(worldBase).replace(/\/+$/, '')}/villa.html`); u.searchParams.set('e', slug); return u.toString(); })(),
   };
 }
+
+/** Selisih zona waktu (ms) pada saat `ms` untuk zona IANA `tz`. */
+function tzOffsetMs(ms, tz) {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(ms));
+  const g = (t) => Number(parts.find((p) => p.type === t).value);
+  return Date.UTC(g('year'), g('month') - 1, g('day'), g('hour'), g('minute'), g('second')) - Math.floor(ms / 1000) * 1000;
+}
+
+/** "2026-12-12T08:00" di zona `tz` -> ISO UTC. null bila format salah. */
+export function zonedIso(local, tz = 'Asia/Jakarta') {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(local || ''));
+  if (!m) return null;
+  const [Y, Mo, D, H, Mi] = m.slice(1).map(Number);
+  const guess = Date.UTC(Y, Mo - 1, D, H, Mi);
+  try {
+    const t = guess - tzOffsetMs(guess - tzOffsetMs(guess, tz), tz);
+    const d = new Date(t);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  } catch { return null; }
+}
+
+/** ISO -> "YYYY-MM-DDTHH:mm" di zona `tz` (untuk kolom datetime-local). */
+export function isoToLocal(iso, tz = 'Asia/Jakarta') {
+  const d = new Date(iso);
+  if (!iso || Number.isNaN(d.getTime())) return '';
+  try {
+    const p = new Intl.DateTimeFormat('en-CA', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(d);
+    const g = (t) => p.find((x) => x.type === t).value;
+    return `${g('year')}-${g('month')}-${g('day')}T${g('hour')}:${g('minute')}`;
+  } catch { return ''; }
+}
+
+export const MAX_CONFIG_BYTES = 24000;
 
 /** Teks WhatsApp per tamu. */
 const intId = (v) => {
@@ -135,6 +168,29 @@ export function createClient({ url, key, fetchImpl = globalThis.fetch, store }) 
       const scenes = defaultScenes().map((s) => ({ slug: value.slug, kind: s.kind, position: s.position, active: s.active, config: s.config }));
       await rest('invitation_scenes', { method: 'POST', body: scenes, prefer: 'return=minimal' });
       return value.slug;
+    },
+    invitationOf: async (slug) => (await rest(`invitations?slug=eq.${encodeURIComponent(slug)}&select=slug,event_type,theme,event_date,extra&limit=1`) || [])[0] || null,
+    scenesOf: (slug) => rest(`invitation_scenes?slug=eq.${encodeURIComponent(slug)}&select=kind,position,active,config&order=position.asc`),
+    /** Simpan isi satu adegan. Hanya jenis adegan yang dikenal dan config JSON <= 24 KB. */
+    async saveScene(slug, kind, { config, active }) {
+      if (!SCENE_KINDS.includes(kind)) throw new Error('Jenis adegan tidak dikenal.');
+      if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Isi adegan tidak valid.');
+      if (JSON.stringify(config).length > MAX_CONFIG_BYTES) throw new Error('Isi adegan terlalu besar.');
+      const body = { config };
+      if (typeof active === 'boolean') body.active = active;
+      await rest(`invitation_scenes?slug=eq.${encodeURIComponent(slug)}&kind=eq.${kind}`, { method: 'PATCH', body, prefer: 'return=minimal' });
+    },
+    /** Unggah foto (JPEG hasil kecilkan) ke bucket publik `media` di folder milik pengguna; mengembalikan URL https. */
+    async uploadImage(slug, blob) {
+      const uid = this.userId();
+      if (!uid) throw new Error('Silakan masuk dulu.');
+      if (!blob || blob.type !== 'image/jpeg') throw new Error('Foto harus berformat JPEG.');
+      if (blob.size > 3 * 1024 * 1024) throw new Error('Foto terlalu besar (maks 3 MB).');
+      const id = (globalThis.crypto && globalThis.crypto.randomUUID) ? globalThis.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const path = `${uid}/galeri/${slug}/${id}.jpg`;
+      const res = await fetchImpl(`${base}/storage/v1/object/media/${path}`, { method: 'POST', headers: { apikey: key, Authorization: `Bearer ${await token()}`, 'Content-Type': 'image/jpeg', 'x-upsert': 'false' }, body: blob });
+      if (!res.ok) throw new Error(res.status === 413 ? 'Foto terlalu besar.' : `Unggah gagal (${res.status}).`);
+      return `${base}/storage/v1/object/public/media/${path}`;
     },
     rsvpsOf: (slug) => rest(`rsvps?slug=eq.${encodeURIComponent(slug)}&select=id,name,attending,guests,meal,wish,created_at&order=created_at.desc`),
     giftsOf: (slug) => rest(`invitation_gifts?slug=eq.${encodeURIComponent(slug)}&select=id,kind,label,account_name,account_no,position,active&order=position.asc`),

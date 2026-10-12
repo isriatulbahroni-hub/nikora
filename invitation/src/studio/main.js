@@ -1,6 +1,7 @@
 import './studio.css';
 import { createClient } from './api.js';
 import { loginView, createView, listView, detailView } from './views.js';
+import { editorView } from './editor.js';
 import { h } from '../engine/dom.js';
 
 const KEY = 'orbit.studio.session';
@@ -20,14 +21,18 @@ try {
   show(h('div', { class: 's-card' }, h('h1', { text: 'Studio belum siap' }), h('p', { class: 's-msg', role: 'alert', text: e.message })));
 }
 
+function openDetail(slug) {
+  show(detailView({ client, slug, inviteBase, worldBase, onBack: home, onEdit: () => show(editorView({ client, slug, inviteBase, onBack: () => openDetail(slug) })) }));
+}
+
 async function home() {
   if (!client.session()) return show(loginView({ client, onDone: home }));
   try {
     const items = await client.myInvitations();
     show(listView({
       items, email: client.session().user && client.session().user.email,
-      onOpen: (slug) => show(detailView({ client, slug, inviteBase, worldBase, onBack: home })),
-      onNew: () => show(createView({ client, onCreated: (slug) => show(detailView({ client, slug, inviteBase, worldBase, onBack: home })), onCancel: home })),
+      onOpen: (slug) => openDetail(slug),
+      onNew: () => show(createView({ client, onCreated: (slug) => openDetail(slug), onCancel: home })),
       onSignOut: () => { client.signOut(); home(); },
     }));
   } catch (e) {
