@@ -54,6 +54,9 @@ export class Room {
       input: { x: 0, z: 0 },
       seq: 0,
       sit: null, // id kursi bila sedang duduk
+      level: 0, // lantai (vila bertingkat)
+      stair: null, // id tangga bila sedang di tangga
+      y: 0, // ketinggian permukaan yang diinjak
       act: null, // interaksi aktif: { kind, with, until }
     };
     this.players.set(id, player);
@@ -83,6 +86,7 @@ export class Room {
     if (!a || !b || a === b) return false;
     if (a.sit !== null || b.sit !== null) return false;
     if (a.act || b.act) return false;
+    if (Math.abs((a.y ?? 0) - (b.y ?? 0)) > 1.2) return false; // beda lantai
     return Math.hypot(a.x - b.x, a.z - b.z) <= this.rules.greetRange;
   }
 
@@ -170,6 +174,7 @@ export class Room {
     if (p.sit === sit) return true;
     for (const other of this.players.values()) if (other !== p && other.sit === sit) return false;
     const seat = spots[sit];
+    if (world && ((seat.level ?? 0) !== p.level || p.stair != null)) return false; // harus di lantai yang sama
     if (Math.hypot(seat.x - p.x, seat.z - p.z) > range + 0.6) return false; // toleransi latensi
     p.sit = sit;
     p.x = seat.x;
@@ -188,6 +193,9 @@ export class Room {
       const next = this.rules.world ? this.rules.world.move(p, dx, dz) : resolveCollisions({ x: p.x + dx, z: p.z + dz });
       p.x = next.x;
       p.z = next.z;
+      p.level = next.level ?? 0;
+      p.stair = next.stair ?? null;
+      p.y = next.y ?? 0;
     }
   }
 
@@ -197,6 +205,7 @@ export class Room {
       name: p.name,
       x: +p.x.toFixed(3),
       z: +p.z.toFixed(3),
+      y: +(p.y ?? 0).toFixed(2),
       rot: +p.rot.toFixed(3),
       seq: p.seq,
       sit: p.sit,

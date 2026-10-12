@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import { HALL_SEATING, WALL_HEIGHT, WALL_THICKNESS, hallChairPositions } from './villa-layout.js';
+import { HALL_SEATING, LEVEL_HEIGHT, STAIRS, WALL_HEIGHT, WALL_THICKNESS, hallChairPositions, levelY } from './villa-layout.js';
 import {
   PALM_BEND, bedGeometries, broadleafTreeGeometry, carGeometries, chairGeometry, frondGeometry, lanternPostGeometry,
   loungerGeometry, merge, palmTrunkGeometry, part, potPlantGeometry, shrubGeometry,
@@ -100,8 +100,8 @@ function leafDepthMaterial(map) {
 }
 
 // ------------------------------------------------------------------ dinding
-function buildWalls(world, parent, mats) {
-  const items = world.walls.map((w) => {
+function buildWalls(walls, parent, mats) {
+  const items = walls.map((w) => {
     const len = w.b - w.a;
     return w.orient === 'h'
       ? { x: (w.a + w.b) / 2, z: w.coord, sx: len, sy: WALL_HEIGHT, sz: WALL_THICKNESS }
@@ -118,16 +118,16 @@ function buildWalls(world, parent, mats) {
   // Dinding timur-barat di selatan pemain (antara kamera dan pemain) direndahkan agar isi ruangan terlihat.
   const heights = items.map(() => WALL_HEIGHT);
   const LOW = 0.45;
-  return (px, pz, delta, camDir = { x: 0, z: 1 }, pitch = 0.9) => {
+  return (px, pz, delta, active = true, camDir = { x: 0, z: 1 }, pitch = 0.9) => {
     let changed = false;
-    world.walls.forEach((w, i) => {
+    walls.forEach((w, i) => {
       // titik dinding terdekat dari pemain; dirunduk bila berada di sisi kamera dan cukup dekat
       const cx = w.orient === 'h' ? Math.min(w.b, Math.max(w.a, px)) : w.coord;
       const cz = w.orient === 'h' ? w.coord : Math.min(w.b, Math.max(w.a, pz));
       const vx = cx - px;
       const vz = cz - pz;
       const dist = Math.hypot(vx, vz);
-      const blocks = pitch < 1.3 && dist < 11 && vx * camDir.x + vz * camDir.z > 0.25 * dist + 0.3;
+      const blocks = active && pitch < 1.3 && dist < 11 && vx * camDir.x + vz * camDir.z > 0.25 * dist + 0.3;
       const target = blocks ? LOW : WALL_HEIGHT;
       if (Math.abs(heights[i] - target) < 0.002) return;
       heights[i] += (target - heights[i]) * Math.min(1, delta * 9);
@@ -150,8 +150,8 @@ function buildWalls(world, parent, mats) {
   };
 }
 
-function buildDoors(world, parent, mats) {
-  for (const d of world.doors) {
+function buildDoors(doors, parent, mats) {
+  for (const d of doors) {
     const along = d.orient === 'h' ? [d.width, 0.03, 0.55] : [0.55, 0.03, d.width];
     block(along[0], along[1], along[2], mats.brass, d.x, 0.04, d.z, parent, { cast: false });
   }
@@ -493,8 +493,8 @@ function buildGreenery(world, parent, mats, rand) {
 }
 
 // ------------------------------------------------------------ properti ruang
-function buildProps(world, parent, mats, rand) {
-  const by = (t) => world.props.filter((p) => p.type === t);
+function buildProps(propList, parent, mats, rand) {
+  const by = (t) => propList.filter((p) => p.type === t);
 
   // tempat tidur lengkap dengan karpet
   const beds = by('bed');
@@ -576,8 +576,12 @@ function buildProps(world, parent, mats, rand) {
   const chairs = tables.flatMap((t) => [[1.2, 0], [-1.2, 0], [0, 1.2], [0, -1.2]].map(([dx, dz]) => ({ x: t.x + dx, z: t.z + dz, ry: Math.atan2(-dx, -dz) })));
   parent.add(instanced(chairGeometry({ frame: '#6b4f35', cushion: '#d8c5a6' }), mats.vertex(0.6), chairs));
 
+  // lounger teras
+  parent.add(instanced(loungerGeometry(), mats.vertex(0.6), by('lounger').map((l) => ({ x: l.x, z: l.z }))));
+
   // mobil + marka parkir
   const cars = by('car');
+  if (cars.length) {
   const cg = carGeometries();
   const palette = [0x1f2a36, 0xf2f2f0, 0x8e1b1b, 0x3a3f46, 0x274a7c, 0xb9bcc0, 0x1a1a1a, 0xe9e1cf];
   const placed = cars.map((c, i) => ({ x: c.x, z: c.z, ry: i % 2 ? Math.PI : 0 }));
@@ -587,6 +591,159 @@ function buildProps(world, parent, mats, rand) {
   const lines = [];
   for (const z of [30, 37]) for (const x of [20, 24, 28, 32, 36]) lines.push({ x, y: 0.03, z, sx: 0.12, sy: 0.02, sz: 6 });
   parent.add(instanced(new THREE.BoxGeometry(1, 1, 1), mats.paint, lines, { castShadow: false }));
+  }
+}
+
+// ------------------------------------------------------------------ lantai atas
+/** Lantai dan pelat beton untuk tiap ruangan (bordes untuk menara tangga). */
+function buildFloors(rooms, level, parent, mats, floors) {
+  for (const r of rooms) {
+    const rect = r.kind === 'stair' ? (level === 0 ? r.rect : r.landing) : r.rect;
+    if (!rect) continue;
+    const [material, tile] = floors[r.kind] ?? floors.corridor;
+    flat(rect, material, 0.03, parent, tile);
+    if (level > 0) block(rect[2] - rect[0], 0.4, rect[3] - rect[1], mats.slab, (rect[0] + rect[2]) / 2, -0.2, (rect[1] + rect[3]) / 2, parent, { cast: false });
+  }
+}
+
+/** Pagar teras: tiang + dua rel di tepi yang tidak berbatasan dengan ruangan berdinding. */
+function buildRailings(rooms, parent, mats) {
+  const walled = rooms.filter((r) => r.kind !== 'terrace').map((r) => r.rect);
+  const posts = [];
+  const top = [];
+  const mid = [];
+  for (const r of rooms.filter((q) => q.kind === 'terrace')) {
+    const [x1, z1, x2, z2] = r.rect;
+    for (const [orient, coord, a, b, out] of [['h', z1, x1, x2, -1], ['h', z2, x1, x2, 1], ['v', x1, z1, z2, -1], ['v', x2, z1, z2, 1]]) {
+      const n = Math.max(1, Math.round((b - a) / 1.2));
+      const seg = (b - a) / n;
+      const edge = coord - out * 0.12;
+      for (let i = 0; i < n; i++) {
+        const c0 = a + seg * i;
+        const m = c0 + seg / 2;
+        const ox = orient === 'h' ? m : coord + out * 0.35;
+        const oz = orient === 'h' ? coord + out * 0.35 : m;
+        if (walled.some((w) => ox > w[0] && ox < w[2] && oz > w[1] && oz < w[3])) continue;
+        const at = (c) => (orient === 'h' ? { x: c, z: edge } : { x: edge, z: c });
+        const mm = at(m);
+        top.push({ ...mm, y: 0.97, ry: orient === 'h' ? 0 : Math.PI / 2, sx: seg });
+        mid.push({ ...mm, y: 0.5, ry: orient === 'h' ? 0 : Math.PI / 2, sx: seg });
+        posts.push(at(c0), at(c0 + seg));
+      }
+    }
+  }
+  const postGeo = new THREE.BoxGeometry(0.07, 1, 0.07);
+  postGeo.translate(0, 0.5, 0);
+  parent.add(instanced(postGeo, mats.white, posts.map((p) => ({ ...p, sy: 1 }))));
+  parent.add(instanced(new THREE.BoxGeometry(1, 0.07, 0.09), mats.gold, top));
+  parent.add(instanced(new THREE.BoxGeometry(1, 0.03, 0.03), mats.white, mid));
+}
+
+/** Delapan lengan tangga beton dengan pegangan tangan. Tinggi mengikuti levelY (koordinat dunia). */
+function buildStairs(parent, mats) {
+  const N = 18;
+  const blocks = [];
+  const treads = [];
+  const posts = [];
+  const rails = [];
+  for (const s of STAIRS) {
+    const w = s.x2 - s.x1;
+    const cx = (s.x1 + s.x2) / 2;
+    const run = Math.abs(s.zBottom - s.zTop);
+    const dir = Math.sign(s.zBottom - s.zTop);
+    const base = levelY(s.from);
+    const rise = LEVEL_HEIGHT / N;
+    const depth = run / N;
+    for (let i = 0; i < N; i++) {
+      const zc = s.zBottom - dir * (i + 0.5) * depth;
+      const topY = base + (i + 1) * rise;
+      blocks.push({ x: cx, y: base, z: zc, sx: w, sy: topY - base, sz: depth + 0.01 });
+      treads.push({ x: cx, y: topY - 0.05, z: zc, sx: w + 0.02, sy: 0.05, sz: depth + 0.02 });
+    }
+    for (const x of [s.x1 + 0.07, s.x2 - 0.07]) {
+      rails.push({ x, y: base + LEVEL_HEIGHT / 2 + 0.95, z: (s.zBottom + s.zTop) / 2, len: Math.hypot(run, LEVEL_HEIGHT), angle: Math.atan2(LEVEL_HEIGHT, run) * dir });
+      for (let i = 1; i < N; i += 4) posts.push({ x, y: base + (i + 1) * rise, z: s.zBottom - dir * (i + 0.5) * depth, sy: 0.95 });
+    }
+  }
+  const unit = new THREE.BoxGeometry(1, 1, 1);
+  unit.translate(0, 0.5, 0);
+  parent.add(instanced(unit, mats.stairStone, blocks));
+  parent.add(instanced(unit, mats.stairTread, treads, { castShadow: false }));
+  const postGeo = new THREE.BoxGeometry(0.06, 1, 0.06);
+  postGeo.translate(0, 0.5, 0);
+  parent.add(instanced(postGeo, mats.white, posts));
+  const railMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(0.07, 0.07, 1), mats.gold, rails.length);
+  rails.forEach((r, i) => {
+    dummy.position.set(r.x, r.y, r.z);
+    dummy.rotation.set(r.angle, 0, 0);
+    dummy.scale.set(1, 1, r.len);
+    dummy.updateMatrix();
+    railMesh.setMatrixAt(i, dummy.matrix);
+  });
+  railMesh.castShadow = true;
+  parent.add(railMesh);
+}
+
+const TERRACE_PLANTS = {
+  terrace_w: [[-36.5, -18.5], [-15.5, -18.5], [-15.5, -4.5], [-36.5, -4.5]],
+  terrace_e: [[15.5, -18.5], [24.5, -18.5], [15.5, -4.5], [24.5, -4.5]],
+  sky_garden: [[17, 5.5], [17, 20.5], [37, 20.5], [27, 5.5], [27, 20.5]],
+  rooftop: [[-17, 5.5], [-17, 18.5], [-35, 18.5]],
+};
+
+function buildUpperLevel(level, data, group, mats, floors, rand) {
+  buildFloors(data.rooms, level, group, mats, floors);
+  const updateWalls = buildWalls(data.walls, group, mats);
+  buildDoors(data.doors, group, mats);
+  buildRailings(data.rooms, group, mats);
+  buildProps(data.props, group, mats, rand);
+  const plants = [];
+  for (const r of data.rooms) for (const [x, z] of TERRACE_PLANTS[r.id] ?? []) plants.push({ x, z, ry: rand() * 6 });
+  if (plants.length) group.add(instanced(potPlantGeometry(), mats.vertex(0.8), plants));
+  for (const r of data.rooms) {
+    if (!['lounge', 'library', 'restaurant'].includes(r.kind)) continue;
+    const [x1, z1, x2, z2] = r.rect;
+    const rug = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(7, x2 - x1 - 3), Math.min(4.5, z2 - z1 - 4)), new THREE.MeshStandardMaterial({ map: rugTexture('#2f4f6f', '#e8e0cc'), roughness: 1 }));
+    rug.rotation.x = -Math.PI / 2;
+    rug.position.set((x1 + x2) / 2, 0.045, (z1 + z2) / 2);
+    rug.receiveShadow = true;
+    group.add(rug);
+  }
+  return updateWalls;
+}
+
+/** "Lubang" intip: bagian bangunan di atas kepala pemain dibuang dalam lingkaran layar di sekitar avatar. */
+function applyCutaway(root, hole) {
+  const done = new Set();
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (done.has(m) || !(m.isMeshStandardMaterial || m.isMeshBasicMaterial)) continue;
+      done.add(m);
+      m.onBeforeCompile = (shader) => {
+        shader.uniforms.uHole = hole;
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nvarying float vCutY;')
+          .replace('#include <project_vertex>', `#include <project_vertex>
+  vec4 cutWorld = vec4(transformed, 1.0);
+  #ifdef USE_INSTANCING
+    cutWorld = instanceMatrix * cutWorld;
+  #endif
+  vCutY = (modelMatrix * cutWorld).y;`);
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nvarying float vCutY;\nuniform vec4 uHole;')
+          .replace('void main() {', `void main() {
+  if (vCutY > uHole.w) {
+    float cutD = distance(gl_FragCoord.xy, uHole.xy) / uHole.z;
+    if (cutD < 1.0) {
+      float cutN = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+      if (cutD < 0.76 || cutN > (cutD - 0.76) / 0.24) discard;
+    }
+  }`);
+      };
+      m.needsUpdate = true;
+    }
+  });
 }
 
 function buildLanterns(parent, mats) {
@@ -678,6 +835,9 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
     frond: new THREE.MeshStandardMaterial({ map: tex.frond, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.72 }),
     nut: std(0x4a3a22, { roughness: 0.6 }),
     hill: std(0xffffff, { roughness: 1 }),
+    slab: std(0xd9cfbb, { roughness: 0.9 }),
+    stairStone: std(0xcdc3ae, { roughness: 0.85 }),
+    stairTread: std(0xf2ece0, { roughness: 0.7 }),
   };
   // Kecocokan kolom/hijau: material vertex-color untuk bunga dan daun memakai warna per instance.
   mats.leaf.vertexColors = false;
@@ -742,21 +902,32 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
     spa: [std(0xc6e8e3, { map: tex.marble, roughness: 0.24 }), 4],
     kitchen: [std(0xe3eaec, { map: tex.checker, roughness: 0.3 }), 4],
     corridor: [std(0xffffff, { map: tex.stone, roughness: 0.8 }), 4],
+    stair: [std(0xe9e1d0, { map: tex.stone, roughness: 0.8 }), 4],
+    lounge: [std(0xf3e4cc, { map: tex.parquet, roughness: 0.45 }), 2],
+    library: [std(0xb08a62, { map: tex.parquet, roughness: 0.5 }), 2],
+    terrace: [std(0xffffff, { map: tex.path, roughness: 0.85 }), 3],
   };
-  for (const r of world.rooms) {
-    const [material, tile] = floors[r.kind] ?? floors.corridor;
-    flat(r.rect, material, 0.03, root, tile);
-  }
+  const groundLevel = world.levels[0];
+  buildFloors(groundLevel.rooms, 0, root, mats, floors);
 
-  const updateWalls = buildWalls(world, root, mats);
-  buildDoors(world, root, mats);
+  const updaters = [buildWalls(groundLevel.walls, root, mats)];
+  buildDoors(groundLevel.doors, root, mats);
   buildPerimeter(world, root, mats, rand);
   buildHall(root, mats, rand);
   buildPoolAndGarden(root, mats, anim);
   buildPalms(world, root, mats);
   buildGreenery(world, root, mats, rand);
-  buildProps(world, root, mats, rand);
+  buildProps(groundLevel.props, root, mats, rand);
   buildLanterns(root, mats);
+  buildStairs(root, mats);
+  for (let level = 1; level < world.levels.length; level++) {
+    const group = new THREE.Group();
+    group.position.y = levelY(level);
+    root.add(group);
+    updaters.push(buildUpperLevel(level, world.levels[level], group, mats, floors, rand));
+  }
+  const cutHole = { value: new THREE.Vector4(0, 0, 0, 1e5) };
+  applyCutaway(root, cutHole);
 
   for (const r of world.rooms) {
     if (r.kind === 'corridor' || r.kind === 'guest') continue;
@@ -771,9 +942,10 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
   let clock = 0;
   return {
     root,
-    update(px, pz, delta = 0.016, camDir, pitch) {
+    hole: cutHole,
+    update(px, pz, delta = 0.016, level = 0, camDir, pitch) {
       clock += delta;
-      updateWalls(px, pz, delta, camDir, pitch);
+      updaters.forEach((update, l) => update(px, pz, delta, l === level, camDir, pitch));
       tex.waterNormal.offset.x += delta * 0.018;
       tex.waterNormal.offset.y += delta * 0.011;
       for (const fn of anim) fn(clock);

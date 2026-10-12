@@ -89,7 +89,7 @@ export class VoiceChat {
         el.volume = 1;
         continue;
       }
-      const distance = Math.hypot(p.x - self.x, p.z - self.z);
+      const distance = Math.hypot(p.x - self.x, p.z - self.z, ((p.y ?? 0) - (self.y ?? 0)) * 2.5); // beda lantai = jauh
       const gain = canHear(p) ? voiceGain(distance, ranges) : 0;
       if (gain > 0) heard.push({ el, gain, distance });
       else el.volume = 0;
