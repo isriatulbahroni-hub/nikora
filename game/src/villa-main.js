@@ -170,14 +170,17 @@ async function start() {
   }
   const root = $('villa-root');
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const coarse = window.matchMedia?.('(pointer: coarse)').matches;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarse ? 1.75 : 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.95;
   root.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
-  const built = buildVillaWorld(scene, world);
+  const built = buildVillaWorld(scene, world, { renderer });
   const camera = new THREE.PerspectiveCamera(48, 1, 0.5, 400);
   const camState = { zoom: 1.25 };
   const resize = () => {
