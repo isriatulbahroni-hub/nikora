@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { applyPose, createAvatar } from './avatar.js';
 import { loadConfig, toWire } from './avatar-config.js';
 import { startMultiplayer } from './multiplayer-view.js';
+import { loadEventInfo, parseEventParams } from './event-context.js';
 import { findNearestSpot, getVillaWorld, roomAt, spotPose } from './villa-layout.js';
 import { VoiceChat } from './voice.js';
 import { buildVillaWorld } from './villa-world.js';
@@ -209,7 +210,11 @@ async function start() {
     }
     return null;
   };
-  const name = (params.get('name') || store('orbit-name') || `Tamu-${Math.floor(Math.random() * 900 + 100)}`).replace(/[<>]/g, '').slice(0, 24);
+  const eventParams = parseEventParams(window.location.search);
+  loadEventInfo(eventParams.slug, { url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_ANON_KEY }).then((info) => {
+    if (info?.title) document.title = `${info.title} · NIKORA Villa`;
+  });
+  const name = (params.get('name') || eventParams.to || store('orbit-name') || `Tamu-${Math.floor(Math.random() * 900 + 100)}`).replace(/[<>]/g, '').slice(0, 24);
   const avatarConfig = loadConfig(storage); // avatar yang sama dengan yang dibuat di aula
   const avatar = createAvatar({ config: avatarConfig, name });
   avatar.rotation.order = 'YXZ'; // miring (tidur) dulu, lalu arah hadap

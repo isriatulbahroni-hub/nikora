@@ -1,5 +1,6 @@
 import { h, sleep } from './dom.js';
 import { KIND_LABELS } from './config.js';
+import { enterLabel } from './world-link.js';
 
 /**
  * Mesin adegan. Setiap adegan = fungsi mount(container, ctx) yang mengembalikan
@@ -42,9 +43,10 @@ export function createEngine({ root, view, env, onRestart }) {
       h('div', { class: 'layer end-card', style: { '--bg1': t.bg1, '--bg2': t.bg2, '--stage-ink': t.stageInk, '--font-display': view.theme.fonts.display, '--font-body': view.theme.fonts.body, '--glow': t.glow } },
         h('div', { class: 'end-inner' },
           h('h2', { text: view.title }),
-          h('p', { text: 'Babak berikutnya sedang disiapkan.' }),
-          pending.length ? h('p', { class: 'end-list', text: pending.map((k) => KIND_LABELS[k] || k).join(' · ') }) : null,
-          h('button', { class: 'cta', type: 'button', text: 'Ulangi dari amplop', onclick: () => (onRestart ? onRestart() : start()) }),
+          h('p', { text: view.worldUrl ? 'Mari bertemu langsung, berjalan dan berbincang bersama tamu lain.' : 'Babak berikutnya sedang disiapkan.' }),
+          !view.worldUrl && pending.length ? h('p', { class: 'end-list', text: pending.map((k) => KIND_LABELS[k] || k).join(' · ') }) : null,
+          view.worldUrl ? h('a', { class: 'cta', href: view.worldUrl, text: enterLabel(view.eventType) }) : null,
+          h('button', { class: view.worldUrl ? 'cta cta-ghost' : 'cta', type: 'button', text: 'Ulangi dari amplop', onclick: () => (onRestart ? onRestart() : start()) }),
         )),
     );
   }

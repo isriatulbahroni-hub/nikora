@@ -6,6 +6,7 @@ import { loadInvitation } from './engine/data.js';
 import { demoInvitation } from './engine/demo.js';
 import { THEMES } from './themes/index.js';
 import { mountEnvelope } from './scenes/envelope.js';
+import { worldUrl } from './engine/world-link.js';
 
 registerScene('amplop', mountEnvelope);
 
@@ -16,7 +17,11 @@ const light = query.ringan === '1' || (navigator.hardwareConcurrency || 4) <= 2 
 const env = { light, reduced };
 
 let engine = null;
-function play(view) {
+/** Tambahkan tautan ke dunia 3D (ruang bersama per undangan) di akhir adegan. */
+const withWorld = (view) => ({ ...view, worldUrl: worldUrl(view, { base: import.meta.env.VITE_WORLD_URL }) });
+
+function play(rawView) {
+  const view = withWorld(rawView);
   if (engine) engine.stop();
   engine = createEngine({ root: app, view, env, onRestart: () => play(view) });
   engine.start();

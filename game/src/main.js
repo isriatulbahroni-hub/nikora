@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { VoiceChat } from './voice.js';
+import { loadEventInfo, parseEventParams } from './event-context.js';
 import { applyPose, createAvatar, makeBubble, setAvatarConfig, setStageRing } from './avatar.js';
 import { createPartyController, speakerIds } from './party.js';
 import { loadConfig, saveConfig, toWire } from './avatar-config.js';
@@ -47,6 +48,16 @@ const JOY_DEADZONE = 0.14;
 const me = { x: START.x, z: START.z, rot: Math.PI, sit: null };
 let joined = false;
 let playerName = 'Tamu';
+const eventParams = parseEventParams(window.location.search);
+// Judul acara dari undangan ditampilkan sebagai sapaan di kartu masuk (tanpa menambah HUD saat bermain).
+if (eventParams.slug) {
+  loadEventInfo(eventParams.slug, { url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_ANON_KEY }).then((info) => {
+    if (!info?.title) return;
+    document.title = `${info.title} · ORBIT`;
+    const eyebrow = document.querySelector('#join-form .eyebrow');
+    if (eyebrow) eyebrow.textContent = info.title;
+  });
+}
 let multiplayer = null;
 let sitSince = 0;
 let clapUntil = 0;
@@ -972,7 +983,7 @@ function setupJoin() {
   $('#avatar-button').addEventListener('click', () => openAvatarEditor(true));
   avatarEditor.start();
   try {
-    ui.nameInput.value = window.localStorage.getItem('orbit-name') ?? '';
+    ui.nameInput.value = eventParams.to ?? window.localStorage.getItem('orbit-name') ?? '';
   } catch {
     /* penyimpanan tidak tersedia */
   }

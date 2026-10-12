@@ -1,5 +1,6 @@
 import { contrast, isHex } from './color.js';
 import { EVENT_LABELS, EVENT_TYPES, resolveTheme } from '../themes/index.js';
+import { WORLDS, defaultWorld } from './world-link.js';
 
 /** Urutan adegan bawaan; nama harus sama dengan check constraint invitation_scenes.kind. */
 export const SCENE_KINDS = [
@@ -84,6 +85,7 @@ export function buildView({ invitation, scenes = [], query = {} }) {
   return {
     slug: inv.slug || null,
     eventType,
+    world: WORLDS.includes(extra.world) ? extra.world : defaultWorld(eventType),
     eventLabel: EVENT_LABELS[eventType],
     theme,
     title: titleOf(inv),

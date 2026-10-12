@@ -167,3 +167,7 @@ button { font: inherit; color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .env-stage *, .env-stage *::before, .env-stage *::after { transition-duration: .01ms !important; animation: none !important; }
 }
+
+/* Tombol utama di kartu akhir bisa berupa tautan */
+a.cta { display: inline-block; text-decoration: none; text-align: center; }
+.cta.cta-ghost { background: transparent; box-shadow: none; border: 1px solid currentColor; opacity: 0.8; }
