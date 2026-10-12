@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { THEMES, EVENT_TYPES, DEFAULT_THEME, resolveTheme, themesFor, getTheme } from '../src/themes/index.js';
 import { contrast, isHex } from '../src/engine/color.js';
 import { ctaInk } from '../src/scenes/envelope.js';
+import { SCENERY_KINDS } from '../src/engine/scenery.js';
 
 const TOKEN_KEYS = ['bg1', 'bg2', 'paper', 'letter', 'ink', 'accent', 'accent2', 'glow', 'stageInk', 'sealFill', 'sealInk'];
 
@@ -51,5 +52,25 @@ test('resolveTheme: id persis, tema dasar, lalu cadangan', () => {
   assert.equal(resolveTheme('pernikahan', 'pernikahan').id, DEFAULT_THEME.pernikahan);
   assert.equal(resolveTheme('ulang_tahun', 'ulang_tahun').id, 'ulang_tahun-pesta');
   assert.equal(resolveTheme('klasik', 'pernikahan').id, DEFAULT_THEME.pernikahan);
-  assert.equal(resolveTheme(undefined, 'khitanan').id, 'pernikahan-minimalis');
+  assert.equal(resolveTheme(undefined, 'khitanan').id, DEFAULT_THEME.khitanan);
+  assert.equal(resolveTheme(undefined, 'jenis-tak-dikenal').id, 'pernikahan-minimalis');
+});
+
+test('setiap jenis acara punya paket tema dan tema dasarnya valid', () => {
+  for (const type of EVENT_TYPES) {
+    assert.ok(themesFor(type).length >= 1, `${type} belum punya tema`);
+    assert.equal(getTheme(DEFAULT_THEME[type]).eventType, type, `tema dasar ${type}`);
+  }
+  assert.equal(themesFor('khitanan').length, 2);
+  assert.equal(themesFor('tazkirah').length, 2);
+  assert.equal(themesFor('ulang_tahun').length, 3);
+});
+
+test('pemandangan latar tiap tema dikenal oleh generator', () => {
+  for (const t of THEMES) assert.ok(SCENERY_KINDS.includes(t.scenery), `${t.id} scenery ${t.scenery}`);
+});
+
+test('tema berjenis kado (ulang tahun) memakai segel yang punya gaya', () => {
+  const seals = new Set(['tenun', 'bintang8', 'lilin', 'mahkota', 'orb', 'titik', 'cincin', 'pita', 'perisai']);
+  for (const t of THEMES) assert.ok(seals.has(t.envelope.seal), `${t.id} segel ${t.envelope.seal}`);
 });

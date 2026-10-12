@@ -25,6 +25,8 @@ export function createEngine({ root, view, env, onRestart }) {
       root.append(layer);
       const scene = registry.get(sc.kind)(layer, { view, env, scene: sc });
       current = { scene, layer };
+      // Adegan tanpa isi (mis. galeri kosong) menandai diri skipped dan dilewati tanpa transisi.
+      if (scene.skipped) { scene.destroy(); layer.remove(); current = null; continue; }
       await scene.done;
       if (my !== run) return;
       layer.classList.add('leaving');
