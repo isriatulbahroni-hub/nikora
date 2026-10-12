@@ -6,15 +6,20 @@ import { loadInvitation } from './engine/data.js';
 import { demoInvitation } from './engine/demo.js';
 import { THEMES } from './themes/index.js';
 import { mountEnvelope } from './scenes/envelope.js';
+import { mountRsvp, mountGuestbook, mountGifts } from './scenes/guest.js';
 import { worldUrl } from './engine/world-link.js';
 
 registerScene('amplop', mountEnvelope);
+registerScene('rsvp', mountRsvp);
+registerScene('bukutamu', mountGuestbook);
+registerScene('hadiah', mountGifts);
 
 const app = document.getElementById('app');
 const query = Object.fromEntries(new URLSearchParams(location.search));
 const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const light = query.ringan === '1' || (navigator.hardwareConcurrency || 4) <= 2 || (navigator.deviceMemory || 4) <= 2;
 const env = { light, reduced };
+const api = { url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_ANON_KEY };
 
 let engine = null;
 /** Tambahkan tautan ke dunia 3D (ruang bersama per undangan) di akhir adegan. */
@@ -23,7 +28,7 @@ const withWorld = (view) => ({ ...view, worldUrl: worldUrl(view, { base: import.
 function play(rawView) {
   const view = withWorld(rawView);
   if (engine) engine.stop();
-  engine = createEngine({ root: app, view, env, onRestart: () => play(view) });
+  engine = createEngine({ root: app, view, env, api, onRestart: () => play(view) });
   engine.start();
 }
 

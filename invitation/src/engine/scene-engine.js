@@ -9,7 +9,7 @@ import { enterLabel } from './world-link.js';
 const registry = new Map();
 export const registerScene = (kind, mount) => registry.set(kind, mount);
 
-export function createEngine({ root, view, env, onRestart }) {
+export function createEngine({ root, view, env, api, onRestart }) {
   let run = 0;
   let current = null;
 
@@ -23,7 +23,7 @@ export function createEngine({ root, view, env, onRestart }) {
       if (my !== run) return;
       const layer = h('div', { class: 'layer' });
       root.append(layer);
-      const scene = registry.get(sc.kind)(layer, { view, env, scene: sc });
+      const scene = registry.get(sc.kind)(layer, { view, env, api, scene: sc });
       current = { scene, layer };
       await scene.done;
       if (my !== run) return;
