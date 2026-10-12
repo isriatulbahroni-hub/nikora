@@ -27,6 +27,14 @@
       .act { position: fixed; z-index: 8; right: 22px; bottom: max(34px, calc(env(safe-area-inset-bottom) + 20px)); width: 92px; height: 92px; border-radius: 50%; border: 3px solid #f6e3a6; background: radial-gradient(circle at 35% 30%, #f2d58c, #c9993a); color: #3a2a0c; font: 700 15px ui-sans-serif, sans-serif; letter-spacing: .06em; text-transform: uppercase; box-shadow: 0 4px 14px rgba(0,0,0,.4); cursor: pointer; touch-action: manipulation; }
       .act[hidden] { display: none; }
       .act:active { transform: scale(.96); }
+      .panel { position: fixed; z-index: 10; top: calc(max(10px, env(safe-area-inset-top)) + 54px); right: 10px; width: min(280px, 86vw); max-height: 60vh; overflow: auto; padding: 12px; border-radius: 14px; background: rgba(20,32,26,.92); border: 1px solid rgba(255,255,255,.2); font-size: 13px; }
+      .panel[hidden] { display: none; }
+      .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+      .panel-head button { background: none; border: 0; color: #fff; font-size: 16px; cursor: pointer; }
+      .panel h4 { margin: 10px 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
+      .party-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; }
+      .party-btn { margin-top: 6px; padding: 7px 12px; border-radius: 10px; border: 0; background: #e8c46e; color: #2d210a; font: 600 13px ui-sans-serif, sans-serif; cursor: pointer; }
+      .party-btn.is-ghost { background: rgba(255,255,255,.14); color: #fff; }
       .toast { position: fixed; z-index: 9; left: 50%; bottom: 140px; transform: translateX(-50%); padding: 8px 14px; border-radius: 12px; background: rgba(20,32,26,.85); font-size: 13px; max-width: 86vw; text-align: center; display: none; }
       .joy-zone { position: fixed; z-index: 6; left: 0; bottom: 0; width: 55%; height: 45%; touch-action: none; display: none; }
       @media (pointer: coarse) { .joy-zone { display: block; } .hint { display: none; } }
@@ -42,11 +50,17 @@
     <div class="hud place" id="place">Villa Grounds</div>
     <div class="topbar">
       <small id="online">Menyambung…</small>
+      <button id="cam-button" class="rb" type="button" aria-label="Ganti sudut kamera" title="Sudut kamera (C)">🎥</button>
       <button id="map-button" class="rb" type="button" aria-label="Tampilkan peta" aria-pressed="false" title="Peta (M)">🗺</button>
+      <button id="party-button" class="rb" type="button" aria-label="Panggung MC" title="Panggung MC" hidden>🎤</button>
       <button id="mic-button" class="rb" type="button" aria-label="Nyalakan mikrofon" aria-pressed="false" title="Suara dekat (V)" hidden>🎙</button>
     </div>
     <canvas id="minimap" width="168" height="136" hidden></canvas>
-    <div class="hud hint">WASD / panah: jalan · E: duduk/tidur · M: peta · V: mikrofon · scroll: zoom</div>
+    <div id="party-panel" class="panel" hidden>
+      <div class="panel-head"><strong>Panggung MC</strong><button id="party-close" type="button" aria-label="Tutup">✕</button></div>
+      <div id="party-body"></div>
+    </div>
+    <div class="hud hint">WASD: jalan · E: duduk/tidur · seret: putar kamera · scroll: zoom · C: sudut · M: peta · V: mikrofon</div>
     <button id="act-button" class="act" type="button" hidden>Duduk</button>
     <div class="toast" id="toast"></div>
     <div class="joy-zone" id="joy-zone"><div class="joy-base" id="joy-base"><div class="joy-knob" id="joy-knob"></div></div></div>

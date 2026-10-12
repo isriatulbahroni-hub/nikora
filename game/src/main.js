@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { VoiceChat } from './voice.js';
+import { VOICE_CROWD, VoiceChat } from './voice.js';
 import { loadEventInfo, parseEventParams } from './event-context.js';
 import './gate.css';
 import { mountGate, shouldShowGate } from './gate.js';
@@ -789,7 +789,7 @@ function renderFrame(time) {
   multiplayer?.view.update(delta, now);
   if (voice && multiplayer && Math.floor(now * 10) !== lastVoiceTick) {
     lastVoiceTick = Math.floor(now * 10);
-    voice.update(me, multiplayer.net.players, party ? speakerIds(party.state) : undefined);
+    voice.update(me, multiplayer.net.players, party ? speakerIds(party.state) : undefined, VOICE_CROWD);
     $('#mic-button').classList.toggle('is-speaking', voice.micOn && voice.speaking().has(multiplayer.net.id));
   }
   if (party && Math.floor(now * 2) !== lastPartyTick) {

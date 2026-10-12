@@ -30,6 +30,10 @@ Denah ada sebagai data di `src/villa-layout.js` (ruangan, pintu, properti) sehin
 
 Aksi: tombol emas di kanan bawah muncul di dekat kursi aula, kursi restoran, sofa lobi, atau tempat tidur (Duduk / Tidur / Berdiri; tombol E di keyboard). Bergerak = berdiri otomatis. Pemain lain melihat posisi duduk dan berbaringmu. Suara dekat memakai LiveKit seperti di aula (tombol 🎙, tombol V); volume mengikuti jarak. Peta tersembunyi secara bawaan; tombol 🗺 atau tombol M menampilkannya.
 
+Kamera mengorbit pemain: seret (mouse/satu jari) untuk memutar 360° dan memiringkan (dari hampir sejajar tanah sampai pandangan dari atas), scroll atau cubit dua jari untuk zoom (4–70 m), putar dua jari untuk memutar. Tombol 🎥 (tombol C) berganti antara Normal, Dekat, dan Atas. Joystick dan WASD bergerak relatif terhadap arah kamera. Dinding yang menghalangi di sisi kamera diturunkan otomatis.
+
+Aturan suara (aula dan vila): hanya tamu yang dekat yang terdengar (penuh sampai 1,5 m, hening di 6 m), paling banyak 4 pembicara terdekat sekaligus, dan di vila dua orang di ruangan berbeda tidak saling dengar walau dekat. MC dan pembicara panggung dikecualikan: terdengar penuh di mana pun. Tombol 🎤 membuka panel Panggung MC (Jadi MC, angkat tangan, naikkan pembicara); pemilik acara bisa dinaikkan MC sebagai pembicara. Catatan: siapa pun bisa menjadi MC selama belum ada MC (belum ada pembatasan peran).
+
 Belum ada: lantai 2 dan tangga, atap, interior detail (furnitur lengkap, tekstur), chat teks di vila.
 
 Dengan multiplayer: jalankan server `WORLD=villa npm start` (di folder `server`), lalu buka `/villa.html?server=ws://localhost:8080&name=Ron`.

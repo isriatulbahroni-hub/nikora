@@ -279,6 +279,17 @@ export function roomAt(x, z) {
   return { id: 'grounds', name: 'Villa Grounds', kind: 'grounds', indoor: false };
 }
 
+/**
+ * Suara hanya menembus ruang yang sama: dua orang di ruangan berbeda (dibatasi dinding) tidak saling dengar,
+ * walau jaraknya dekat. Dua orang di area terbuka (halaman, taman, parkir) boleh saling dengar menurut jarak.
+ */
+export function sameVoiceSpace(a, b) {
+  const ra = roomAt(a.x, a.z);
+  const rb = roomAt(b.x, b.z);
+  if (ra.indoor || rb.indoor) return ra.id === rb.id;
+  return true;
+}
+
 let cached = null;
 export function getVillaWorld() {
   if (cached) return cached;

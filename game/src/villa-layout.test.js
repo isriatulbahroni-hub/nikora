@@ -129,3 +129,13 @@ test('spotPose: duduk lebih rendah, tidur berbaring dengan kepala ke papan kepal
   assert.ok(p.y > 0.7);
   assert.ok(p.z > bed.z, 'kaki di sisi selatan, kepala di utara');
 });
+
+import { sameVoiceSpace } from './villa-layout.js';
+
+test('sameVoiceSpace: ruangan berbeda tidak saling dengar, satu ruangan dan area terbuka boleh', () => {
+  assert.equal(sameVoiceSpace({ x: 0, z: -10 }, { x: 5, z: -10 }), true, 'sama-sama di aula');
+  assert.equal(sameVoiceSpace({ x: 13, z: -10 }, { x: 15, z: -10 }), false, 'aula vs lobi, dibatasi dinding');
+  assert.equal(sameVoiceSpace({ x: 19, z: 8 }, { x: 24, z: 8 }), false, 'dua kamar tamu berbeda');
+  assert.equal(sameVoiceSpace({ x: 0, z: 20 }, { x: 8, z: 35 }), true, 'taman dan halaman terbuka');
+  assert.equal(sameVoiceSpace({ x: 0, z: -10 }, { x: 0, z: -1 }), false, 'dalam aula vs teras luar');
+});

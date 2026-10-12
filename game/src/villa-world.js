@@ -118,10 +118,16 @@ function buildWalls(world, parent, mats) {
   // Dinding timur-barat di selatan pemain (antara kamera dan pemain) direndahkan agar isi ruangan terlihat.
   const heights = items.map(() => WALL_HEIGHT);
   const LOW = 0.45;
-  return (px, pz, delta) => {
+  return (px, pz, delta, camDir = { x: 0, z: 1 }, pitch = 0.9) => {
     let changed = false;
     world.walls.forEach((w, i) => {
-      const blocks = w.orient === 'h' && w.coord > pz + 0.4 && w.coord - pz < 10 && px > w.a - 3 && px < w.b + 3;
+      // titik dinding terdekat dari pemain; dirunduk bila berada di sisi kamera dan cukup dekat
+      const cx = w.orient === 'h' ? Math.min(w.b, Math.max(w.a, px)) : w.coord;
+      const cz = w.orient === 'h' ? w.coord : Math.min(w.b, Math.max(w.a, pz));
+      const vx = cx - px;
+      const vz = cz - pz;
+      const dist = Math.hypot(vx, vz);
+      const blocks = pitch < 1.3 && dist < 11 && vx * camDir.x + vz * camDir.z > 0.25 * dist + 0.3;
       const target = blocks ? LOW : WALL_HEIGHT;
       if (Math.abs(heights[i] - target) < 0.002) return;
       heights[i] += (target - heights[i]) * Math.min(1, delta * 9);
@@ -765,9 +771,9 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
   let clock = 0;
   return {
     root,
-    update(px, pz, delta = 0.016) {
+    update(px, pz, delta = 0.016, camDir, pitch) {
       clock += delta;
-      updateWalls(px, pz, delta);
+      updateWalls(px, pz, delta, camDir, pitch);
       tex.waterNormal.offset.x += delta * 0.018;
       tex.waterNormal.offset.y += delta * 0.011;
       for (const fn of anim) fn(clock);

@@ -1,12 +1,14 @@
 import * as THREE from 'three';
-import { applyPose, createAvatar } from './avatar.js';
+import { applyPose, createAvatar, setStageRing } from './avatar.js';
 import { loadConfig, toWire } from './avatar-config.js';
 import { startMultiplayer } from './multiplayer-view.js';
 import { loadEventInfo, parseEventParams } from './event-context.js';
 import './gate.css';
 import { mountGate, shouldShowGate } from './gate.js';
-import { findNearestSpot, getVillaWorld, roomAt, spotPose } from './villa-layout.js';
-import { VoiceChat } from './voice.js';
+import { findNearestSpot, getVillaWorld, roomAt, sameVoiceSpace, spotPose } from './villa-layout.js';
+import { createPartyController, speakerIds } from './party.js';
+import { renderPartyPanel } from './party-panel.js';
+import { VOICE_CROWD, VoiceChat } from './voice.js';
 import { buildVillaWorld } from './villa-world.js';
 
 const PLAYER_SPEED = 5.2; // harus sama dengan server (ROOM_RULES.playerSpeed)
@@ -44,7 +46,20 @@ function readInput() {
   return len > 1 ? { x: x / len, z: z / len } : { x, z };
 }
 
-const hooks = { action: () => {}, map: () => {}, mic: () => {} };
+const hooks = { action: () => {}, map: () => {}, mic: () => {}, camera: () => {} };
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const CAM_LIMITS = Object.freeze({ minPitch: 0.18, maxPitch: 1.5, minDist: 4, maxDist: 70 });
+// Sudut kamera siap pakai: Normal, Dekat (sejajar tanah), Atas (pandangan dari atas)
+const CAM_PRESETS = Object.freeze([{ pitch: 0.95, dist: 21 }, { pitch: 0.42, dist: 9 }, { pitch: 1.5, dist: 44 }]);
+
+/** Arah gerak relatif kamera: dorong joystick ke atas = menjauhi kamera, di sudut putar mana pun. */
+function cameraRelative(input, yaw) {
+  const fx = -Math.sin(yaw);
+  const fz = -Math.cos(yaw);
+  const rx = Math.cos(yaw);
+  const rz = -Math.sin(yaw);
+  return { x: rx * input.x - fx * input.z, z: rz * input.x - fz * input.z };
+}
 
 function setupInput(canvas, camState) {
   addEventListener('keydown', (e) => {
@@ -56,14 +71,59 @@ function setupInput(canvas, camState) {
       hooks.action();
       e.preventDefault();
     } else if (!e.repeat && k === 'm') hooks.map();
+    else if (!e.repeat && k === 'c') hooks.camera();
+    else if (k === '[') camState.yaw += 0.12;
+    else if (k === ']') camState.yaw -= 0.12;
+    else if (k === '-') camState.dist = clamp(camState.dist * 1.1, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
+    else if (k === '=' || k === '+') camState.dist = clamp(camState.dist * 0.9, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
     else if (!e.repeat && k === 'v') hooks.mic();
   });
   addEventListener('keyup', (e) => held.delete(e.key.toLowerCase()));
   addEventListener('blur', () => held.clear());
   canvas.addEventListener('wheel', (e) => {
-    camState.zoom = Math.min(2.2, Math.max(0.6, camState.zoom * (e.deltaY > 0 ? 1.08 : 0.92)));
+    camState.dist = clamp(camState.dist * (e.deltaY > 0 ? 1.1 : 0.9), CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
     e.preventDefault();
   }, { passive: false });
+
+  // Seret = putar dan miringkan kamera (satu jari/mouse); cubit dua jari = zoom, putar dua jari = putar kamera.
+  const pointers = new Map();
+  let pinch = null;
+  const twoFingers = () => {
+    const [a, b] = [...pointers.values()];
+    return { d: Math.hypot(a.x - b.x, a.y - b.y), angle: Math.atan2(b.y - a.y, b.x - a.x) };
+  };
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) pinch = twoFingers();
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    const p = pointers.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x;
+    const dy = e.clientY - p.y;
+    p.x = e.clientX;
+    p.y = e.clientY;
+    if (pointers.size === 1) {
+      camState.yaw -= dx * 0.006;
+      camState.pitch = clamp(camState.pitch + dy * 0.005, CAM_LIMITS.minPitch, CAM_LIMITS.maxPitch);
+    } else if (pointers.size === 2 && pinch) {
+      const now = twoFingers();
+      if (now.d > 1 && pinch.d > 1) camState.dist = clamp(camState.dist * (pinch.d / now.d), CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
+      let turn = now.angle - pinch.angle;
+      if (turn > Math.PI) turn -= Math.PI * 2;
+      if (turn < -Math.PI) turn += Math.PI * 2;
+      camState.yaw -= turn;
+      pinch = now;
+    }
+  });
+  const release = (e) => {
+    pointers.delete(e.pointerId);
+    pinch = pointers.size === 2 ? twoFingers() : null;
+  };
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', release);
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
   const zone = $('joy-zone');
   const base = $('joy-base');
@@ -188,7 +248,15 @@ async function start() {
   const scene = new THREE.Scene();
   const built = buildVillaWorld(scene, world, { renderer });
   const camera = new THREE.PerspectiveCamera(48, 1, 0.5, 400);
-  const camState = { zoom: 1.25 };
+  // target kamera (diubah oleh gestur) dan nilai yang dihaluskan untuk tampilan
+  const camState = { yaw: 0, pitch: CAM_PRESETS[0].pitch, dist: CAM_PRESETS[0].dist };
+  const camNow = { ...camState };
+  let preset = 0;
+  hooks.camera = () => {
+    preset = (preset + 1) % CAM_PRESETS.length;
+    camState.pitch = CAM_PRESETS[preset].pitch;
+    camState.dist = CAM_PRESETS[preset].dist;
+  };
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -197,6 +265,7 @@ async function start() {
   resize();
   addEventListener('resize', resize);
   setupInput(renderer.domElement, camState);
+  $('cam-button').addEventListener('click', () => hooks.camera());
 
   const params = new URLSearchParams(window.location.search);
   const storage = (() => {
@@ -338,6 +407,37 @@ async function start() {
     session.net.requestVoiceToken();
   }
 
+  // ---------- panggung MC (sama seperti di aula) ----------
+  // MC dan pembicara yang dinaikkan MC (mis. pemilik acara) terdengar penuh di seluruh vila;
+  // tamu lain hanya terdengar oleh yang berada dekat di ruangan yang sama.
+  let party = null;
+  const partyBtn = $('party-button');
+  const partyPanel = $('party-panel');
+  const partyBody = $('party-body');
+  const nameOf = (id) => (id === multiplayer?.net.id ? 'Kamu' : multiplayer?.net.players.find((p) => p.id === id)?.name ?? 'Tamu');
+  function renderParty() {
+    if (party) renderPartyPanel({ body: partyBody, party, nameOf, button: partyBtn });
+  }
+  function applyStage() {
+    if (!party || !multiplayer) return;
+    const speakers = speakerIds(party.state);
+    for (const p of multiplayer.net.players) {
+      const group = p.id === multiplayer.net.id ? avatar : multiplayer.view.getAvatar(p.id);
+      if (group) setStageRing(group, speakers.has(p.id));
+    }
+  }
+  function setupParty(session) {
+    if (!session || typeof session.net.sendParty !== 'function') return;
+    party = createPartyController({ net: session.net, onChange: () => { renderParty(); applyStage(); } });
+    partyBtn.hidden = false;
+    partyBtn.addEventListener('click', () => {
+      partyPanel.hidden = !partyPanel.hidden;
+      renderParty();
+    });
+    $('party-close').addEventListener('click', () => { partyPanel.hidden = true; });
+    renderParty();
+  }
+
   // ---------- jaringan ----------
   let netStatus = 'Menyambung…'; // alasan ditampilkan bila gagal terhubung
   (gate ? gate.passed : Promise.resolve())
@@ -347,6 +447,7 @@ async function start() {
       if (!session && netStatus === 'Menyambung…') netStatus = 'Offline';
       session?.net.setAvatar?.(toWire(avatarConfig));
       setupVoice(session);
+      setupParty(session);
     })
     .catch((error) => console.warn('[multiplayer]', error));
 
@@ -355,6 +456,7 @@ async function start() {
   let walkClock = 0;
   let placeId = '';
   let voiceTick = 0;
+  let partyTick = 0;
 
   function frame(time) {
     requestAnimationFrame(frame);
@@ -363,17 +465,18 @@ async function start() {
 
     const input = readInput();
     if (seat !== null && Math.hypot(input.x, input.z) > 0.35) standUp(); // bergerak = berdiri
-    const moving = seat === null && (input.x !== 0 || input.z !== 0);
+    const move = cameraRelative(input, camNow.yaw); // relatif terhadap arah kamera
+    const moving = seat === null && (move.x !== 0 || move.z !== 0);
     if (moving) {
-      const next = world.move(me, input.x * PLAYER_SPEED * delta, input.z * PLAYER_SPEED * delta);
+      const next = world.move(me, move.x * PLAYER_SPEED * delta, move.z * PLAYER_SPEED * delta);
       me.x = next.x;
       me.z = next.z;
-      facing = Math.atan2(-input.x, -input.z);
+      facing = Math.atan2(-move.x, -move.z);
       walkClock += delta;
     }
 
     if (multiplayer) {
-      multiplayer.sendInput(seat === null ? input.x : 0, seat === null ? input.z : 0, facing, time, seat, { x: me.x, z: me.z });
+      multiplayer.sendInput(seat === null ? move.x : 0, seat === null ? move.z : 0, facing, time, seat, { x: me.x, z: me.z });
       const mine = multiplayer.net.players.find((p) => p.id === multiplayer.net.id);
       if (mine && seat === null && Math.hypot(mine.x - me.x, mine.z - me.z) > SNAP_DISTANCE) {
         me.x = mine.x;
@@ -381,9 +484,17 @@ async function start() {
       }
       if (mine && seat !== null && time - seatSince > 800 && mine.sit !== seat) standUp(); // server menolak
       multiplayer.view.update(delta, time / 1000);
+      if (party && time - partyTick > 500) {
+        partyTick = time;
+        party.tick();
+        applyStage();
+      }
       if (voice && time - voiceTick > 100) {
         voiceTick = time;
-        voice.update(me, multiplayer.net.players);
+        voice.update(me, multiplayer.net.players, party ? speakerIds(party.state) : undefined, {
+          ...VOICE_CROWD,
+          canHear: (p) => sameVoiceSpace(me, p), // beda ruangan (dibatasi dinding) tidak saling dengar
+        });
         const speaking = voice.speaking();
         micBtn.classList.toggle('is-speaking', voice.micOn && speaking.has(multiplayer.net.id));
       }
@@ -408,11 +519,19 @@ async function start() {
     applyPose(avatar, moving ? 'walk' : null, time / 1000, delta);
     avatar.rotation.x += avatar.userData.tilt ?? 0; // applyPose menimpa rotation.x, tambahkan kemiringan tidur sesudahnya
 
-    const fit = Math.min(1.9, Math.max(1, 1.45 / camera.aspect)) * camState.zoom;
-    const desired = new THREE.Vector3(me.x + 1.5 * fit, 15 * fit, me.z + 11.5 * fit);
-    camera.position.lerp(desired, 1 - Math.exp(-5 * delta));
+    // kamera mengorbit pemain: yaw bebas 360°, pitch dari hampir sejajar tanah sampai pandangan atas
+    camState.pitch = clamp(camState.pitch, CAM_LIMITS.minPitch, CAM_LIMITS.maxPitch);
+    camState.dist = clamp(camState.dist, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
+    const ck = 1 - Math.exp(-12 * delta);
+    camNow.yaw += (camState.yaw - camNow.yaw) * ck;
+    camNow.pitch += (camState.pitch - camNow.pitch) * ck;
+    camNow.dist += (camState.dist - camNow.dist) * ck;
+    const fit = Math.min(1.9, Math.max(1, 1.45 / camera.aspect)); // layar sempit: jauhkan sedikit
+    const d = camNow.dist * fit;
+    const cp = Math.cos(camNow.pitch);
+    camera.position.set(me.x + Math.sin(camNow.yaw) * cp * d, 0.8 + Math.sin(camNow.pitch) * d, me.z + Math.cos(camNow.yaw) * cp * d);
     camera.lookAt(me.x, 0.8, me.z);
-    built.update(me.x, me.z, delta);
+    built.update(me.x, me.z, delta, { x: Math.sin(camNow.yaw), z: Math.cos(camNow.yaw) }, camNow.pitch);
     renderer.render(scene, camera);
 
     const near = nearestSpot();
@@ -434,6 +553,7 @@ async function start() {
       x: me.x, z: me.z, place: roomAt(me.x, me.z), online: !!multiplayer, others: multiplayer ? multiplayer.view.count : 0,
       seat, action: actBtn.hidden ? '' : actBtn.textContent, mapVisible: !mapCanvas.hidden,
     }),
+    cam: () => ({ yaw: camState.yaw, pitch: camState.pitch, dist: camState.dist, nowYaw: camNow.yaw }),
     remotes: () => (multiplayer ? multiplayer.view.avatarGroups().map((g) => ({ y: g.position.y, rx: g.rotation.x, ry: g.rotation.y })) : []),
     // hanya untuk pengujian; dalam mode multiplayer server tetap otoritatif dan akan mengoreksi posisi
     teleport: (x, z) => {
