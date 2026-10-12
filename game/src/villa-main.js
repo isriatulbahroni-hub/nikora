@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { applyPose, createAvatar } from './avatar.js';
 import { loadConfig, toWire } from './avatar-config.js';
 import { startMultiplayer } from './multiplayer-view.js';
-import { findNearestSpot, getVillaWorld, roomAt, spotPose } from './villa-layout.js';
+import { LEVEL_HEIGHT, findNearestSpot, getVillaWorld, levelY, roomAt, spotPose } from './villa-layout.js';
 import { VoiceChat } from './voice.js';
 import { buildVillaWorld } from './villa-world.js';
 
@@ -112,6 +112,7 @@ function setupInput(canvas, camState) {
 const MAP_COLORS = {
   hall: '#ece4d4', lobby: '#d9cbb0', suite: '#a9805a', spa: '#a6cdc8', bridal: '#ecd2da',
   restaurant: '#bf9f7c', kitchen: '#c3c8ca', corridor: '#cdbb9c', guest: '#d4bc96',
+  lounge: '#e0cfae', library: '#a98660', terrace: '#bcd4b2', stair: '#c9c1b2',
 };
 function createMinimap() {
   const canvas = $('minimap');
@@ -121,42 +122,57 @@ function createMinimap() {
   const sz = canvas.height / (maxZ - minZ);
   const px = (x) => (x - minX) * sx;
   const pz = (z) => (z - minZ) * sz;
-  const layer = document.createElement('canvas');
-  layer.width = canvas.width;
-  layer.height = canvas.height;
-  const l = layer.getContext('2d');
-  l.fillStyle = '#5a9a4e';
-  l.fillRect(0, 0, layer.width, layer.height);
-  for (const z of world.zones) {
-    if (z.kind === 'courtyard') l.fillStyle = '#d7c9ae';
-    else if (z.kind === 'parking') l.fillStyle = '#41444a';
-    else continue;
-    l.fillRect(px(z.rect[0]), pz(z.rect[1]), (z.rect[2] - z.rect[0]) * sx, (z.rect[3] - z.rect[1]) * sz);
-  }
-  l.fillStyle = '#dcd0b8';
-  l.fillRect(px(-2.5), pz(16), 5 * sx, 26 * sz);
-  l.fillStyle = '#39c3df';
-  l.fillRect(px(-7), pz(2), 14 * sx, 14 * sz);
-  l.fillStyle = '#fff';
-  l.fillRect(px(-1.5), pz(2), 3 * sx, 14 * sz);
-  for (const r of world.rooms) {
-    l.fillStyle = MAP_COLORS[r.kind] ?? '#ddd';
-    l.fillRect(px(r.rect[0]), pz(r.rect[1]), (r.rect[2] - r.rect[0]) * sx, (r.rect[3] - r.rect[1]) * sz);
-  }
-  l.fillStyle = '#5a4a3a';
-  for (const w of world.walls) {
-    if (w.orient === 'h') l.fillRect(px(w.a), pz(w.coord) - 0.6, (w.b - w.a) * sx, 1.2);
-    else l.fillRect(px(w.coord) - 0.6, pz(w.a), 1.2, (w.b - w.a) * sz);
-  }
+  const makeLayer = (level) => {
+    const layer = document.createElement('canvas');
+    layer.width = canvas.width;
+    layer.height = canvas.height;
+    const l = layer.getContext('2d');
+    const data = world.levels[level];
+    const rect = (r) => l.fillRect(px(r[0]), pz(r[1]), (r[2] - r[0]) * sx, (r[3] - r[1]) * sz);
+    if (level === 0) {
+      l.fillStyle = '#5a9a4e';
+      l.fillRect(0, 0, layer.width, layer.height);
+      for (const z of world.zones) {
+        if (z.kind === 'courtyard') l.fillStyle = '#d7c9ae';
+        else if (z.kind === 'parking') l.fillStyle = '#41444a';
+        else continue;
+        rect(z.rect);
+      }
+      l.fillStyle = '#dcd0b8';
+      l.fillRect(px(-2.5), pz(16), 5 * sx, 26 * sz);
+      l.fillStyle = '#39c3df';
+      l.fillRect(px(-7), pz(2), 14 * sx, 14 * sz);
+      l.fillStyle = '#fff';
+      l.fillRect(px(-1.5), pz(2), 3 * sx, 14 * sz);
+    } else {
+      l.fillStyle = '#2f3a35'; // bayangan lantai bawah sebagai latar
+      l.fillRect(0, 0, layer.width, layer.height);
+      l.fillStyle = '#46544c';
+      for (const r of world.levels[level - 1].rooms) rect(r.rect);
+    }
+    for (const r of data.rooms) {
+      l.fillStyle = MAP_COLORS[r.kind] ?? '#ddd';
+      rect(r.kind === 'stair' && level > 0 ? r.landing : r.rect);
+    }
+    l.fillStyle = '#5a4a3a';
+    for (const w of data.walls) {
+      if (w.orient === 'h') l.fillRect(px(w.a), pz(w.coord) - 0.6, (w.b - w.a) * sx, 1.2);
+      else l.fillRect(px(w.coord) - 0.6, pz(w.a), 1.2, (w.b - w.a) * sz);
+    }
+    l.fillStyle = '#f3d58a'; // tangga
+    for (const s of world.stairs) if (s.from === level || s.to === level) l.fillRect(px(s.x1), pz(Math.min(s.zBottom, s.zTop)), (s.x2 - s.x1) * sx, Math.abs(s.zBottom - s.zTop) * sz);
+    return layer;
+  };
+  const layers = world.levels.map((_, level) => makeLayer(level));
   const dot = (x, z, color, r) => {
     ctx.beginPath();
     ctx.arc(px(x), pz(z), r, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.fill();
   };
-  return (self, others) => {
-    ctx.drawImage(layer, 0, 0);
-    for (const o of others) dot(o.x, o.z, '#ff8a3d', 3);
+  return (self, others, level = 0) => {
+    ctx.drawImage(layers[Math.min(layers.length - 1, Math.max(0, level))], 0, 0);
+    for (const o of others) if (Math.round((o.y ?? 0) / LEVEL_HEIGHT) === level) dot(o.x, o.z, '#ff8a3d', 3);
     dot(self.x, self.z, '#fff', 4.5);
     dot(self.x, self.z, '#e23b3b', 2.8);
   };
@@ -214,7 +230,7 @@ async function start() {
   const avatar = createAvatar({ config: avatarConfig, name });
   avatar.rotation.order = 'YXZ'; // miring (tidur) dulu, lalu arah hadap
   scene.add(avatar);
-  const me = { x: world.spawn.x, z: world.spawn.z };
+  const me = { x: world.spawn.x, z: world.spawn.z, level: 0, stair: null, y: 0 };
   const spawn = world.constrain(me);
   me.x = spawn.x;
   me.z = spawn.z;
@@ -340,6 +356,8 @@ async function start() {
     .catch((error) => console.warn('[multiplayer]', error));
 
   const drawMap = createMinimap();
+  const bufferSize = new THREE.Vector2();
+  const holePoint = new THREE.Vector3();
   let last = performance.now();
   let walkClock = 0;
   let placeId = '';
@@ -357,16 +375,24 @@ async function start() {
       const next = world.move(me, input.x * PLAYER_SPEED * delta, input.z * PLAYER_SPEED * delta);
       me.x = next.x;
       me.z = next.z;
+      me.level = next.level;
+      me.stair = next.stair;
+      me.y = next.y;
       facing = Math.atan2(-input.x, -input.z);
       walkClock += delta;
     }
 
     if (multiplayer) {
-      multiplayer.sendInput(seat === null ? input.x : 0, seat === null ? input.z : 0, facing, time, seat, { x: me.x, z: me.z });
+      multiplayer.sendInput(seat === null ? input.x : 0, seat === null ? input.z : 0, facing, time, seat, { x: me.x, z: me.z, y: me.y });
       const mine = multiplayer.net.players.find((p) => p.id === multiplayer.net.id);
-      if (mine && seat === null && Math.hypot(mine.x - me.x, mine.z - me.z) > SNAP_DISTANCE) {
+      if (mine && seat === null && (Math.hypot(mine.x - me.x, mine.z - me.z) > SNAP_DISTANCE || Math.abs((mine.y ?? me.y) - me.y) > 1.5)) {
         me.x = mine.x;
         me.z = mine.z;
+        if (mine.y !== undefined && Math.abs(mine.y - me.y) > 1.5) {
+          me.y = mine.y; // server mengoreksi lantai
+          me.level = Math.round(mine.y / LEVEL_HEIGHT);
+          me.stair = null;
+        }
       }
       if (mine && seat !== null && time - seatSince > 800 && mine.sit !== seat) standUp(); // server menolak
       multiplayer.view.update(delta, time / 1000);
@@ -390,7 +416,7 @@ async function start() {
     } else {
       avatar.position.x = me.x;
       avatar.position.z = me.z;
-      avatar.position.y += ((moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0) - avatar.position.y) * Math.max(k, 0.5);
+      avatar.position.y += (me.y + (moving && me.stair === null ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0) - avatar.position.y) * Math.max(k, 0.5);
       avatar.userData.tilt = (avatar.userData.tilt ?? 0) * (1 - k);
       avatar.rotation.y = facing;
     }
@@ -398,37 +424,47 @@ async function start() {
     avatar.rotation.x += avatar.userData.tilt ?? 0; // applyPose menimpa rotation.x, tambahkan kemiringan tidur sesudahnya
 
     const fit = Math.min(1.9, Math.max(1, 1.45 / camera.aspect)) * camState.zoom;
-    const desired = new THREE.Vector3(me.x + 1.5 * fit, 15 * fit, me.z + 11.5 * fit);
+    const desired = new THREE.Vector3(me.x + 1.5 * fit, me.y + 15 * fit, me.z + 11.5 * fit);
     camera.position.lerp(desired, 1 - Math.exp(-5 * delta));
-    camera.lookAt(me.x, 0.8, me.z);
-    built.update(me.x, me.z, delta);
+    camera.lookAt(me.x, me.y + 0.8, me.z);
+    built.update(me.x, me.z, delta, me.level);
+    // lubang intip: buang bagian bangunan di atas kepala dalam lingkaran di sekitar avatar
+    camera.updateMatrixWorld();
+    renderer.getDrawingBufferSize(bufferSize);
+    holePoint.set(me.x, avatar.position.y + 1.0, me.z).project(camera);
+    built.hole.value.set((holePoint.x * 0.5 + 0.5) * bufferSize.x, (holePoint.y * 0.5 + 0.5) * bufferSize.y, 0.36 * Math.min(bufferSize.x, bufferSize.y), me.y + 2.35);
     renderer.render(scene, camera);
 
     const near = nearestSpot();
     setActLabel(seat !== null ? 'Berdiri' : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : '');
 
-    const place = roomAt(me.x, me.z);
-    if (place.id !== placeId) {
-      placeId = place.id;
-      $('place').textContent = place.name;
+    const place = me.stair ? { id: 'stair', name: 'Tangga' } : roomAt(me.x, me.z, me.level);
+    const placeKey = `${place.id}@${me.level}`;
+    if (placeKey !== placeId) {
+      placeId = placeKey;
+      $('place').textContent = me.level > 0 ? `Lantai ${me.level + 1} · ${place.name}` : place.name;
     }
     const others = multiplayer ? multiplayer.net.players.filter((p) => p.id !== multiplayer.net.id) : [];
-    if (!mapCanvas.hidden) drawMap(me, others);
+    if (!mapCanvas.hidden) drawMap(me, others, me.level);
     $('online').textContent = multiplayer ? `Online: ${others.length + 1}` : netStatus;
   }
   requestAnimationFrame(frame);
 
   window.__villa = {
     state: () => ({
-      x: me.x, z: me.z, place: roomAt(me.x, me.z), online: !!multiplayer, others: multiplayer ? multiplayer.view.count : 0,
+      x: me.x, z: me.z, y: me.y, level: me.level, stair: me.stair, place: roomAt(me.x, me.z, me.level), online: !!multiplayer, others: multiplayer ? multiplayer.view.count : 0,
       seat, action: actBtn.hidden ? '' : actBtn.textContent, mapVisible: !mapCanvas.hidden,
     }),
     remotes: () => (multiplayer ? multiplayer.view.avatarGroups().map((g) => ({ y: g.position.y, rx: g.rotation.x, ry: g.rotation.y })) : []),
     // hanya untuk pengujian; dalam mode multiplayer server tetap otoritatif dan akan mengoreksi posisi
-    teleport: (x, z) => {
-      const p = world.constrain({ x, z });
+    teleport: (x, z, level = 0) => {
+      const p = level === 0 ? world.constrain({ x, z }) : { x, z };
       me.x = p.x;
       me.z = p.z;
+      me.level = level;
+      me.stair = null;
+      me.y = levelY(level);
+      camera.position.set(me.x + 1.5, me.y + 28, me.z + 22);
     },
   };
 }

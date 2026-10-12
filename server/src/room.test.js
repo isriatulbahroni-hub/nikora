@@ -229,3 +229,43 @@ test('dunia vila: duduk di kursi, tidur di kasur, tempat dipakai orang lain dito
   assert.equal(room.snapshot().find((p) => p.id === 'b').sit, bed.id);
   assert.equal(send('b', 99999), false, 'id tidak valid');
 });
+
+test('vila bertingkat: server melacak lantai, tangga, dan y saat naik tangga', async () => {
+  const { getVillaWorld } = await import('../../game/src/villa-layout.js');
+  const world = getVillaWorld();
+  const room = new Room({ world });
+  const p = room.addPlayer('a', 'A');
+  assert.equal(p.level, 0);
+  p.x = -39.8; p.z = -1.5; // di depan menara tangga barat
+  room.setInput('a', { x: 0, z: -1, rot: 0, seq: 1 });
+  let sawStair = false;
+  for (let i = 0; i < 300; i += 1) {
+    room.step(0.05);
+    if (p.stair) sawStair = true;
+  }
+  assert.ok(sawStair, 'harus pernah berada di tangga');
+  assert.equal(p.level, 2);
+  assert.equal(p.stair, null);
+  assert.ok(Math.abs(p.y - 6.8) < 1e-9);
+  const snap = room.snapshot().find((s) => s.id === 'a');
+  assert.equal(snap.y, 6.8);
+});
+
+test('vila bertingkat: duduk ditolak di lantai yang berbeda, interaksi ditolak beda lantai', async () => {
+  const { getVillaWorld } = await import('../../game/src/villa-layout.js');
+  const world = getVillaWorld();
+  const room = new Room({ world });
+  const a = room.addPlayer('a', 'A');
+  const b = room.addPlayer('b', 'B');
+  const upperBed = world.spots.find((s) => s.kind === 'sleep' && s.level === 1);
+  a.x = upperBed.x; a.z = upperBed.z + 1; // posisi horizontal sama, tetapi pemain di lantai dasar
+  assert.equal(room.setInput('a', { x: 0, z: 0, rot: 0, seq: 1, sit: upperBed.id }), false);
+  a.level = 1; a.y = 3.4;
+  assert.equal(room.setInput('a', { x: 0, z: 0, rot: 0, seq: 2, sit: upperBed.id }), true);
+  b.x = 0; b.z = 37; b.y = 0; b.level = 0;
+  const c = room.addPlayer('c', 'C');
+  c.x = b.x + 0.5; c.z = b.z; c.y = 3.4; c.level = 1;
+  assert.equal(room.requestGreet('b', 'c', 'wave'), null); // beda lantai
+  c.y = 0; c.level = 0;
+  assert.ok(room.requestGreet('b', 'c', 'wave'));
+});

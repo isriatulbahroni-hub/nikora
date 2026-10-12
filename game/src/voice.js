@@ -76,7 +76,7 @@ export class VoiceChat {
       const el = this.audio.get(p.id);
       if (!el) continue;
       // Pembicara di panggung terdengar penuh di seluruh aula; yang lain tetap berdasarkan jarak.
-      el.volume = stage.has(p.id) ? 1 : voiceGain(Math.hypot(p.x - self.x, p.z - self.z));
+      el.volume = stage.has(p.id) ? 1 : voiceGain(Math.hypot(p.x - self.x, p.z - self.z, ((p.y ?? 0) - (self.y ?? 0)) * 2.5));
     }
   }
 

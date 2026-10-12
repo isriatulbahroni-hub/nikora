@@ -27,7 +27,7 @@ export class LiveKitNet {
     this.room = null;
     this.id = null;
     this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [], party: [] };
-    this.self = { id: null, name: 'Tamu', x: 0, z: 9.4, rot: 0, sit: null, act: null, with: null, until: 0, av: null };
+    this.self = { id: null, name: 'Tamu', x: 0, z: 9.4, y: 0, rot: 0, sit: null, act: null, with: null, until: 0, av: null };
     this.remotes = new Map();
     this.pending = new Map(); // id pengirim -> { kind, expires, pos }
     this.outgoing = new Map(); // id tujuan -> posisi kita saat mengajak
@@ -84,7 +84,7 @@ export class LiveKitNet {
   }
 
   #blank(p) {
-    return { id: p.identity, name: p.name || 'Tamu', x: 0, z: 9.4, rot: 0, sit: null, act: null, with: null, av: null };
+    return { id: p.identity, name: p.name || 'Tamu', x: 0, z: 9.4, y: 0, rot: 0, sit: null, act: null, with: null, av: null };
   }
 
   #onData(participant, payload) {
@@ -104,6 +104,7 @@ export class LiveKitNet {
         name: participant.name || prev.name,
         x: num(m.x, prev.x),
         z: num(m.z, prev.z),
+        y: num(m.y, prev.y ?? 0),
         rot: num(m.r, prev.rot),
         sit: Number.isInteger(m.i) ? m.i : null,
         act: kind,
@@ -187,7 +188,7 @@ export class LiveKitNet {
   #publishState(opts) {
     const s = this.self;
     this.lastSent = this.now();
-    this.#send({ t: 's', x: +s.x.toFixed(2), z: +s.z.toFixed(2), r: +s.rot.toFixed(2), i: s.sit, a: s.act, w: s.with, v: s.av }, opts);
+    this.#send({ t: 's', x: +s.x.toFixed(2), z: +s.z.toFixed(2), y: +(s.y ?? 0).toFixed(2), r: +s.rot.toFixed(2), i: s.sit, a: s.act, w: s.with, v: s.av }, opts);
   }
 
   /** Dipanggil main.js tiap frame (dibatasi view). pos = posisi lokal; arah (x,z) tidak dipakai karena tiap klien menghitung geraknya sendiri. */
@@ -196,6 +197,7 @@ export class LiveKitNet {
     if (!s.with && pos) {
       s.x = num(pos.x, s.x);
       s.z = num(pos.z, s.z);
+      s.y = num(pos.y, s.y ?? 0);
       s.rot = num(rot, s.rot);
     }
     if (sit !== undefined) s.sit = sit;

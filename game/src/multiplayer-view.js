@@ -35,10 +35,10 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
     const config = p.av ?? configFromId(p.id); // tampilan sementara sampai avatar asli diterima
     const group = createAvatar({ config, name: p.name });
     group.rotation.order = 'YXZ'; // miring (tidur) dulu, lalu arah hadap
-    group.position.set(p.x, p.sit == null ? 0 : HALL.seatedDrop, p.z);
+    group.position.set(p.x, (p.y ?? 0) + (p.sit == null ? 0 : HALL.seatedDrop), p.z);
     group.rotation.y = p.rot;
     scene.add(group);
-    return { group, config, act: p.act ?? null, target: { x: p.x, z: p.z, rot: p.rot, sit: p.sit ?? null } };
+    return { group, config, act: p.act ?? null, target: { x: p.x, z: p.z, y: p.y ?? 0, rot: p.rot, sit: p.sit ?? null } };
   }
 
   return {
@@ -52,7 +52,7 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
         seen.add(p.id);
         const existing = avatars.get(p.id);
         if (existing) {
-          existing.target = { x: p.x, z: p.z, rot: p.rot, sit: p.sit ?? null };
+          existing.target = { x: p.x, z: p.z, y: p.y ?? 0, rot: p.rot, sit: p.sit ?? null };
           existing.act = p.act ?? null;
           if (p.av && !sameConfig(p.av, existing.config)) {
             existing.config = p.av;
@@ -87,7 +87,7 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
         // applyPose menulis rotation.x (membungkuk) tiap frame: tambahkan kemiringan tidur sesudahnya
         group.userData.tilt = (group.userData.tilt ?? 0) + ((pose ? pose.tilt : 0) - (group.userData.tilt ?? 0)) * k;
         group.rotation.x += group.userData.tilt;
-        group.position.y += ((pose ? pose.y : target.sit == null ? 0 : HALL.seatedDrop) - group.position.y) * k;
+        group.position.y += ((pose ? pose.y : (target.y ?? 0) + (target.sit == null ? 0 : HALL.seatedDrop)) - group.position.y) * k;
       }
     },
     avatarGroups() {
