@@ -39,3 +39,11 @@ Adegan tamu `rsvp`, `bukutamu`, `hadiah` ada di `invitation/src/scenes/guest.js`
 
 ## Catatan untuk pekerjaan undangan
 Kartu akhir di `scene-engine.js` kini punya tombol "Masuk ke dunia" sebagai jembatan sementara. Saat adegan RSVP/hari acara selesai, pindahkan tombol itu ke sana (pakai `worldUrl`) dan hapus dari kartu akhir.
+
+## Kontrak 5: Layar Tancap (aula dan villa)
+Satu layar besar per dunia (`game/src/screen/`). Dunia baru cukup memanggil `createScreen({ scene, spec })`, lalu `attach(session)` dan `tick(ms)`.
+- **Operator:** siapa pun bisa menjadi operator bila belum ada (seperti MC). Hanya pesan operator yang dipakai penerima. Penegakan ada di klien, belum tahan klien yang dimodifikasi.
+- **Sumber:** link YouTube/TikTok (panel video resmi di tiap perangkat, YouTube disinkronkan dengan operator), video dari perangkat operator dan siaran kamera langsung (track LiveKit `ScreenShare`/`ScreenShareAudio`, tampil di layar 3D). Video tidak pernah diunduh atau disalin ulang.
+- **Pesan jaringan:** `t:'sc'` dengan `k` = claim, release, load, play, pause, seek, stop, sync (lihat `screen-state.js`).
+- **API server:** `api/video-meta.js` hanya mengikuti link pendek TikTok (domain TikTok saja).
+- **Batas:** video dari perangkat tidak bisa disiarkan dari iPhone (tanpa `captureStream`); TikTok tidak disinkronkan antar-tamu.

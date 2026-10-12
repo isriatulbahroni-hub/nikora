@@ -5,7 +5,9 @@ import { startMultiplayer } from './multiplayer-view.js';
 import { loadEventInfo, parseEventParams } from './event-context.js';
 import './gate.css';
 import { mountGate, shouldShowGate } from './gate.js';
-import { findNearestSpot, getVillaWorld, roomAt, sameVoiceSpace, spotPose } from './villa-layout.js';
+import { VILLA_SCREEN, findNearestSpot, getVillaWorld, roomAt, sameVoiceSpace, spotPose } from './villa-layout.js';
+import './screen.css';
+import { createScreen } from './screen/screen-setup.js';
 import { createPartyController, speakerIds } from './party.js';
 import { renderPartyPanel } from './party-panel.js';
 import { VOICE_CROWD, VoiceChat } from './voice.js';
@@ -289,6 +291,7 @@ async function start() {
     if (info?.title) document.title = `${info.title} · NIKORA Villa`;
   });
   const name = (params.get('name') || eventParams.to || store('orbit-name') || `Tamu-${Math.floor(Math.random() * 900 + 100)}`).replace(/[<>]/g, '').slice(0, 24);
+  const screen = createScreen({ scene, spec: VILLA_SCREEN }); // layar tancap besar di belakang pelaminan
   const avatarConfig = loadConfig(storage); // avatar yang sama dengan yang dibuat di aula
   const avatar = createAvatar({ config: avatarConfig, name });
   avatar.rotation.order = 'YXZ'; // miring (tidur) dulu, lalu arah hadap
@@ -448,6 +451,7 @@ async function start() {
       session?.net.setAvatar?.(toWire(avatarConfig));
       setupVoice(session);
       setupParty(session);
+      screen.attach(session);
     })
     .catch((error) => console.warn('[multiplayer]', error));
 
@@ -484,6 +488,7 @@ async function start() {
       }
       if (mine && seat !== null && time - seatSince > 800 && mine.sit !== seat) standUp(); // server menolak
       multiplayer.view.update(delta, time / 1000);
+      screen.tick(time);
       if (party && time - partyTick > 500) {
         partyTick = time;
         party.tick();

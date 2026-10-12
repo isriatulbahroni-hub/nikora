@@ -40,8 +40,9 @@ export class VoiceChat {
   async attach(room, LiveKit = this.LiveKit) {
     LiveKit ??= await import('livekit-client');
     const { RoomEvent, Track } = LiveKit;
-    room.on(RoomEvent.TrackSubscribed, (track, _pub, participant) => {
+    room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
       if (track.kind !== Track.Kind.Audio) return;
+      if ((pub?.source ?? track.source) === Track.Source.ScreenShareAudio) return; // suara layar diatur Layar Tancap, bukan jarak
       const el = track.attach();
       el.volume = 0; // naik hanya bila lawan bicara dekat
       document.body.appendChild(el);

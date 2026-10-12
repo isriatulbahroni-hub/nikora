@@ -1,0 +1,17 @@
+/* Layar Tancap: tombol, panel kontrol, dan panel video embed */
+.sc-toggle { position: fixed; left: 12px; top: calc(60px + env(safe-area-inset-top)); z-index: 6; width: 42px; height: 42px; border: 0; border-radius: 50%; font-size: 19px; background: rgba(14,18,24,.55); backdrop-filter: blur(6px); color: #fff; cursor: pointer; }
+.sc-toggle.is-active { box-shadow: 0 0 0 2px rgba(255,120,120,.8); }
+.sc-panel { position: fixed; left: 12px; top: calc(110px + env(safe-area-inset-top)); z-index: 9; width: min(320px, calc(100vw - 24px)); max-height: 65vh; overflow: auto; padding: 12px; border-radius: 14px; background: rgba(24,19,28,.9); backdrop-filter: blur(10px); color: #f4dfbe; font: 500 14px/1.4 system-ui, sans-serif; display: grid; gap: 10px; }
+.sc-panel[hidden] { display: none; }
+.sc-head { display: flex; align-items: center; justify-content: space-between; }
+.sc-row { display: flex; gap: 8px; align-items: center; }
+.sc-wrap { flex-wrap: wrap; }
+.sc-input { flex: 1; min-width: 0; padding: 9px 12px; border-radius: 999px; border: 1px solid rgba(244,223,190,.3); background: rgba(255,255,255,.08); color: inherit; font: inherit; }
+.sc-btn { border: 0; border-radius: 999px; padding: 8px 14px; background: #e9b44c; color: #2a1d14; font: 700 13px system-ui, sans-serif; cursor: pointer; }
+.sc-btn.is-ghost { background: rgba(244,223,190,.14); color: #f4dfbe; }
+.sc-now { margin: 0; font-weight: 700; } .sc-hint, .sc-note { margin: 0; opacity: .75; font-size: 13px; } .sc-error { margin: 0; color: #ff9d9d; }
+.sc-row input[type=range] { flex: 1; }
+.screen-embed { position: fixed; left: 50%; top: calc(64px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 8; width: min(92vw, 460px); aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #000; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+.screen-embed[hidden] { display: none; }
+.screen-embed-frame { width: 100%; height: 100%; border: 0; }
+.screen-embed-close { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; cursor: pointer; }

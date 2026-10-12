@@ -7,6 +7,8 @@ export const WALL_HEIGHT = 2.6;
 export const PLAYER_RADIUS = 0.4;
 export const BOUNDS = Object.freeze({ minX: -42, maxX: 42, minZ: -26, maxZ: 42 });
 export const SPAWN = Object.freeze({ x: 0, z: 37 });
+// Layar tancap di belakang pelaminan villa (di balik dinding utara aula, z = -20). Tiang berdiri di balik dedaunan pelaminan.
+export const VILLA_SCREEN = Object.freeze({ x: 0, y: 4.3, z: -19.7, ry: 0, width: 6, height: 3.375, posts: true });
 export const SIT_RANGE = 1.9; // jarak maksimum ke kursi/sofa/tempat tidur agar boleh duduk atau tidur
 export const SEATED_DROP = -0.3; // avatar duduk sedikit lebih rendah
 

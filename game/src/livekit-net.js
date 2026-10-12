@@ -38,9 +38,10 @@ export class LiveKitNet {
     this.fetch = fetchImpl ?? ((...args) => globalThis.fetch(...args));
     this.room = null;
     this.id = null;
-    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [], party: [] };
+    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [], party: [], screen: [], 'screen-track': [] };
     this.self = { id: null, name: 'Tamu', x: 0, z: 9.4, rot: 0, sit: null, act: null, with: null, until: 0, av: null };
     this.remotes = new Map();
+    this.screenTracks = new Map(); // id peserta -> { video, audio } untuk Layar Tancap
     this.pending = new Map(); // id pengirim -> { kind, expires, pos }
     this.outgoing = new Map(); // id tujuan -> posisi kita saat mengajak
     this.lastSent = 0;
@@ -81,7 +82,26 @@ export class LiveKitNet {
       // Beri tahu pendatang baru posisi kita segera (tanpa menunggu heartbeat).
       this.#publishState({ to: [p.identity], reliable: true });
     });
+    room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
+      const source = pub?.source ?? track.source;
+      const key = this.#trackKey(track, source);
+      const isScreen = source === 'screen_share' || source === 'screen_share_audio' || (source === 'camera' && track.kind === 'video');
+      if (!key || !isScreen) return;
+      const entry = this.screenTracks.get(participant.identity) ?? {};
+      entry[key] = track;
+      this.screenTracks.set(participant.identity, entry);
+      this.#emit('screen-track', { id: participant.identity });
+    });
+    room.on(RoomEvent.TrackUnsubscribed, (track, pub, participant) => {
+      const entry = this.screenTracks.get(participant.identity);
+      const key = this.#trackKey(track, pub?.source ?? track.source);
+      if (!entry || !key || entry[key] !== track) return;
+      delete entry[key];
+      if (!entry.video && !entry.audio) this.screenTracks.delete(participant.identity);
+      this.#emit('screen-track', { id: participant.identity });
+    });
     room.on(RoomEvent.ParticipantDisconnected, (p) => {
+      if (this.screenTracks.delete(p.identity)) this.#emit('screen-track', { id: p.identity });
       if (this.remotes.delete(p.identity)) this.#emit('left', { id: p.identity });
     });
     room.on(RoomEvent.Disconnected, () => this.#emit('close', {}));
@@ -132,6 +152,8 @@ export class LiveKitNet {
       this.#onGreet(participant, m);
     } else if (m.t === 'p') {
       this.#emit('party', { from: id, msg: m });
+    } else if (m.t === 'sc') {
+      this.#emit('screen', { from: id, msg: m });
     }
   }
 
@@ -223,6 +245,36 @@ export class LiveKitNet {
   /** Pesan Party Room (panggung, angkat tangan). Tanpa server otoritatif: validasi dilakukan tiap penerima. */
   sendParty(msg) {
     this.#send({ ...msg, t: 'p' }, { reliable: true });
+  }
+
+  /** Pesan Layar Tancap (operator, putar/jeda, sinkron). Validasi dilakukan tiap penerima. */
+  sendScreen(msg) {
+    this.#send({ ...msg, t: 'sc' }, { reliable: true });
+  }
+
+  /** Track video/audio layar dari peserta lain: dicatat agar controller yang dibuat belakangan tetap menemukannya. */
+  #trackKey(track, source) {
+    return source === 'screen_share_audio' ? 'audio' : track.kind === 'video' ? 'video' : null;
+  }
+
+  /** Siarkan kamera ke layar (operator). */
+  async publishCamera(on = true) {
+    await this.room?.localParticipant.setCameraEnabled(on);
+    return on;
+  }
+
+  /** Siarkan MediaStream (mis. video dari HP lewat captureStream) ke layar. Mengembalikan fungsi untuk menghentikan. */
+  async publishStream(stream) {
+    const LiveKit = this.LiveKit ?? (await import('livekit-client'));
+    const published = [];
+    for (const track of stream.getTracks()) {
+      const source = track.kind === 'video' ? LiveKit.Track.Source.ScreenShare : LiveKit.Track.Source.ScreenShareAudio;
+      await this.room.localParticipant.publishTrack(track, { source });
+      published.push(track);
+    }
+    return async () => {
+      for (const t of published) await this.room?.localParticipant.unpublishTrack(t).catch(() => {});
+    };
   }
 
   sendChat(text) {

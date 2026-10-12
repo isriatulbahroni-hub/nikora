@@ -3,6 +3,8 @@ import { VOICE_CROWD, VoiceChat } from './voice.js';
 import { loadEventInfo, parseEventParams } from './event-context.js';
 import './gate.css';
 import { mountGate, shouldShowGate } from './gate.js';
+import './screen.css';
+import { createScreen } from './screen/screen-setup.js';
 import { applyPose, createAvatar, makeBubble, setAvatarConfig, setStageRing } from './avatar.js';
 import { createPartyController, speakerIds } from './party.js';
 import { loadConfig, saveConfig, toWire } from './avatar-config.js';
@@ -74,6 +76,7 @@ let camera;
 let playerAvatar;
 let npcs = [];
 let netError = '';
+let hallScreen = null;
 const focus = new THREE.Vector3(START.x, 0.5, START.z);
 let priorFrameTime = 0;
 let idleAngle = 0;
@@ -167,26 +170,6 @@ function box(w, h, d, material, x, y, z, { cast = true } = {}) {
   mesh.receiveShadow = true;
   scene.add(mesh);
   return mesh;
-}
-
-function screenTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 288;
-  const ctx = canvas.getContext('2d');
-  const gradient = ctx.createLinearGradient(0, 0, 512, 288);
-  gradient.addColorStop(0, '#2b2030');
-  gradient.addColorStop(1, '#5a2431');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 512, 288);
-  ctx.fillStyle = '#f3d58a';
-  ctx.textAlign = 'center';
-  ctx.font = 'bold 34px sans-serif';
-  ctx.fillText('LAYAR SIARAN LANGSUNG', 256, 134);
-  ctx.fillStyle = '#e8dcc4';
-  ctx.font = '22px sans-serif';
-  ctx.fillText('(placeholder, belum tersambung)', 256, 176);
-  return new THREE.CanvasTexture(canvas);
 }
 
 function buildTable(table) {
@@ -286,12 +269,7 @@ function createScene() {
   box(0.35, 1.1, 23, wall, -11.65, 0.55, 0);
   box(0.35, 1.1, 23, wall, 11.65, 0.55, 0);
   box(24, 0.7, 0.35, wall, 0, 0.35, 11.65);
-  const screen = new THREE.Mesh(
-    new THREE.PlaneGeometry(8, 4.5),
-    new THREE.MeshBasicMaterial({ map: screenTexture() }),
-  );
-  screen.position.set(0, 4.3, -11.45);
-  scene.add(screen);
+  hallScreen = createScreen({ scene, spec: { x: 0, y: 4.3, z: -11.45, width: 8, height: 4.5 } }); // layar tancap aula
 
   buildStage();
   for (const table of TABLES) buildTable(table);
@@ -787,6 +765,7 @@ function renderFrame(time) {
   for (const npc of npcs) npc.avatar.position.y = npc.baseY + Math.sin(now * 1.6 + npc.phase) * 0.012;
 
   multiplayer?.view.update(delta, now);
+  hallScreen?.tick(now * 1000);
   if (voice && multiplayer && Math.floor(now * 10) !== lastVoiceTick) {
     lastVoiceTick = Math.floor(now * 10);
     voice.update(me, multiplayer.net.players, party ? speakerIds(party.state) : undefined, VOICE_CROWD);
@@ -1052,6 +1031,7 @@ function setupJoin() {
         session?.net.on('greet-req', (msg) => showGreetRequest(msg));
         setupVoice(session);
         setupParty(session);
+        hallScreen?.attach(session);
       })
       .catch((error) => console.warn('[multiplayer]', error));
   });
