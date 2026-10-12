@@ -154,7 +154,7 @@ export async function mount3D(container, ctx) {
   }
   function skip() {
     if (state === 'idle') audio.unlock();
-    if (state === 'idle' || state === 'opening') { lt = T_HOLD; openT = 99; setState('reading'); envelope.update(lt); fired1 = fired2 = fired3 = true; }
+    if (state === 'idle' || state === 'opening') { lt = T_HOLD; openT = 99; setState('reading'); envelope.update(lt); fired1 = fired2 = true; }   // fired3 (penanda selesai) sengaja tidak diset: tombol lanjut harus tetap bisa menamatkan adegan
   }
   function dive() { if (state !== 'reading') return; setState('diving'); }
 
