@@ -58,3 +58,8 @@ Bilah atas Studio (setelah masuk) punya tombol **Keluar** di semua layar. Alurny
 - bila `VITE_EXIT_URL` (https) diisi, pindah ke alamat itu (meninggalkan situs);
 - bila kosong, tampil layar "Kamu sudah keluar" dan halaman mencoba menutup tab (peramban hanya mengizinkan itu untuk tab yang dibuka lewat skrip).
 Menutup tab atau pindah situs saat ada isian belum tersimpan memunculkan peringatan peramban.
+
+## Studio: identitas acara, hapus, QR
+- Formulir buat undangan menyesuaikan jenis acara (`IDENTITY` di `studio/views.js`): pernikahan = dua nama mempelai; khitanan = nama anak; ulang tahun = nama yang berulang tahun; tazkirah/tarannum/karaoke/komunitas = nama acara. Nama kedua hanya untuk pernikahan (validasi membuangnya untuk jenis lain).
+- Hapus undangan: di daftar ada mode **Pilih** (hapus banyak, ketik `HAPUS`), di detail ada "Hapus undangan" (ketik alamatnya). Memakai kebijakan RLS "pemilik hapus undangan"; tamu, RSVP, hadiah, adegan, dll. ikut terhapus (CASCADE). Foto galeri di bucket `media` tidak ikut terhapus.
+- Kode QR (`studio/qr.js`, pustaka `qrcode-generator`, dibuat di peramban): QR link undangan dan QR per tamu (link dengan `?to=<nama>`), unduh PNG 1000 px untuk dicetak, atau bagikan lewat menu bagikan ponsel.

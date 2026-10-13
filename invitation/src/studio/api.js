@@ -18,7 +18,8 @@ export function validateInvitation(input) {
   const eventType = EVENT_TYPES.includes(input.eventType) ? input.eventType : null;
   if (!eventType) errors.eventType = 'Pilih jenis acara.';
   const groom = cleanText(input.groom, 60);
-  const bride = cleanText(input.bride, 60);
+  // Nama kedua hanya ada untuk pernikahan; jenis acara lain mengabaikan isian yang tertinggal di formulir.
+  const bride = eventType === 'pernikahan' ? cleanText(input.bride, 60) : '';
   if (!groom) errors.groom = eventType === 'pernikahan' ? 'Nama mempelai pria wajib diisi.' : 'Nama wajib diisi.';
   if (eventType === 'pernikahan' && !bride) errors.bride = 'Nama mempelai wanita wajib diisi.';
   const date = new Date(input.eventDate);
@@ -179,6 +180,15 @@ export function createClient({ url, key, fetchImpl = globalThis.fetch, store }) 
     invitationOf: async (slug) => (await rest(`invitations?slug=eq.${encodeURIComponent(slug)}&select=slug,event_type,theme,event_date,extra&limit=1`) || [])[0] || null,
     scenesOf: (slug) => rest(`invitation_scenes?slug=eq.${encodeURIComponent(slug)}&select=kind,position,active,config&order=position.asc`),
     /** Simpan isi satu adegan. Hanya jenis adegan yang dikenal dan config JSON <= 24 KB. */
+    /** Hapus undangan milik sendiri beserta tamu, RSVP, adegan, dll. (CASCADE di database). RLS membatasi ke pemilik. */
+    async deleteInvitations(slugs) {
+      const list = [...new Set((slugs || []).map((s) => String(s).trim().toLowerCase()))];
+      if (!list.length || list.length > 100 || !list.every((s) => SLUG.test(s))) throw new Error('Pilih undangan yang valid.');
+      const rows = await rest(`invitations?slug=in.(${list.join(',')})`, { method: 'DELETE', prefer: 'return=representation' });
+      const n = Array.isArray(rows) ? rows.length : 0;
+      if (n !== list.length) throw new Error(n ? `Hanya ${n} dari ${list.length} undangan yang terhapus.` : 'Tidak ada undangan yang terhapus. Pastikan itu milik akunmu.');
+      return n;
+    },
     async saveScene(slug, kind, { config, active }) {
       if (!SCENE_KINDS.includes(kind)) throw new Error('Jenis adegan tidak dikenal.');
       if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Isi adegan tidak valid.');

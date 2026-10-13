@@ -34,7 +34,7 @@ try {
 }
 
 function openDetail(slug) {
-  show(detailView({ client, slug, inviteBase, worldBase, onBack: home, onEdit: () => show(editorView({ client, slug, inviteBase, onBack: () => openDetail(slug) })) }));
+  show(detailView({ client, slug, inviteBase, worldBase, onBack: home, onDeleted: home, onEdit: () => show(editorView({ client, slug, inviteBase, onBack: () => openDetail(slug) })) }));
 }
 
 async function home() {
@@ -44,6 +44,7 @@ async function home() {
     show(listView({
       items, email: client.session().user && client.session().user.email,
       onOpen: (slug) => openDetail(slug),
+      onDelete: (slugs) => client.deleteInvitations(slugs),
       onNew: () => show(createView({ client, onCreated: (slug) => openDetail(slug), onCancel: home })),
     }));
   } catch (e) {
