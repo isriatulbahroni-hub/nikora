@@ -39,7 +39,7 @@ export async function loadEventInfo(slug, { url, key, fetchImpl, timeoutMs = 350
     const rows = await res.json();
     const inv = Array.isArray(rows) ? rows[0] : null;
     if (!inv) return null;
-    return { slug, title: titleOfInvitation(inv), eventType: inv.event_type ?? null, theme: inv.theme ?? null, date: inv.event_date ?? null, tz: typeof inv.extra?.tz === 'string' ? inv.extra.tz : null };
+    return { slug, title: titleOfInvitation(inv), eventType: inv.event_type ?? null, theme: inv.theme ?? null, date: inv.event_date ?? null, tz: typeof inv.extra?.tz === 'string' ? inv.extra.tz : null, mode: typeof inv.extra?.mode === 'string' ? inv.extra.mode : null };
   } catch {
     return null;
   } finally {

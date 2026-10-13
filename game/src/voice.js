@@ -69,6 +69,8 @@ export class VoiceChat {
     this.onChange = () => {};
     this.onNotice = (text) => this.doc && toast(this.doc, text);
     this._micRetry = 0;
+    this.stageQuality = false; // true: mic memakai kualitas tinggi (ustaz/MC/penanya yang dinaikkan ke panggung)
+    this._lk = LiveKit ?? null;
   }
 
   /** Dipanggil dari gestur pengguna (klik tombol mikrofon) agar browser mengizinkan audio & mikrofon. */
@@ -132,6 +134,7 @@ export class VoiceChat {
   /** Pasang pendengar audio ke Room yang sudah/akan tersambung (dipakai bersama transport LiveKit). */
   async attach(room, LiveKit = this.LiveKit) {
     LiveKit ??= await import('livekit-client');
+    this._lk = LiveKit;
     const { RoomEvent, Track } = LiveKit;
     room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
       if (track.kind !== Track.Kind.Audio) return;
@@ -174,11 +177,28 @@ export class VoiceChat {
     return this;
   }
 
+  /** Panggung: bitrate lebih tinggi, tanpa DTX (awal kata tidak terpotong), dengan data cadangan (RED) untuk sinyal lemah. */
+  #micPublishOptions() {
+    const preset = this._lk?.AudioPresets?.musicHighQuality;
+    return this.stageQuality && preset ? { audioPreset: preset, dtx: false, red: true } : undefined;
+  }
+
+  /** Dipanggil saat peran panggung berubah; bila mic sedang menyala, diterbitkan ulang dengan kualitas yang sesuai. */
+  async setStageQuality(on) {
+    if (this.stageQuality === on) return;
+    this.stageQuality = on;
+    if (!this.micOn || !this.room) return;
+    try {
+      await this.room.localParticipant.setMicrophoneEnabled(false);
+      await this.room.localParticipant.setMicrophoneEnabled(true, undefined, this.#micPublishOptions());
+    } catch { await this.#recoverMic(); }
+  }
+
   async setMic(on) {
     if (!this.room) return false;
     this.wantMic = on;
     this._micRetry = 0;
-    await this.room.localParticipant.setMicrophoneEnabled(on);
+    await this.room.localParticipant.setMicrophoneEnabled(on, undefined, on ? this.#micPublishOptions() : undefined);
     this.micOn = on;
     if (on) this.#watchMic();
     this.onChange(on);
@@ -199,7 +219,7 @@ export class VoiceChat {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         await this.room.localParticipant.setMicrophoneEnabled(false).catch(() => {});
-        await this.room.localParticipant.setMicrophoneEnabled(true);
+        await this.room.localParticipant.setMicrophoneEnabled(true, undefined, this.#micPublishOptions());
         this.micOn = true;
         this.#watchMic();
         this.onChange(true);
@@ -216,7 +236,8 @@ export class VoiceChat {
   }
 
   /** Panggil tiap beberapa frame: self {x,z}, players [{id,x,z,sit}]. Volume berubah halus; empat pembicara paling relevan terdengar. */
-  update(self, players, stage = new Set(), { ranges = VOICE, maxListeners = Infinity, canHear = () => true, duck = DUCK_GAIN } = {}, nowMs = Date.now()) {
+  update(self, players, stage = new Set(), { ranges = VOICE, maxListeners = Infinity, canHear = () => true, duck = DUCK_GAIN, selfId } = {}, nowMs = Date.now()) {
+    if (selfId !== undefined) this.setStageQuality(stage.has(selfId));
     for (const id of this.speaking()) this.lastSpoke.set(id, nowMs);
     const targets = new Map();
     const candidates = [];
@@ -232,7 +253,7 @@ export class VoiceChat {
     const audible = selectAudible({ candidates, max: maxListeners, previous: this.audible, lastSpoke: this.lastSpoke, now: nowMs });
     // Saat pembicara panggung (ustaz/MC) berbicara, obrolan jamaah mengecil (tidak dimatikan) supaya panggung tetap jelas
     // sambil jamaah masih bisa berbincang pelan dengan yang di sebelahnya. Pulih setelah panggung diam sebentar.
-    const stageTalking = [...stage].some((id) => id !== self.id && nowMs - (this.lastSpoke.get(id) ?? -Infinity) <= STAGE_HANGOVER_MS);
+    const stageTalking = [...stage].some((id) => id !== (selfId ?? self.id) && nowMs - (this.lastSpoke.get(id) ?? -Infinity) <= STAGE_HANGOVER_MS);
     const chatterGain = stageTalking ? duck : 1;
     for (const c of candidates) targets.set(c.id, audible.has(c.id) ? c.gain * chatterGain : 0);
     this.audible = audible;

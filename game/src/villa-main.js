@@ -9,6 +9,7 @@ import { LEVEL_HEIGHT, VILLA_SCREEN, findNearestSpot, getVillaWorld, levelY, roo
 import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
+import { modeFor } from './event-mode.js';
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
 function applyQuality(renderer, scene, q) {
@@ -295,6 +296,7 @@ async function start() {
     camState.pitch = CAM_PRESETS[preset].pitch;
     camState.dist = CAM_PRESETS[preset].dist;
   };
+  let eventMode = modeFor(); // diganti setelah data acara terbaca
   let screen = null; // layar tancap; dibuat setelah dunia siap
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -326,6 +328,7 @@ async function start() {
   };
   const eventParams = parseEventParams(window.location.search);
   loadEventInfo(eventParams.slug, { url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_ANON_KEY }).then((info) => {
+    eventMode = modeFor(info?.eventType, info?.mode);
     if (info?.title) document.title = `${info.title} · NIKORA Villa`;
   });
   const name = (params.get('name') || eventParams.to || store('orbit-name') || `Tamu-${Math.floor(Math.random() * 900 + 100)}`).replace(/[<>]/g, '').slice(0, 24);
@@ -567,6 +570,8 @@ async function start() {
         voiceTick = time;
         voice.update(me, multiplayer.net.players, stageIds(party?.state, multiplayer.net.players), {
           ...VOICE_CROWD,
+          duck: eventMode.duck,
+          selfId: multiplayer.net.id,
           canHear: (p) => sameVoiceSpace(me, p), // beda ruangan (dibatasi dinding) tidak saling dengar
         });
         const speaking = voice.speaking();

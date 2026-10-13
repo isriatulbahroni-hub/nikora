@@ -228,3 +228,31 @@ test('panggung berbicara: obrolan jamaah mengecil (bukan mati), panggung tetap p
   run(6000, 14, []); // diam cukup lama
   assert.equal(v.audio.get('teman').volume, 1, 'obrolan pulih');
 });
+
+test('kualitas suara panggung: ustaz/MC memakai preset tinggi tanpa DTX, tamu biasa tetap bawaan; mic menyala diterbitkan ulang saat peran berubah', async () => {
+  const calls = [];
+  const preset = { maxBitrate: 64000 };
+  const room = {
+    remoteParticipants: new Map(), on() {}, canPlaybackAudio: true, disconnect() {},
+    localParticipant: { setMicrophoneEnabled: async (on, capture, publish) => { calls.push({ on, publish }); }, getTrackPublication: () => null },
+  };
+  const chat = new VoiceChat({ LiveKit: { RoomEvent: {}, Track: { Kind: {}, Source: {} }, AudioPresets: { musicHighQuality: preset } }, doc: null });
+  chat.room = room;
+  chat._lk = { AudioPresets: { musicHighQuality: preset } };
+  await chat.setMic(true);
+  assert.equal(calls.at(-1).publish, undefined, 'tamu biasa: bawaan');
+  calls.length = 0;
+  chat.update({ x: 0, z: 0 }, [], new Set(['saya']), { ...VOICE_CROWD, selfId: 'saya' });
+  await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(calls.map((c) => c.on), [false, true], 'diterbitkan ulang');
+  assert.equal(calls.at(-1).publish.dtx, false);
+  assert.equal(calls.at(-1).publish.red, true);
+  assert.equal(calls.at(-1).publish.audioPreset, preset);
+  calls.length = 0;
+  chat.update({ x: 0, z: 0 }, [], new Set(['saya']), { ...VOICE_CROWD, selfId: 'saya' });
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(calls.length, 0, 'tidak diulang bila peran tidak berubah');
+  chat.update({ x: 0, z: 0 }, [], new Set(), { ...VOICE_CROWD, selfId: 'saya' }); // diturunkan dari panggung
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(calls.at(-1).publish, undefined, 'kembali ke bawaan');
+});

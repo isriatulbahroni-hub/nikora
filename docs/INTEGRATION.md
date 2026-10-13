@@ -47,3 +47,9 @@ Satu layar besar per dunia (`game/src/screen/`). Dunia baru cukup memanggil `cre
 - **Pesan jaringan:** `t:'sc'` dengan `k` = claim, release, load, play, pause, seek, stop, sync (lihat `screen-state.js`).
 - **API server:** `api/video-meta.js` hanya mengikuti link pendek TikTok (domain TikTok saja).
 - **Batas:** video dari perangkat tidak bisa disiarkan dari iPhone (tanpa `captureStream`); TikTok tidak disinkronkan antar-tamu.
+
+## Kontrak 6: Mode acara (suara)
+`invitations.extra.mode` = `umum` | `kajian` | `pesta` (opsional). Bila kosong, dipilih dari `event_type`: tazkirah/tarannum → `kajian`, karaoke/komunitas → `pesta`, selain itu `umum` (`game/src/event-mode.js`).
+- Jamaah **tidak dibisukan** di mode apa pun: obrolan dekat tetap jalan. Saat panggung (ustaz/MC/penanya yang dinaikkan MC) berbicara, obrolan jamaah dikecilkan: `umum` 30%, `kajian` 20%, `pesta` tidak dikecilkan.
+- Pembicara panggung memakai mic berkualitas tinggi (preset musik 64 kbps, tanpa DTX, RED).
+- Siapa yang sah menjadi pemilik/MC ditentukan server lewat token bertanda tangan (kunci per acara); penanya naik panggung hanya lewat MC (angkat tangan di Party Room).
