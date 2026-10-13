@@ -2,6 +2,20 @@ import { h } from '../engine/dom.js';
 import { EVENT_TYPES, EVENT_LABELS, THEMES } from '../themes/index.js';
 import { WORLDS } from '../engine/world-link.js';
 import { slugify, validateInvitation, shareLinks, whatsappUrl } from './api.js';
+import { qrPanel } from './qr.js';
+
+/** Setiap jenis acara punya identitasnya sendiri: nama kolom, contoh isian, dan apakah ada nama kedua. */
+export const IDENTITY = {
+  pernikahan: { first: 'Nama mempelai pria', second: 'Nama mempelai wanita', hint: 'Contoh: Dimas', hint2: 'Contoh: Rani' },
+  khitanan: { first: 'Nama anak', hint: 'Contoh: Muhammad Dimas' },
+  ulang_tahun: { first: 'Nama yang berulang tahun', hint: 'Contoh: Aira' },
+  tazkirah: { first: 'Nama acara', hint: 'Contoh: Tazkirah Akbar: Menata Hati' },
+  tarannum: { first: 'Nama acara', hint: 'Contoh: Malam Tarannum Nusantara' },
+  karaoke: { first: 'Nama acara', hint: 'Contoh: Malam Karaoke Bareng' },
+  komunitas: { first: 'Nama acara / komunitas', hint: 'Contoh: Temu Komunitas Lombok' },
+};
+/** Judul undangan untuk daftar: dua nama hanya untuk pernikahan. */
+export const titleOf = (i) => (i.event_type === 'pernikahan' ? [i.groom, i.bride] : [i.groom]).filter(Boolean).join(' & ');
 
 const field = (label, input, error) => h('label', { class: 's-field' }, h('span', { text: label }), input, h('small', { class: 's-err', role: 'alert', text: error || '' }));
 const input = (props) => h('input', { class: 's-input', ...props });
@@ -65,7 +79,12 @@ export function createView({ client, onCreated, onCancel }) {
 
   const fillThemes = () => {
     el.theme.replaceChildren(...THEMES.filter((t) => t.eventType === el.eventType.value).map((t) => h('option', { value: t.id, text: `${t.label} - ${t.mood}` })));
-    el.bride.closest('label').hidden = el.eventType.value !== 'pernikahan';
+    const id = IDENTITY[el.eventType.value] || IDENTITY.komunitas;
+    firstField.querySelector('span').textContent = id.first;
+    el.groom.placeholder = id.hint;
+    const hasSecond = !!id.second;
+    secondField.hidden = !hasSecond;
+    if (hasSecond) { secondField.querySelector('span').textContent = id.second; el.bride.placeholder = id.hint2; } else el.bride.value = '';
   };
   const suggest = () => { if (!slugTouched) el.slug.value = slugify(el.eventType.value === 'pernikahan' ? `${el.bride.value} ${el.groom.value}` : el.groom.value); };
   el.eventType.addEventListener('change', () => { fillThemes(); suggest(); });
@@ -74,11 +93,13 @@ export function createView({ client, onCreated, onCancel }) {
   el.slug.addEventListener('input', () => { slugTouched = true; });
 
   const submit = h('button', { class: 's-btn', type: 'submit', text: 'Buat undangan' });
+  const firstField = wrap('Nama', 'groom', el.groom);
+  const secondField = wrap('Nama kedua', 'bride', el.bride);
   const form = h('form', { class: 's-card', novalidate: true },
     h('h1', { text: 'Buat undangan baru' }),
     wrap('Jenis acara', 'eventType', el.eventType),
-    wrap('Nama mempelai pria / nama acara', 'groom', el.groom),
-    wrap('Nama mempelai wanita', 'bride', el.bride),
+    firstField,
+    secondField,
     wrap('Tanggal dan jam', 'eventDate', el.eventDate),
     wrap('Tema', 'theme', el.theme),
     wrap('Alamat link (huruf kecil, angka, minus)', 'slug', el.slug),
@@ -110,18 +131,70 @@ export function createView({ client, onCreated, onCancel }) {
 
 const fmtDate = (v) => { try { return new Date(v).toLocaleString('id-ID', { dateStyle: 'full', timeStyle: 'short' }); } catch { return ''; } };
 
-/** Daftar undangan milik pengguna. */
-export function listView({ items, onOpen, onNew, onSignOut, email }) {
-  return h('div', { class: 's-card' },
-    h('div', { class: 's-row s-between' }, h('h1', { text: 'Undangan saya' }), h('button', { class: 's-link', type: 'button', text: 'Keluar', onclick: onSignOut })),
-    email ? h('p', { class: 's-sub', text: email }) : null,
-    items.length ? h('ul', { class: 's-list' }, items.map((i) => h('li', {}, h('button', { class: 's-item', type: 'button', onclick: () => onOpen(i.slug) },
-      h('strong', { text: [i.groom, i.bride].filter(Boolean).join(' & ') }), h('span', { text: `${fmtDate(i.event_date)} - ${i.status}` }))))) : h('p', { class: 's-sub', text: 'Belum ada undangan.' }),
-    h('button', { class: 's-btn', type: 'button', text: 'Buat undangan baru', onclick: onNew }));
+/** Daftar undangan milik pengguna. Mode "Pilih" untuk menghapus beberapa sekaligus (mis. sisa data uji). */
+export function listView({ items, onOpen, onNew, onSignOut, onDelete, email }) {
+  const root = h('div', { class: 's-card' });
+  const msg = h('p', { class: 's-msg', role: 'status', 'aria-live': 'polite' });
+  const chosen = new Set();
+  let selecting = false;
+
+  function paint() {
+    const toggle = onDelete && items.length ? h('button', { class: 's-link', type: 'button', text: selecting ? 'Selesai' : 'Pilih', onclick: () => { selecting = !selecting; chosen.clear(); paint(); } }) : null;
+    const row = (i) => {
+      const label = `${titleOf(i)} - ${EVENT_LABELS[i.event_type] ? EVENT_LABELS[i.event_type].replace('Undangan ', '') : i.event_type}`;
+      const body = h('span', { class: 's-itembody' }, h('strong', { text: titleOf(i) }),
+        h('span', { text: `${EVENT_LABELS[i.event_type] ? EVENT_LABELS[i.event_type].replace('Undangan ', '') : i.event_type} - ${fmtDate(i.event_date)} - ${i.status}` }));
+      if (!selecting) return h('li', {}, h('button', { class: 's-item', type: 'button', 'aria-label': label, onclick: () => onOpen(i.slug) }, body));
+      const cb = h('input', { type: 'checkbox', 'aria-label': `Pilih ${titleOf(i)}` });
+      cb.checked = chosen.has(i.slug);
+      cb.addEventListener('change', () => { cb.checked ? chosen.add(i.slug) : chosen.delete(i.slug); paintBar(); });
+      return h('li', {}, h('label', { class: 's-item s-pick' }, cb, body));
+    };
+    const bar = h('div', { class: 's-delbar', hidden: true });
+    root._bar = bar;
+    root.replaceChildren(...[
+      h('div', { class: 's-row s-between' }, h('h1', { text: 'Undangan saya' }), onSignOut ? h('button', { class: 's-link', type: 'button', text: 'Keluar', onclick: onSignOut }) : toggle),
+      onSignOut ? toggle : null,
+      email ? h('p', { class: 's-sub', text: email }) : null,
+      items.length ? h('ul', { class: 's-list' }, items.map(row)) : h('p', { class: 's-sub', text: 'Belum ada undangan.' }),
+      bar, msg,
+      selecting ? null : h('button', { class: 's-btn', type: 'button', text: 'Buat undangan baru', onclick: onNew }),
+    ].filter(Boolean));
+    paintBar();
+  }
+
+  function paintBar() {
+    const bar = root._bar;
+    if (!bar) return;
+    bar.hidden = !selecting;
+    if (!selecting) { bar.replaceChildren(); return; }
+    const n = chosen.size;
+    const word = h('input', { class: 's-input', type: 'text', placeholder: 'Ketik HAPUS untuk konfirmasi', autocomplete: 'off', 'aria-label': 'Ketik HAPUS' });
+    const go = h('button', { class: 's-btn s-danger', type: 'button', text: `Hapus ${n || ''} terpilih`, disabled: true });
+    word.addEventListener('input', () => { go.disabled = !(n > 0 && word.value.trim() === 'HAPUS'); });
+    go.addEventListener('click', async () => {
+      go.disabled = true;
+      msg.textContent = 'Menghapus...';
+      try {
+        const count = await onDelete([...chosen]);
+        items = items.filter((i) => !chosen.has(i.slug));
+        chosen.clear();
+        selecting = false;
+        paint();
+        msg.textContent = `${count} undangan dihapus.`;
+      } catch (e) { msg.textContent = e.message; go.disabled = false; }
+    });
+    bar.replaceChildren(
+      h('p', { class: 's-sub', text: n ? `${n} undangan dipilih. Tamu, RSVP, dan isi adegannya ikut terhapus dan tidak bisa dikembalikan.` : 'Centang undangan yang ingin dihapus.' }),
+      ...(n ? [word, go] : []));
+  }
+
+  paint();
+  return root;
 }
 
 /** Dasbor satu undangan: link bagikan, daftar tamu, RSVP, hadiah. */
-export function detailView({ client, slug, inviteBase, worldBase, onBack, onEdit }) {
+export function detailView({ client, slug, inviteBase, worldBase, onBack, onEdit, onDeleted }) {
   const links = shareLinks({ slug, inviteBase, worldBase });
   const root = h('div', { class: 's-card' });
   const msg = h('p', { class: 's-msg', role: 'status', 'aria-live': 'polite' });
@@ -132,6 +205,20 @@ export function detailView({ client, slug, inviteBase, worldBase, onBack, onEdit
 
   const guestsBox = h('div', {}), rsvpBox = h('div', {}), giftBox = h('div', {});
 
+  /** Hapus permanen: harus mengetik alamat undangan agar tidak terhapus tak sengaja. */
+  function dangerZone() {
+    const word = h('input', { class: 's-input', type: 'text', placeholder: `Ketik ${slug} untuk konfirmasi`, autocomplete: 'off', 'aria-label': 'Ketik alamat undangan' });
+    const go = h('button', { class: 's-btn s-danger', type: 'button', text: 'Hapus undangan ini', disabled: true });
+    word.addEventListener('input', () => { go.disabled = word.value.trim() !== slug; });
+    go.addEventListener('click', async () => {
+      go.disabled = true;
+      msg.textContent = 'Menghapus...';
+      try { await client.deleteInvitations([slug]); if (onDeleted) onDeleted(slug); } catch (e) { msg.textContent = e.message; go.disabled = false; }
+    });
+    return h('div', { class: 's-group s-danger-zone' }, h('h2', { text: 'Hapus undangan' }),
+      h('p', { class: 's-sub', text: 'Tamu, konfirmasi hadir, hadiah, dan isi adegan ikut terhapus dan tidak bisa dikembalikan.' }), word, go);
+  }
+
   async function renderGuests() {
     const rows = await client.guestsOf(slug);
     const name = input({ name: 'guest', maxlength: '80', placeholder: 'Nama tamu', 'aria-label': 'Nama tamu' });
@@ -140,10 +227,16 @@ export function detailView({ client, slug, inviteBase, worldBase, onBack, onEdit
     guestsBox.replaceChildren(h('h2', { text: `Daftar tamu (${rows.length})` }), add,
       h('ul', { class: 's-list' }, rows.map((g) => {
         const url = links.forGuest(g.name);
-        return h('li', { class: 's-guest' }, h('span', { text: g.name }),
+        const qrBox = h('div', { class: 's-qrbox', hidden: true });
+        const qrBtn = h('button', { class: 's-btn s-small s-ghost', type: 'button', text: 'QR', 'aria-expanded': 'false', onclick: () => {
+          qrBox.hidden = !qrBox.hidden;
+          qrBtn.setAttribute('aria-expanded', String(!qrBox.hidden));
+          if (!qrBox.hidden && !qrBox.firstChild) qrBox.append(qrPanel({ url, caption: g.name, name: `${slug}-${g.name}`, onError: (m) => { msg.textContent = m; } }));
+        } });
+        return h('li', { class: 's-guest' }, h('span', { text: g.name }), qrBtn,
           h('a', { class: 's-btn s-small', href: whatsappUrl(`Assalamualaikum, kami mengundang ${g.name}. Buka undangan: ${url}`), target: '_blank', rel: 'noopener noreferrer', text: 'WhatsApp' }),
           h('button', { class: 's-btn s-small', type: 'button', text: 'Salin link', onclick: (e) => copy(url, e.currentTarget) }),
-          h('button', { class: 's-btn s-small s-ghost', type: 'button', text: 'Hapus', onclick: async () => { try { await client.deleteGuest(slug, g.id); await renderGuests(); } catch (err) { msg.textContent = err.message; } } }));
+          h('button', { class: 's-btn s-small s-ghost', type: 'button', text: 'Hapus', onclick: async () => { try { await client.deleteGuest(slug, g.id); await renderGuests(); } catch (err) { msg.textContent = err.message; } } }), qrBox);
       })));
   }
 
@@ -177,7 +270,8 @@ export function detailView({ client, slug, inviteBase, worldBase, onBack, onEdit
     h('div', { class: 's-row s-between' }, h('h1', { text: slug }), h('button', { class: 's-link', type: 'button', text: 'Kembali', onclick: onBack })),
     linkRow('Link undangan', links.invite), linkRow('Link dunia 3D', links.world),
     onEdit ? h('button', { class: 's-btn', type: 'button', text: 'Isi undangan (kisah, acara, galeri, ...)', onclick: onEdit }) : null,
-    msg, guestsBox, rsvpBox, giftBox);
+    h('div', { class: 's-group' }, h('h2', { text: 'Kode QR undangan' }), qrPanel({ url: links.invite, caption: 'Undangan', name: slug, onError: (m) => { msg.textContent = m; } })),
+    msg, guestsBox, rsvpBox, giftBox, dangerZone());
   const guard = (fn) => fn().catch((e) => { msg.textContent = e.message; });
   guard(renderGuests); guard(renderRsvp); guard(renderGifts);
   return root;

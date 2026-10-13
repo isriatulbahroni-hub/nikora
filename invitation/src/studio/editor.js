@@ -3,6 +3,7 @@ import { KIND_LABELS } from '../engine/config.js';
 import { safeUrl } from '../engine/content.js';
 import { zonedIso, isoToLocal } from './api.js';
 import { resizeToJpeg } from './images.js';
+import { appearanceView } from './appearance.js';
 
 /**
  * Editor "Isi undangan": satu tab per adegan. Setiap tab dibangun dari skema kecil, lalu
@@ -28,6 +29,9 @@ export const SCHEMAS = {
   penutup: [T('title', 'Judul', 80), A('body', 'Doa / ucapan penutup', 500), T('sign', 'Salam', 60), T('signature', 'Tanda tangan', 80), T('hosts', 'Tuan rumah / keluarga', 160)],
 };
 export const EDITABLE = Object.keys(SCHEMAS);
+
+/** Beri tahu editor bahwa isian berubah tanpa kejadian input asli (tambah/hapus baris, foto). */
+const notify = (el) => el.dispatchEvent(new (el.ownerDocument.defaultView.Event)('input', { bubbles: true }));
 
 const clean = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max || 200);
 
@@ -114,12 +118,12 @@ function buildRows(f, val, ctx) {
     const rm = h('button', { class: 's-btn s-small s-ghost', type: 'button', text: 'Hapus' });
     const row = h('div', { class: 's-row-card' }, ...sub.nodes, rm);
     const entry = { row, sub };
-    rm.addEventListener('click', () => { rows.splice(rows.indexOf(entry), 1); row.remove(); addBtn.disabled = false; });
+    rm.addEventListener('click', () => { rows.splice(rows.indexOf(entry), 1); row.remove(); addBtn.disabled = false; notify(box); });
     rows.push(entry);
     box.append(row);
     addBtn.disabled = rows.length >= f.maxRows;
   }
-  addBtn.addEventListener('click', () => add({}));
+  addBtn.addEventListener('click', () => { add({}); notify(box); });
   (Array.isArray(val) ? val : []).slice(0, f.maxRows).forEach(add);
   return {
     node: h('div', { class: 's-group' }, h('strong', { text: f.label }), box, addBtn),
@@ -138,7 +142,8 @@ function buildImages(f, val, ctx) {
   const msg = h('small', { class: 's-msg', role: 'status', 'aria-live': 'polite' });
   const file = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', multiple: true, class: 's-input' });
   const url = h('input', { class: 's-input', type: 'url', placeholder: 'atau tempel link foto https://...' });
-  function paint() {
+  function paint(quiet) {
+    if (!quiet) notify(list);
     list.replaceChildren(...items.map((it, i) => {
       const cap = h('input', { class: 's-input', type: 'text', maxlength: '120', placeholder: 'Keterangan foto', value: it.caption });
       cap.addEventListener('input', () => { it.caption = cap.value; });
@@ -174,32 +179,89 @@ function buildImages(f, val, ctx) {
     msg.textContent = '';
     paint();
   });
-  paint();
+  paint(true);
   return {
     node: h('div', { class: 's-group' }, h('strong', { text: `${f.label} (maks ${f.maxRows})` }), list, wrap('Unggah dari galeri ponsel', file), url, msg),
     read: () => ({ value: items.length ? items.map((i) => ({ src: i.src, caption: clean(i.caption, 120) || undefined, alt: clean(i.caption, 120) || undefined })) : undefined, errors: [] }),
   };
 }
 
-/** Halaman editor. Memuat adegan milik undangan, satu tab per jenis adegan yang bisa diisi. */
+/** Halaman editor + pratinjau langsung: undangan asli di dalam bingkai, mengikuti ketikan. */
 export function editorView({ client, slug, inviteBase, onBack }) {
-  const root = h('div', { class: 's-card' });
+  const root = h('div', { class: 's-card s-wide', 'data-pane': 'edit' });
   const msg = h('p', { class: 's-msg', role: 'status', 'aria-live': 'polite', text: 'Memuat...' });
   const tabs = h('div', { class: 's-tabs', role: 'tablist' });
   const body = h('div', { class: 's-editor' });
-  const preview = `${String(inviteBase || '').replace(/\/+$/, '')}/?slug=${encodeURIComponent(slug)}&preview=1`;
+  const base = String(inviteBase || '').replace(/\/+$/, '');
+  const frameSrc = `${base}/?slug=${encodeURIComponent(slug)}&preview=1&frame=1&to=${encodeURIComponent('Tamu Undangan')}`;
+  const link = `${base}/?slug=${encodeURIComponent(slug)}&preview=1`;
+  let frameOrigin = '*';
+  try { frameOrigin = new URL(frameSrc, location.href).origin; } catch { /* pakai '*' hanya bila alamat tak terbaca */ }
+
+  const iframe = h('iframe', { class: 's-frame', title: 'Pratinjau undangan', src: frameSrc, sandbox: 'allow-scripts allow-same-origin allow-popups', referrerpolicy: 'no-referrer' });
+  const note = h('p', { class: 's-sub s-pvnote', role: 'status', 'aria-live': 'polite' });
+  const seg = h('div', { class: 's-seg', role: 'group', 'aria-label': 'Tampilan' });
+  const setPane = (p) => {
+    root.dataset.pane = p;
+    for (const b of seg.children) b.setAttribute('aria-pressed', String(b.dataset.pane === p));
+    if (p === 'preview') sendDraft();
+  };
+  seg.append(
+    h('button', { class: 's-btn s-small s-ghost', type: 'button', 'data-pane': 'edit', text: 'Edit', onclick: () => setPane('edit') }),
+    h('button', { class: 's-btn s-small s-ghost', type: 'button', 'data-pane': 'preview', text: 'Pratinjau', onclick: () => setPane('preview') }));
+
   root.append(h('div', { class: 's-row s-between' }, h('h1', { text: 'Isi undangan' }), h('button', { class: 's-link', type: 'button', text: 'Kembali', onclick: onBack })),
-    h('p', { class: 's-sub' }, `${slug} - `, h('a', { href: preview, target: '_blank', rel: 'noopener noreferrer', text: 'Lihat hasil' })), tabs, body, msg);
+    h('p', { class: 's-sub' }, `${slug} - `, h('a', { href: link, target: '_blank', rel: 'noopener noreferrer', text: 'Buka di tab baru' })),
+    seg, tabs,
+    h('div', { class: 's-split' },
+      h('div', { class: 's-editpane' }, body, msg),
+      h('div', { class: 's-previewpane' }, note, iframe)));
+
+  /* --- pesan ke/dari bingkai pratinjau --- */
+  let ready = false;
+  let queued = null;
+  let draft = null;
+  let timer = null;
+  const post = (m) => { if (!ready) { queued = m; return; } try { iframe.contentWindow.postMessage(m, frameOrigin); } catch { /* bingkai belum siap */ } };
+  function sendDraft() { if (draft) post(draft()); }
+  const onFrame = (e) => {
+    if (!root.isConnected) { window.removeEventListener('message', onFrame); return; }
+    if (e.source !== iframe.contentWindow || (frameOrigin !== '*' && e.origin !== frameOrigin)) return;
+    const d = e.data;
+    if (!d || typeof d !== 'object') return;
+    if (d.type === 'orbit-preview:ready') { ready = true; if (queued) { const m = queued; queued = null; post(m); } else sendDraft(); }
+    if (d.type === 'orbit-preview:scene' && d.skipped) note.textContent = 'Adegan ini belum ada isinya, jadi belum tampil untuk tamu.';
+    if (d.type === 'orbit-preview:scene' && !d.skipped) note.textContent = '';
+  };
+  window.addEventListener('message', onFrame);
 
   (async () => {
-    const [inv, scenes] = await Promise.all([client.invitationOf(slug), client.scenesOf(slug)]);
-    if (!inv) throw new Error('Undangan tidak ditemukan.');
+    const [inv0, scenes] = await Promise.all([client.invitationOf(slug), client.scenesOf(slug)]);
+    if (!inv0) throw new Error('Undangan tidak ditemukan.');
+    let inv = inv0;
     const tz = (inv.extra && inv.extra.tz) || 'Asia/Jakarta';
     const byKind = new Map((scenes || []).map((s) => [s.kind, s]));
     const ctx = { client, slug, tz };
     const buttons = new Map();
 
+    function openAppearance() {
+      for (const [k, b] of buttons) b.setAttribute('aria-selected', String(k === 'tampilan'));
+      const ap = appearanceView({
+        client, slug, inv,
+        send: () => { clearTimeout(timer); timer = setTimeout(sendDraft, 300); },
+        onChange: () => { root.dataset.dirty = '1'; },
+        onSaved: (s) => { delete root.dataset.dirty; inv = { ...inv, extra: { ...(inv.extra || {}), style: s || undefined } }; },
+        setMsg: (m) => { msg.textContent = m; },
+      });
+      draft = () => ({ type: 'orbit-preview:style', style: ap.current() });
+      body.replaceChildren(ap.node);
+      msg.textContent = '';
+      note.textContent = '';
+      sendDraft();
+    }
+
     function open(kind) {
+      if (kind === 'tampilan') return openAppearance();
       for (const [k, b] of buttons) b.setAttribute('aria-selected', String(k === kind));
       const existing = byKind.get(kind) || { kind, active: true, config: {} };
       const config = existing.config && typeof existing.config === 'object' ? existing.config : {};
@@ -208,30 +270,44 @@ export function editorView({ client, slug, inviteBase, onBack }) {
       active.checked = existing.active !== false;
       const save = h('button', { class: 's-btn', type: 'submit', text: 'Simpan' });
       const el = h('form', { class: 's-grid', novalidate: true }, h('label', { class: 's-field s-check' }, active, h('span', { text: `Tampilkan adegan ${KIND_LABELS[kind] || kind}` })), ...form.nodes, save);
+      // pertahankan kunci lain di config (mis. warna dari editor lain) yang tidak ada di skema
+      const keep = Object.fromEntries(Object.entries(config).filter(([k]) => !SCHEMAS[kind].some((f) => f.key === k)));
+      draft = () => {
+        const r = form.read();
+        return { type: 'orbit-preview:draft', kind, config: { ...keep, ...r.value }, active: active.checked };
+      };
+      const onEdit = () => { root.dataset.dirty = '1'; clearTimeout(timer); timer = setTimeout(sendDraft, 450); };
+      el.addEventListener('input', onEdit);
+      el.addEventListener('change', onEdit);
       el.addEventListener('submit', async (e) => {
         e.preventDefault();
         const r = form.read();
         if (r.errors.length) { msg.textContent = r.errors[0]; return; }
-        // pertahankan kunci lain di config (mis. warna dari editor lain) yang tidak ada di skema
-        const keep = Object.fromEntries(Object.entries(config).filter(([k]) => !SCHEMAS[kind].some((f) => f.key === k)));
         save.disabled = true;
         msg.textContent = 'Menyimpan...';
         try {
           await client.saveScene(slug, kind, { config: { ...keep, ...r.value }, active: active.checked });
           byKind.set(kind, { ...existing, config: { ...keep, ...r.value }, active: active.checked });
+          delete root.dataset.dirty;
           msg.textContent = 'Tersimpan.';
         } catch (err) { msg.textContent = err.message; }
         save.disabled = false;
       });
       body.replaceChildren(el);
       msg.textContent = '';
+      note.textContent = '';
+      sendDraft();
     }
 
-    for (const kind of EDITABLE) {
-      const b = h('button', { class: 's-tab', type: 'button', role: 'tab', 'aria-selected': 'false', text: KIND_LABELS[kind] || kind, onclick: () => open(kind) });
+    for (const kind of ['tampilan', ...EDITABLE]) {
+      const b = h('button', { class: 's-tab', type: 'button', role: 'tab', 'aria-selected': 'false', text: kind === 'tampilan' ? 'Tampilan' : (KIND_LABELS[kind] || kind), onclick: () => {
+        if (root.dataset.dirty === '1' && !byKind.__warned) { /* pindah tab tidak menghapus isian: dibiarkan */ }
+        open(kind);
+      } });
       buttons.set(kind, b);
       tabs.append(b);
     }
+    setPane('edit');
     open('surat');
   })().catch((e) => { msg.textContent = e.message; });
   return root;

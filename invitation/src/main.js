@@ -16,6 +16,8 @@ import { mountGaleri } from './scenes/galeri.js';
 import { mountPenutup } from './scenes/penutup.js';
 import { mountHariAcara } from './scenes/hari.js';
 import { mountArsip } from './scenes/arsip.js';
+import { acceptPreviewMessage, applyDraft } from './preview-frame.js';
+import { loadFonts } from './engine/style.js';
 import { worldUrl } from './engine/world-link.js';
 
 registerScene('amplop', mountEnvelopeAuto);   // 3D interaktif bila perangkat mampu, jika tidak 2D
@@ -42,11 +44,37 @@ let engine = null;
 /** Tambahkan tautan ke dunia 3D (ruang bersama per undangan) di akhir adegan. */
 const withWorld = (view) => ({ ...view, worldUrl: worldUrl(view, { base: import.meta.env.VITE_WORLD_URL }) });
 
-function play(rawView) {
+function play(rawView, opts = {}) {
   const view = withWorld(rawView);
+  loadFonts(view.style);
   if (engine) engine.stop();
-  engine = createEngine({ root: app, view, env, api, onRestart: () => play(view) });
+  engine = createEngine({ root: app, view, env, api, onRestart: () => play(view), ...opts });
   engine.start();
+}
+
+/** Pratinjau di dalam Studio: terima draf dari halaman induk dan putar ulang dari adegan yang diedit. */
+function frameMode(data) {
+  const parent = window.parent;
+  let scenes = data.scenes;
+  let style = data.invitation && data.invitation.extra ? data.invitation.extra.style : null;
+  let timer = null;
+  const tell = (msg) => parent.postMessage(msg, location.origin);
+  window.addEventListener('message', (e) => {
+    const draft = acceptPreviewMessage(e, { origin: location.origin, parent });
+    if (!draft) return;
+    if (draft.type === 'style') style = draft.style;
+    else scenes = applyDraft(scenes, draft);
+    const startAt = draft.type === 'style' ? 'cover' : draft.kind;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      const inv = data.invitation || {};
+      play(buildView({ ...data, invitation: { ...inv, extra: { ...(inv.extra || {}), style } }, scenes, query: { to: query.to, tema: query.tema } }), {
+        startAt,
+        onScene: (s) => tell({ type: 'orbit-preview:scene', kind: s.kind, skipped: s.skipped }),
+      });
+    }, 250);
+  });
+  tell({ type: 'orbit-preview:ready' });
 }
 
 function fatal(message) {
@@ -60,6 +88,7 @@ async function boot() {
         url: import.meta.env.VITE_SUPABASE_URL,
         key: import.meta.env.VITE_SUPABASE_ANON_KEY,
       });
+      if (query.frame === '1' && window.parent !== window) { frameMode(data); return; }
       // ?tema= hanya berlaku untuk pratinjau editor (?preview=1), tidak untuk tamu.
       play(buildView({ ...data, query: { to: query.to, tema: query.preview ? query.tema : undefined } }));
     } catch (e) {

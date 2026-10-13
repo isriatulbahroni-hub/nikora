@@ -16,7 +16,9 @@ export function mountScreenUI({ ctl, net, doc = document, parent = doc.body }) {
     return b;
   };
 
-  const toggle = el('button', siblingClass ? `${siblingClass} sc-toggle-in-bar` : 'sc-toggle', '🎬');
+  const menuGrid = doc.querySelector('#menu-grid'); // aula: layar menjadi ubin di menu ≡
+  const toggle = menuGrid ? el('button', 'sheet-tile') : el('button', siblingClass ? `${siblingClass} sc-toggle-in-bar` : 'sc-toggle', '🎬');
+  if (menuGrid) toggle.append(el('span', 'tile-ico', '🎬'), el('span', 'tile-label', 'Layar'));
   toggle.type = 'button';
   toggle.setAttribute('aria-label', 'Layar acara');
   toggle.title = 'Layar acara';
@@ -24,7 +26,8 @@ export function mountScreenUI({ ctl, net, doc = document, parent = doc.body }) {
   panel.hidden = true;
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', 'Layar acara');
-  if (bar) bar.insertBefore(toggle, bar.querySelector('#party-button') ?? bar.querySelector('#chat-button') ?? null);
+  if (menuGrid) menuGrid.append(toggle);
+  else if (bar) bar.insertBefore(toggle, bar.querySelector('#party-button') ?? bar.querySelector('#chat-button') ?? null);
   else parent.append(toggle);
   parent.append(panel);
   toggle.addEventListener('click', () => { panel.hidden = !panel.hidden; if (!panel.hidden) render(); });

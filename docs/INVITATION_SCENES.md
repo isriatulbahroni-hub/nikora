@@ -47,3 +47,27 @@ Setelah mengubah tema jalankan `node game/scripts/sync-event-themes.mjs` (kontra
 
 ## Studio: Isi undangan
 Di detail undangan, tombol "Isi undangan" membuka editor per adegan (`studio/editor.js`). Disimpan ke `invitation_scenes.config` lewat PATCH (RLS: hanya pemilik). Foto galeri diunggah dari ponsel: dikecilkan di peramban (maks 1600 px, JPEG, EXIF/GPS hilang) lalu masuk bucket publik `media` di folder `<user id>/galeri/<slug>/`. Waktu acara diisi di zona waktu undangan (`extra.tz`) dan disimpan sebagai ISO UTC.
+
+## Pratinjau langsung di Studio
+Editor "Isi undangan" menampilkan undangan asli di dalam bingkai (`/?slug=...&preview=1&frame=1`). Di ponsel ada tombol Edit | Pratinjau; di layar lebar dua kolom berdampingan. Tiap ketikan (jeda 450 ms) dikirim ke bingkai lewat `postMessage` dan undangan diputar ulang mulai dari adegan yang sedang diedit. Adegan yang masih kosong menampilkan catatan, bukan melompat ke adegan lain.
+
+Keamanan (`src/preview-frame.js`): bingkai hanya menerima pesan dari `window.parent` dengan asal (origin) yang sama; jenis adegan harus dikenal, config berupa objek dan maks 24 KB. Teks tetap disaring `content.js` saat dirender. Halaman tamu biasa (tanpa `frame=1`) tidak mendengarkan pesan apa pun.
+
+## Keluar dari Studio
+Bilah atas Studio (setelah masuk) punya tombol **Keluar** di semua layar. Alurnya (`studio/exit.js`): tanya dulu bila ada isian belum tersimpan, hapus sesi di perangkat lalu cabut di server (`/auth/v1/logout`), lalu:
+- bila `VITE_EXIT_URL` (https) diisi, pindah ke alamat itu (meninggalkan situs);
+- bila kosong, tampil layar "Kamu sudah keluar" dan halaman mencoba menutup tab (peramban hanya mengizinkan itu untuk tab yang dibuka lewat skrip).
+Menutup tab atau pindah situs saat ada isian belum tersimpan memunculkan peringatan peramban.
+
+## Studio: identitas acara, hapus, QR
+- Formulir buat undangan menyesuaikan jenis acara (`IDENTITY` di `studio/views.js`): pernikahan = dua nama mempelai; khitanan = nama anak; ulang tahun = nama yang berulang tahun; tazkirah/tarannum/karaoke/komunitas = nama acara. Nama kedua hanya untuk pernikahan (validasi membuangnya untuk jenis lain).
+- Hapus undangan: di daftar ada mode **Pilih** (hapus banyak, ketik `HAPUS`), di detail ada "Hapus undangan" (ketik alamatnya). Memakai kebijakan RLS "pemilik hapus undangan"; tamu, RSVP, hadiah, adegan, dll. ikut terhapus (CASCADE). Foto galeri di bucket `media` tidak ikut terhapus.
+- Kode QR (`studio/qr.js`, pustaka `qrcode-generator`, dibuat di peramban): QR link undangan dan QR per tamu (link dengan `?to=<nama>`), unduh PNG 1000 px untuk dicetak, atau bagikan lewat menu bagikan ponsel.
+
+## Tampilan sendiri (warna, font, sampul)
+Tab **Tampilan** di editor. Disimpan di `invitations.extra.style` = `{ colors: {bg1,bg2,accent,accent2}, fonts: {display,body}, cover: {image,dim} }`, disaring `engine/style.js` (`sanitizeStyle`: hex saja, font dari daftar kurasi 16 font Google, foto https, `dim` 0.3-0.8).
+- **Kontras otomatis** (`deriveTokens`): dari 4 warna dihitung seluruh token tema (kertas, tinta, cahaya, segel). Tulisan di layar dijaga >= 4.5:1 (latar digelapkan/diterangkan bila perlu), tinta surat >= 7:1, segel >= 3:1; hasil penyesuaian dijelaskan di studio. Diuji dengan 300 kombinasi acak plus kasus ekstrem.
+- **3D ikut warna**: ketebalan huruf, pemandangan, dan partikel membaca token yang sama, jadi otomatis berwarna sesuai pilihan.
+- **Ambil warna dari foto** (`studio/palette.js`): palet 4 warna dihitung di peramban dari foto yang dipilih.
+- **Foto sampul**: unggah (dikecilkan, ke bucket `media`) atau link https; menggantikan pemandangan dan tokoh di cover, dengan lapisan warna latar yang bisa diatur.
+- Pratinjau langsung ikut (pesan `orbit-preview:style`). Font dimuat lewat satu `<link>` Google Fonts (`loadFonts`).

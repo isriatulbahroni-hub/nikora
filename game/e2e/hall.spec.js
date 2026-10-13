@@ -95,8 +95,19 @@ test('mobile: kontrol sentuh aula tampil dan joystick menggerakkan avatar', asyn
   await expect(page.locator('.controls')).toBeVisible();
   // Tombol duduk hanya muncul saat avatar dekat kursi kosong; di pintu masuk harus tersembunyi.
   await expect(page.getByRole('button', { name: 'Duduk atau berdiri' })).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Tepuk tangan' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Joget' })).toBeVisible();
+  // Dock bawah: obrolan, gerakan, menu. Joget/tepuk ada di lembar emoji; fitur lain di menu ≡.
+  await expect(page.locator('#dock')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Buka obrolan' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Joget' })).toBeHidden();
+  await page.getByRole('button', { name: 'Gerakan dan emoji', exact: true }).click();
+  await expect(page.getByRole('menuitem', { name: 'Joget' })).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Tepuk tangan' }).click(); // memilih gerakan menutup lembar
+  await expect(page.getByRole('menuitem', { name: 'Joget' })).toBeHidden();
+  await page.getByRole('button', { name: 'Menu', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Kembali ke pintu masuk' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Layar acara' })).toHaveCount(0); // layar acara mati secara bawaan
+  await page.getByRole('button', { name: 'Tutup menu' }).click();
+  await expect(page.getByRole('button', { name: 'Kembali ke pintu masuk' })).toBeHidden();
   await page.waitForTimeout(500);
 
   const visual = await inspectCanvas(canvas);

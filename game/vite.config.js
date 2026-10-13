@@ -1,13 +1,14 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
-// Tiga halaman: arena pertarungan (index.html), NIKORA Wedding Villa (villa.html), dan Studio Dunia (editor.html).
+// Halaman: aula (index.html), NIKORA Wedding Villa (villa.html), pembuat tautan pemilik/MC (admin.html),
+// dan Studio Dunia untuk kreator (editor.html).
 const page = (name) => fileURLToPath(new URL(name, import.meta.url));
 
 export default defineConfig({
   build: {
     rollupOptions: {
-      input: { main: page('index.html'), villa: page('villa.html'), editor: page('editor.html') },
+      input: { main: page('index.html'), villa: page('villa.html'), admin: page('admin.html'), editor: page('editor.html') },
     },
   },
 });

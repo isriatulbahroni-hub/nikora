@@ -6,6 +6,7 @@ import { mountGate, shouldShowGate } from './gate.js';
 import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
+import { modeFor } from './event-mode.js';
 import { applyPose, createAvatar, makeBubble, setAvatarConfig, setStageRing } from './avatar.js';
 import { createPartyController, stageIds } from './party.js';
 import { takeRoleKey } from './role-key.js';
@@ -28,8 +29,8 @@ const ui = {
   nameInput: $('#name-input'),
   sitButton: $('#touch-sit'),
   sitLabel: $('#sit-label'),
-  clapButton: $('#touch-clap'),
-  danceButton: $('#touch-dance'),
+  clapButton: $('#emote-clap'),
+  danceButton: $('#emote-dance'),
   muteButton: $('#mute-button'),
   chatBox: $('#chat-box'),
   chatLog: $('#chat-log'),
@@ -74,6 +75,7 @@ if (shouldShowGate(window.location.search)) {
 // Judul acara dari undangan ditampilkan sebagai sapaan di kartu masuk (tanpa menambah HUD saat bermain).
 if (eventParams.slug) {
   loadEventInfo(eventParams.slug, { url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_ANON_KEY }).then((info) => {
+    eventMode = modeFor(info?.eventType, info?.mode);
     if (!info?.title) return;
     document.title = `${info.title} · ORBIT`;
     const eyebrow = document.querySelector('#join-form .eyebrow');
@@ -92,6 +94,7 @@ let npcs = [];
 let netError = '';
 let hallScreen = null;
 let quality = null;
+let eventMode = modeFor();
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
 function applyQuality(renderer, scene, q) {
@@ -146,7 +149,7 @@ function toggleMute() {
   muted = !muted;
   ui.muteButton.setAttribute('aria-pressed', String(muted));
   ui.muteButton.setAttribute('aria-label', muted ? 'Nyalakan suara' : 'Matikan suara');
-  ui.muteButton.textContent = muted ? '×' : '♪';
+  ui.muteButton.querySelector('.tile-ico').textContent = muted ? '×' : '♪';
 }
 
 function spawnFloat(text, position, kind) {
@@ -508,6 +511,7 @@ function renderParty() {
   const body = $('#party-body');
   body.replaceChildren();
   $('#party-button').dataset.count = role === 'host' ? String(s.hands.length) : '0';
+  $('#menu-dot').hidden = !(role === 'host' && s.hands.length > 0); // titik merah di ≡: ada tamu yang angkat tangan
   if (!s.host) {
     body.append(partyRow('Belum ada MC. Jadi MC untuk membuka panggung.'), partyButton('Jadi MC', () => party.claimHost()));
     return;
@@ -658,8 +662,10 @@ function updateHud() {
   ui.sitButton.classList.toggle('is-ready', canAct);
   ui.sitLabel.textContent = me.sit !== null ? 'BERDIRI' : 'DUDUK';
   const remote = multiplayer?.view.count ?? 0;
-  ui.guests.textContent = multiplayer ? `${remote + 1}` : netError ? `offline · ${netError}` : joined ? '…' : 'offline';
-  $('#online-dot').classList.toggle('is-online', Boolean(multiplayer));
+  ui.guests.textContent = multiplayer ? (multiplayer.net.status === 'reconnecting' ? 'menyambung ulang…' : `${remote + 1}`) : netError ? `offline · ${netError}` : joined ? '…' : 'offline';
+  const reconnecting = multiplayer?.net.status === 'reconnecting';
+  $('#online-dot').classList.toggle('is-online', Boolean(multiplayer) && !reconnecting);
+  $('#online-dot').classList.toggle('is-wait', reconnecting);
 }
 
 // ---- Obrolan ----
@@ -799,7 +805,7 @@ function renderFrame(time) {
   hallScreen?.tick(now * 1000);
   if (voice && multiplayer && Math.floor(now * 10) !== lastVoiceTick) {
     lastVoiceTick = Math.floor(now * 10);
-    voice.update(me, multiplayer.net.players, stageIds(party?.state, multiplayer.net.players), VOICE_CROWD);
+    voice.update(me, multiplayer.net.players, stageIds(party?.state, multiplayer.net.players), { ...VOICE_CROWD, duck: eventMode.duck, selfId: multiplayer.net.id });
     $('#mic-button').classList.toggle('is-speaking', voice.micOn && voice.speaking().has(multiplayer.net.id));
   }
   if (party && Math.floor(now * 2) !== lastPartyTick) {
@@ -1011,7 +1017,36 @@ function openAvatarEditor(edit) {
   avatarEditor.start();
 }
 
+/** Dock bawah: lembar emoji (gerakan) dan lembar menu (≡). Hanya satu lembar terbuka; ketuk di luar atau Esc menutup. */
+function setupDock() {
+  const sheets = { emoji: { btn: $('#emoji-button'), el: $('#emoji-sheet') }, menu: { btn: $('#menu-button'), el: $('#menu-sheet') } };
+  const closeAll = () => {
+    for (const s of Object.values(sheets)) {
+      s.el.hidden = true;
+      s.btn.setAttribute('aria-expanded', 'false');
+    }
+  };
+  const toggle = (name) => {
+    const open = sheets[name].el.hidden;
+    closeAll();
+    if (open) {
+      sheets[name].el.hidden = false;
+      sheets[name].btn.setAttribute('aria-expanded', 'true');
+    }
+  };
+  sheets.emoji.btn.addEventListener('click', () => toggle('emoji'));
+  sheets.menu.btn.addEventListener('click', () => toggle('menu'));
+  $('#menu-close').addEventListener('click', closeAll);
+  for (const s of Object.values(sheets)) s.el.addEventListener('click', (e) => { if (e.target.closest('.sheet-tile')) closeAll(); });
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('.sheet, .dock')) closeAll();
+  });
+  window.addEventListener('keydown', (e) => { if (e.code === 'Escape') closeAll(); });
+  return { closeAll };
+}
+
 function setupJoin() {
+  setupDock();
   avatarEditor = createAvatarEditor({
     canvas: $('#avatar-preview'),
     tabsEl: $('#editor-tabs'),

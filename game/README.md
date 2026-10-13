@@ -37,7 +37,7 @@ Aturan suara (aula dan vila): hanya tamu yang dekat yang terdengar (penuh sampai
 Secara bawaan (tanpa pengaturan di bawah) siapa pun bisa menjadi MC. Untuk membatasinya:
 
 1. Di Vercel (Settings → Environment Variables) tambahkan `EVENT_ROLE_SECRET` berisi teks acak minimal 16 karakter (rahasia ini tidak boleh dibagikan), lalu Redeploy.
-2. Buat kunci per acara di komputermu: `EVENT_ROLE_SECRET=<rahasia yang sama> node tools/role-key.mjs <slug-acara> owner` (atau `mc`). Slug sama dengan `?e=` di tautan undangan; pakai `-` untuk ruang umum. Alat ini mencetak tautan siap pakai, mis. `https://situs.vercel.app/villa.html?e=slug&key=owner-...`.
+2. **Cara termudah (HP):** buka `https://<situs>/admin.html`, tempel rahasia induk, isi slug acara (kosongkan untuk ruang umum/uji coba), lalu ketuk Buat tautan. Halaman itu menghitung di browser (tanpa kirim apa pun ke jaringan) dan memberi tautan pemilik dan MC beserta tombol Salin dan Kirim WhatsApp. Alternatif lewat baris perintah: buat kunci per acara di komputermu: `EVENT_ROLE_SECRET=<rahasia yang sama> node tools/role-key.mjs <slug-acara> owner` (atau `mc`). Slug sama dengan `?e=` di tautan undangan; pakai `-` untuk ruang umum. Skrip ini mencetak tautan siap pakai, mis. `https://situs.vercel.app/villa.html?e=slug&key=owner-...`.
 3. Kirim tautan itu secara **privat** ke pemilik acara atau MC (jangan ke undangan umum). Kunci disimpan untuk sesi tab dan langsung dihapus dari alamat.
 
 Hasilnya: server memeriksa kunci dan menaruh peran di token LiveKit (bertanda tangan, tidak bisa dipalsukan pengguna). Pemilik acara dan MC terverifikasi **selalu terdengar di seluruh vila**, hanya mereka yang bisa membuka panggung (Jadi MC) dan menaikkan pembicara. Tamu lain tetap hanya terdengar jika berdekatan. Kunci acara A tidak berlaku di acara B. Peran hanya berlaku pada transport LiveKit (produksi), bukan server WebSocket lokal.
@@ -85,3 +85,14 @@ Posisi, aksi, chat, salaman, dan suara semuanya lewat satu ruang LiveKit (`orbit
 3. Buka situs di dua perangkat: indikator di kiri atas menyala hijau dan 🎙 muncul.
 
 Tanpa variabel itu game tetap berjalan offline. Batasan: tanpa server otoritatif, tiap klien memegang posisinya sendiri (cocok untuk ruang sosial, bukan kompetitif). `?server=ws://...` masih bisa memakai `server/` bila suatu saat dibutuhkan.
+
+## Layar acara (video di dinding) — mati secara bawaan
+Layar (papan di dinding, tombol 🎬 di menu, sinkron operator, YouTube/TikTok/video/siaran) **tidak aktif** di semua acara,
+supaya tidak mengganggu orang yang menonton acara langsung atau film. Kodenya tidak dihapus.
+Untuk acara tertentu, tuan rumah menambahkan `?layar=1` pada tautan acara (contoh: `/?acara=slug&layar=1`).
+Tanpa parameter itu tidak ada papan, tombol, pengendali, maupun lapisan CSS3D yang dibuat. Lihat `src/screen/screen-config.js`.
+Catatan: pada acara yang layarnya menyala, siapa pun bisa menjadi operator lebih dulu; pembatasan hanya untuk tuan rumah belum ada.
+
+## Tata letak antarmuka
+Dock bawah: obrolan, mikrofon, gerakan (joget, tepuk), dan menu ≡. Menu ≡ berisi suara, panggung, avatar, pintu masuk,
+dan layar (bila diaktifkan). Titik merah di ≡ muncul bila MC punya tamu yang mengangkat tangan.
