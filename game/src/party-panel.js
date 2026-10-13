@@ -26,7 +26,11 @@ export function renderPartyPanel({ doc = document, body, party, nameOf, button }
   button?.setAttribute('aria-pressed', String(role !== 'listener'));
   if (button) button.dataset.count = role === 'host' ? String(s.hands.length) : '0';
   if (!s.host) {
-    body.append(row('Belum ada MC. Jadi MC untuk membuka panggung; suaramu akan terdengar di seluruh vila.'), btn('Jadi MC', () => party.claimHost()));
+    if (party.canClaim) {
+      body.append(row('Belum ada MC. Jadi MC untuk membuka panggung; suaramu akan terdengar di seluruh vila.'), btn('Jadi MC', () => party.claimHost()));
+    } else {
+      body.append(row('Belum ada MC. Panggung dibuka oleh MC atau pemilik acara.'));
+    }
     return;
   }
   body.append(el('h4', 'MC'), row(`${nameOf(s.host)}${role === 'host' ? ' (kamu)' : ''}`));

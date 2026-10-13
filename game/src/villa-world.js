@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import { HALL_SEATING, LEVEL_HEIGHT, STAIRS, WALL_HEIGHT, WALL_THICKNESS, hallChairPositions, levelY } from './villa-layout.js';
+import { COUNTRYSIDE, HALL_SEATING, LEVEL_HEIGHT, STAIRS, WALL_HEIGHT, WALL_THICKNESS, hallChairPositions, levelY } from './villa-layout.js';
 import {
   PALM_BEND, bedGeometries, broadleafTreeGeometry, carGeometries, chairGeometry, frondGeometry, lanternPostGeometry,
   loungerGeometry, merge, palmTrunkGeometry, part, potPlantGeometry, shrubGeometry,
@@ -424,6 +424,27 @@ function buildPalms(world, parent, mats) {
   parent.add(instanced(new THREE.IcosahedronGeometry(1, 1), mats.nut, nuts));
 }
 
+/** Jalan tanah dari gerbang dan pepohonan di luar vila (posisi sama dengan penghalang di layout). */
+function buildCountryside(world, parent, mats, rand) {
+  const trees = world.props.filter((p) => p.type === 'tree');
+  const dirt = std(0xb59f7c, { roughness: 1 });
+  flat([-COUNTRYSIDE.roadHalf, world.bounds.maxZ + 0.3, COUNTRYSIDE.roadHalf, COUNTRYSIDE.roadLength], dirt, 0.02, parent);
+  const trunk = new THREE.CylinderGeometry(0.14, 0.24, 1, 7);
+  trunk.translate(0, 0.5, 0);
+  parent.add(instanced(trunk, std(0x5b4630, { roughness: 0.95 }), trees.map((t) => ({ x: t.x, z: t.z, sx: t.s, sy: t.s * 3.4, sz: t.s }))));
+  const greens = [0x3f7d3c, 0x4f8f45, 0x35703a, 0x5b9a4a];
+  const crown = new THREE.IcosahedronGeometry(1, 1);
+  parent.add(instanced(crown, std(0xffffff, { roughness: 0.9 }), trees.map((t, i) => ({
+    x: t.x, y: t.s * 3.6 + 0.9, z: t.z, sx: t.s * 1.9, sy: t.s * 1.6, sz: t.s * 1.9, ry: rand() * 6.28, color: greens[i % greens.length],
+  }))));
+  // semak rendah di sepanjang jalan supaya terasa seperti jalan desa
+  const bushes = [];
+  for (let z = world.bounds.maxZ + 8; z < 150; z += 6 + rand() * 4) {
+    for (const side of [-1, 1]) bushes.push({ x: side * (COUNTRYSIDE.roadHalf + 1.2 + rand() * 1.5), z, s: 0.5 + rand() * 0.5, color: greens[Math.floor(rand() * 4)] });
+  }
+  parent.add(instanced(new THREE.IcosahedronGeometry(1, 1), std(0xffffff, { roughness: 0.9 }), bushes.map((b) => ({ x: b.x, y: b.s * 0.6, z: b.z, sx: b.s * 1.2, sy: b.s, sz: b.s * 1.2, color: b.color }))));
+}
+
 function buildGreenery(world, parent, mats, rand) {
   const { minX, maxX, minZ, maxZ } = world.bounds;
   const palms = world.props.filter((p) => p.type === 'palm');
@@ -489,7 +510,9 @@ function buildGreenery(world, parent, mats, rand) {
     const r = 115 + rand() * 40;
     hills.push({ x: Math.cos(a) * r, y: -6, z: Math.sin(a) * r + 8, sx: 45 + rand() * 35, sy: 14 + rand() * 12, sz: 45 + rand() * 35, color: 0x6f9b66 });
   }
-  parent.add(instanced(new THREE.SphereGeometry(1, 14, 8), mats.hill, hills, { castShadow: false, receiveShadow: false }));
+  const hillMesh = instanced(new THREE.SphereGeometry(1, 14, 8), mats.hill, hills, { castShadow: false, receiveShadow: false });
+  parent.add(hillMesh);
+  return hillMesh; // bukit latar: ikut bergerak bersama pemain di luar vila supaya tetap di cakrawala
 }
 
 // ------------------------------------------------------------ properti ruang
@@ -775,7 +798,7 @@ function skyAndLight(scene, root, renderer) {
   sun.shadow.bias = -0.0003;
   sun.shadow.normalBias = 0.03;
   root.add(sun, sun.target);
-  return sun;
+  return { sun, sky };
 }
 
 /** Membangun seluruh vila ke dalam scene. Mengembalikan fungsi update (bayangan, air, percikan). */
@@ -784,7 +807,7 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
   scene.add(root);
   const rand = rng(2026);
   const anim = [];
-  const sun = skyAndLight(scene, root, renderer);
+  const { sun, sky } = skyAndLight(scene, root, renderer);
 
   const tex = {
     grass: grassTexture(), stone: stoneTexture(), path: stoneTexture({ slabs: 3, base: [206, 197, 180], seed: 22 }),
@@ -830,7 +853,7 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
 
   // tanah berlubang di kolam
   const shape = new THREE.Shape();
-  const R = 110;
+  const R = 720; // dunia terbuka: tanah sampai jauh melewati pagar (pemain boleh keluar gerbang)
   shape.moveTo(-R, -R);
   shape.lineTo(R, -R);
   shape.lineTo(R, R);
@@ -902,9 +925,10 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
   buildHall(root, mats, rand);
   buildPoolAndGarden(root, mats, anim);
   buildPalms(world, root, mats);
-  buildGreenery(world, root, mats, rand);
+  const hillMesh = buildGreenery(world, root, mats, rand);
   buildProps(groundLevel.props, root, mats, rand);
   buildLanterns(root, mats);
+  buildCountryside(world, root, mats, rand);
   buildStairs(STAIRS.filter((s) => s.from === 0), root, mats);
   const folds = []; // { level, building, group, scale, updateWalls }
   for (let level = 1; level < world.levels.length; level++) {
@@ -964,6 +988,10 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
       tex.waterNormal.offset.x += delta * 0.018;
       tex.waterNormal.offset.y += delta * 0.011;
       for (const fn of anim) fn(clock);
+      sky.position.set(px, 0, pz); // langit mengikuti pemain agar horizon tidak pernah terkejar
+      // bukit latar diam saat pemain di dalam vila, lalu ikut bergerak penuh setelah keluar (tidak pernah bisa dimasuki)
+      const follow = Math.min(1, Math.max(0, (Math.hypot(px, pz) - 40) / 25));
+      hillMesh.position.set(px * follow, 0, pz * follow);
       sun.position.set(px + SUN_DIR.x * 50, SUN_DIR.y * 50, pz + SUN_DIR.z * 50);
       sun.target.position.set(px, 0, pz);
       sun.target.updateMatrixWorld();

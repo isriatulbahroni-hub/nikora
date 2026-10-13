@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  BOUNDS, PLAYER_RADIUS, ROOMS, DOORS, SPAWN, SIT_RANGE, LEVEL_HEIGHT, LEVEL_COUNT, UPPER_ROOMS, TOWERS, STAIRS,
+  BOUNDS, WORLD_LIMIT, PLAYER_RADIUS, ROOMS, DOORS, SPAWN, SIT_RANGE, LEVEL_HEIGHT, LEVEL_COUNT, UPPER_ROOMS, TOWERS, STAIRS,
   findNearestSpot, getVillaWorld, isWalkable, levelY, moveWithCollisions, resolveMove, roomAt, sameVoiceSpace, spotPose,
 } from './villa-layout.js';
 
@@ -69,13 +69,50 @@ test('dinding menahan pemain, tembus dinding dicegah meski langkah besar', () =>
   assert.ok(r.z > -3, `menembus dinding dengan langkah besar, z=${r.z}`);
 });
 
-test('resolveMove: pusat di dalam kotak didorong keluar, batas dunia dipatuhi', () => {
+test('resolveMove: pusat di dalam kotak didorong keluar; hanya pengaman jarak sangat jauh yang membatasi', () => {
   const out = resolveMove({ x: 0, z: 9 + 3 }, PLAYER_RADIUS, world.colliders);
   assert.ok(isWalkable(out.x, out.z, PLAYER_RADIUS, world.colliders));
-  const edge = resolveMove({ x: 999, z: -999 }, PLAYER_RADIUS, world.colliders);
-  assert.equal(edge.x, BOUNDS.maxX - PLAYER_RADIUS);
-  assert.equal(edge.z, BOUNDS.minZ + PLAYER_RADIUS);
+  const far = resolveMove({ x: 9999, z: -9999 }, PLAYER_RADIUS, world.colliders);
+  assert.equal(far.x, WORLD_LIMIT.maxX - PLAYER_RADIUS);
+  assert.equal(far.z, WORLD_LIMIT.minZ + PLAYER_RADIUS);
 });
+
+test('dunia terbuka: pemain boleh keluar lewat gerbang dan berjalan jauh di luar vila', () => {
+  let p = { x: 0, z: 37 };
+  for (let i = 0; i < 40; i++) p = world.move(p, 0, 5.2 * 0.05 * 20); // 40 langkah ke selatan, 5,2 m/s
+  assert.ok(p.z > 100, `harus bisa jauh melewati pagar, z=${p.z}`);
+  assert.ok(Math.abs(p.x) < 3.3, 'lewat bukaan gerbang');
+  assert.equal(roomAt(p.x, p.z).id, 'outside');
+  // berjalan ke timur di luar: bebas, tidak ada tembok tak terlihat
+  let q = { x: 0, z: 80 };
+  for (let i = 0; i < 40; i++) q = world.move(q, 5.2, 0);
+  assert.ok(q.x > 100, `tidak terkurung di luar, x=${q.x}`);
+});
+
+test('pagar keliling padat: tidak bisa menembus pagar di luar bukaan gerbang', () => {
+  let p = { x: 20, z: 38 };
+  for (let i = 0; i < 30; i++) p = world.move(p, 0, 1);
+  assert.ok(p.z < BOUNDS.maxZ, `menembus pagar selatan, z=${p.z}`);
+  let q = { x: 30, z: 0 };
+  for (let i = 0; i < 30; i++) q = world.move(q, 2, 0);
+  assert.ok(q.x < BOUNDS.maxX, `menembus pagar timur, x=${q.x}`);
+  let r = { x: 0, z: -20 };
+  for (let i = 0; i < 30; i++) r = world.move(r, 0, -1);
+  assert.ok(r.z > BOUNDS.minZ - 1, 'tidak menembus pagar utara');
+});
+
+test('pepohonan di luar vila: deterministik, di luar kompleks, jalan tanah tidak tertutup, menghalangi jalan', () => {
+  const trees = world.props.filter((p) => p.type === 'tree');
+  assert.ok(trees.length >= 200);
+  for (const t of trees) {
+    assert.ok(t.x < BOUNDS.minX || t.x > BOUNDS.maxX || t.z < BOUNDS.minZ || t.z > BOUNDS.maxZ, 'pohon di dalam vila');
+    assert.ok(!(Math.abs(t.x) < 5 && t.z > 0 && t.z < 320), 'pohon di jalan tanah');
+  }
+  const t = trees[0];
+  const after = world.move({ x: t.x - 2, z: t.z }, 4, 0);
+  assert.ok(after.x < t.x, 'batang pohon menghalangi');
+});
+
 
 test('roomAt memberi nama lokasi yang benar', () => {
   assert.equal(roomAt(0, -10).id, 'wedding_hall');

@@ -32,7 +32,19 @@ Aksi: tombol emas di kanan bawah muncul di dekat kursi aula, kursi restoran, sof
 
 Kamera mengorbit pemain: seret (mouse/satu jari) untuk memutar 360° dan memiringkan (dari hampir sejajar tanah sampai pandangan dari atas), scroll atau cubit dua jari untuk zoom (4–70 m), putar dua jari untuk memutar. Tombol 🎥 (tombol C) berganti antara Normal, Dekat, dan Atas. Joystick dan WASD bergerak relatif terhadap arah kamera. Dinding yang menghalangi di sisi kamera diturunkan otomatis.
 
-Aturan suara (aula dan vila): hanya tamu yang dekat yang terdengar (penuh sampai 1,5 m, hening di 6 m), paling banyak 4 pembicara terdekat sekaligus, dan di vila dua orang di ruangan berbeda tidak saling dengar walau dekat. MC dan pembicara panggung dikecualikan: terdengar penuh di mana pun. Tombol 🎤 membuka panel Panggung MC (Jadi MC, angkat tangan, naikkan pembicara); pemilik acara bisa dinaikkan MC sebagai pembicara. Catatan: siapa pun bisa menjadi MC selama belum ada MC (belum ada pembatasan peran).
+Aturan suara (aula dan vila): hanya tamu yang dekat yang terdengar (penuh sampai 1,5 m, hening di 6 m), paling banyak 4 pembicara terdekat sekaligus, dan di vila dua orang di ruangan berbeda tidak saling dengar walau dekat. MC dan pembicara panggung dikecualikan: terdengar penuh di mana pun. Tombol 🎤 membuka panel Panggung MC (Jadi MC, angkat tangan, naikkan pembicara); pemilik acara bisa dinaikkan MC sebagai pembicara. ### Peran pemilik acara dan MC (dikunci server)
+
+Secara bawaan (tanpa pengaturan di bawah) siapa pun bisa menjadi MC. Untuk membatasinya:
+
+1. Di Vercel (Settings → Environment Variables) tambahkan `EVENT_ROLE_SECRET` berisi teks acak minimal 16 karakter (rahasia ini tidak boleh dibagikan), lalu Redeploy.
+2. Buat kunci per acara di komputermu: `EVENT_ROLE_SECRET=<rahasia yang sama> node tools/role-key.mjs <slug-acara> owner` (atau `mc`). Slug sama dengan `?e=` di tautan undangan; pakai `-` untuk ruang umum. Alat ini mencetak tautan siap pakai, mis. `https://situs.vercel.app/villa.html?e=slug&key=owner-...`.
+3. Kirim tautan itu secara **privat** ke pemilik acara atau MC (jangan ke undangan umum). Kunci disimpan untuk sesi tab dan langsung dihapus dari alamat.
+
+Hasilnya: server memeriksa kunci dan menaruh peran di token LiveKit (bertanda tangan, tidak bisa dipalsukan pengguna). Pemilik acara dan MC terverifikasi **selalu terdengar di seluruh vila**, hanya mereka yang bisa membuka panggung (Jadi MC) dan menaikkan pembicara. Tamu lain tetap hanya terdengar jika berdekatan. Kunci acara A tidak berlaku di acara B. Peran hanya berlaku pada transport LiveKit (produksi), bukan server WebSocket lokal.
+
+### Dunia terbuka
+
+Pemain tidak terkurung: pagar keliling vila padat tetapi gerbang selatan terbuka, dan di luar ada jalan tanah, semak, dan 240 pohon (batang pohon menghalangi). Hanya ada pengaman jarak server ±600 m dari pusat. Dinding bangunan, kolam, dan perabot tetap menghalangi. Bukit latar dan langit mengikuti pemain agar selalu di cakrawala.
 
 Belum ada: lantai 2 dan tangga, atap, interior detail (furnitur lengkap, tekstur), chat teks di vila.
 

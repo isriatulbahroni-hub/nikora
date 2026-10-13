@@ -21,7 +21,8 @@ function applyQuality(renderer, scene, q) {
   }
 }
 
-import { createPartyController, speakerIds } from './party.js';
+import { createPartyController, stageIds } from './party.js';
+import { takeRoleKey } from './role-key.js';
 import { renderPartyPanel } from './party-panel.js';
 import { VOICE_CROWD, VoiceChat } from './voice.js';
 import { buildVillaWorld } from './villa-world.js';
@@ -242,9 +243,12 @@ function createMinimap() {
     return layer;
   };
   const layers = world.levels.map((_, level) => makeLayer(level));
+  // di luar kompleks vila titik dijepit ke tepi peta (pemain boleh berjalan jauh keluar)
+  const edgeX = (x) => px(Math.min(maxX, Math.max(minX, x)));
+  const edgeZ = (z) => pz(Math.min(maxZ, Math.max(minZ, z)));
   const dot = (x, z, color, r) => {
     ctx.beginPath();
-    ctx.arc(px(x), pz(z), r, 0, Math.PI * 2);
+    ctx.arc(edgeX(x), edgeZ(z), r, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.fill();
   };
@@ -458,7 +462,7 @@ async function start() {
   }
   function applyStage() {
     if (!party || !multiplayer) return;
-    const speakers = speakerIds(party.state);
+    const speakers = stageIds(party.state, multiplayer.net.players);
     for (const p of multiplayer.net.players) {
       const group = p.id === multiplayer.net.id ? avatar : multiplayer.view.getAvatar(p.id);
       if (group) setStageRing(group, speakers.has(p.id));
@@ -476,10 +480,23 @@ async function start() {
     renderParty();
   }
 
+  // kunci pemilik/MC dari tautan privat (?key=): disimpan untuk sesi ini, dihapus dari URL, diperiksa server
+  const roleKey = takeRoleKey({
+    search: window.location.search,
+    storage: (() => {
+      try {
+        return window.sessionStorage;
+      } catch {
+        return null;
+      }
+    })(),
+    replaceSearch: (q) => window.history.replaceState(null, '', `${window.location.pathname}${q}${window.location.hash}`),
+  });
+
   // ---------- jaringan ----------
   let netStatus = 'Menyambung…'; // alasan ditampilkan bila gagal terhubung
   (gate ? gate.passed : Promise.resolve())
-    .then(() => startMultiplayer({ scene, search: window.location.search, name, world: 'villa', poseFor, onError: (m) => { netStatus = `Offline · ${m}`; } }))
+    .then(() => startMultiplayer({ scene, search: window.location.search, name, world: 'villa', poseFor, roleKey, onError: (m) => { netStatus = `Offline · ${m}`; } }))
     .then((session) => {
       multiplayer = session;
       if (!session && netStatus === 'Menyambung…') netStatus = 'Offline';
@@ -487,6 +504,9 @@ async function start() {
       setupVoice(session);
       setupParty(session);
       screen.attach(session);
+      if (session && (session.net.role === 'owner' || session.net.role === 'mc')) {
+        toast(`Masuk sebagai ${session.net.role === 'owner' ? 'pemilik acara' : 'MC'}. Suaramu terdengar di seluruh vila.`);
+      }
     })
     .catch((error) => console.warn('[multiplayer]', error));
 
@@ -545,7 +565,7 @@ async function start() {
       }
       if (voice && time - voiceTick > 100) {
         voiceTick = time;
-        voice.update(me, multiplayer.net.players, party ? speakerIds(party.state) : undefined, {
+        voice.update(me, multiplayer.net.players, stageIds(party?.state, multiplayer.net.players), {
           ...VOICE_CROWD,
           canHear: (p) => sameVoiceSpace(me, p), // beda ruangan (dibatasi dinding) tidak saling dengar
         });

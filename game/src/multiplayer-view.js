@@ -104,12 +104,12 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
 }
 
 /** Sambung ke server jika ?server= ada. Tidak pernah melempar error; game offline tetap jalan. */
-export async function startMultiplayer({ scene, search, name = 'Tamu', world, poseFor, NetClientImpl = NetClient, LiveKitImpl = LiveKitNet, useLiveKit = !import.meta.env?.VITE_DISABLE_LIVEKIT, onError = () => {} }) {
+export async function startMultiplayer({ scene, search, name = 'Tamu', world, poseFor, roleKey, NetClientImpl = NetClient, LiveKitImpl = LiveKitNet, useLiveKit = !import.meta.env?.VITE_DISABLE_LIVEKIT, onError = () => {} }) {
   // ?server=ws://... memakai server WebSocket sendiri; selain itu coba LiveKit lewat /api/token (cukup Vercel).
   const url = resolveServerUrl(search);
   if (!url && !useLiveKit) return null;
   const view = createRemotePlayers(scene, { poseFor });
-  const net = url ? new NetClientImpl() : new LiveKitImpl({ world, event: parseEventParams(search).slug });
+  const net = url ? new NetClientImpl() : new LiveKitImpl({ world, event: parseEventParams(search).slug, key: roleKey });
   net.on('state', (msg) => view.sync(msg.players, net.id));
   net.on('welcome', (msg) => view.sync(msg.players, msg.id));
   net.on('left', () => {});

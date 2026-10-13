@@ -192,9 +192,11 @@ test('dunia vila: spawn valid, dinding dan kolam menahan pemain', async () => {
   room.setInput('p2', { x: 0.3, z: -1, rot: 0, seq: 1 });
   for (let i = 0; i < 600; i++) room.step(0.05);
   assert.ok(isWalkable(p.x, p.z, PLAYER_RADIUS, world.colliders), 'berakhir di dalam penghalang');
+  Object.assign(p, { x: 0, z: 34 }); // sejajar gerbang, lalu berjalan ke selatan terus
   room.setInput('p2', { x: 0, z: 1, rot: 0, seq: 2 });
   for (let i = 0; i < 600; i++) room.step(0.05);
-  assert.ok(p.z <= world.bounds.maxZ - PLAYER_RADIUS + 1e-6);
+  assert.ok(p.z > world.bounds.maxZ, 'pemain boleh keluar gerbang vila dan berjalan di luar');
+  assert.ok(p.z <= world.limit.maxZ - PLAYER_RADIUS + 1e-6, 'pengaman jarak server');
 });
 
 test('dunia vila: duduk di kursi, tidur di kasur, tempat dipakai orang lain ditolak, terlalu jauh ditolak', async () => {

@@ -113,3 +113,48 @@ test('pengendali: tamu baru mendapat state lewat sync berkala dari MC', () => {
   host.tick();
   assert.equal(late.state.host, 'h');
 });
+
+import { stageIds, isRoleHolder } from './party.js';
+
+test('mode terbatas: hanya pemegang peran yang sah boleh membuka panggung; klaim tamu biasa diabaikan', () => {
+  const present = new Set(['guest', 'owner1', 'mc1']);
+  const canHost = (id) => id === 'owner1' || id === 'mc1';
+  assert.deepEqual(applyMessage(emptyParty(), 'guest', { k: 'host' }, present, canHost), emptyParty());
+  assert.equal(applyMessage(emptyParty(), 'mc1', { k: 'host' }, present, canHost).host, 'mc1');
+  assert.deepEqual(applyMessage(emptyParty(), 'guest', { k: 'sync', sp: ['guest'], h: [] }, present, canHost), emptyParty(), 'sync palsu dari tamu ditolak');
+  assert.equal(applyMessage(emptyParty(), 'owner1', { k: 'sync', sp: [], h: [] }, present, canHost).host, 'owner1');
+});
+
+test('mode terbuka (bawaan) tetap seperti semula: siapa pun boleh jadi MC', () => {
+  assert.equal(applyMessage(emptyParty(), 'guest', { k: 'host' }, new Set(['guest'])).host, 'guest');
+});
+
+test('pengendali: tamu tanpa hak tidak mengirim klaim MC dan canClaim false; pemegang peran bisa', () => {
+  const mkNet = (id, canHostFn) => {
+    const sent = [];
+    const h = {};
+    return { id, players: [{ id }], sent, canHost: canHostFn, on: (e, f) => ((h[e] ??= []).push(f), undefined), sendParty: (m) => sent.push(m) };
+  };
+  const guest = mkNet('g', () => false);
+  const pg = createPartyController({ net: guest });
+  assert.equal(pg.canClaim, false);
+  pg.claimHost();
+  assert.equal(guest.sent.length, 0, 'tidak ada pesan terkirim');
+  assert.equal(pg.role, 'listener');
+  const mc = mkNet('m', () => true);
+  const pm = createPartyController({ net: mc });
+  assert.equal(pm.canClaim, true);
+  pm.claimHost();
+  assert.equal(pm.role, 'host');
+  assert.equal(mc.sent.length, 1);
+});
+
+test('stageIds: MC/pembicara panggung ditambah pemilik dan MC terverifikasi (selalu terdengar)', () => {
+  const players = [{ id: 'a', role: 'owner' }, { id: 'b', role: 'mc' }, { id: 'c', role: 'guest' }, { id: 'd' }];
+  assert.deepEqual([...stageIds(emptyParty(), players)].sort(), ['a', 'b']);
+  const state = { host: 'b', speakers: ['c'], hands: [] };
+  assert.deepEqual([...stageIds(state, players)].sort(), ['a', 'b', 'c']);
+  assert.deepEqual([...stageIds(undefined, [])], []);
+  assert.equal(isRoleHolder({ role: 'owner' }), true);
+  assert.equal(isRoleHolder({ role: 'admin' }), false);
+});

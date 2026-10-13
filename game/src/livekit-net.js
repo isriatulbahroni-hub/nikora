@@ -27,8 +27,23 @@ export function describeCredFailure(cred) {
   return 'env LiveKit belum terbaca';
 }
 
+const ROLES = ['owner', 'mc'];
+
+/** Peran dari metadata peserta (diisi server saat menerbitkan token). Selain 'owner'/'mc' dianggap tamu. */
+export function roleOf(participant) {
+  try {
+    const role = JSON.parse(participant?.metadata || 'null')?.role;
+    return ROLES.includes(role) ? role : 'guest';
+  } catch {
+    return 'guest';
+  }
+}
+
 export class LiveKitNet {
-  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl, world, event } = {}) {
+  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl, world, event, key } = {}) {
+    this.key = key || undefined; // kunci pemilik/MC (diperiksa server); tamu biasa tidak punya
+    this.role = 'guest';
+    this.restricted = false; // true bila server mewajibkan peran untuk membuka panggung
     this.event = event ?? null; // slug acara dari undangan
     this.world = world; // 'villa' memakai kanal terpisah dari aula
     this.LiveKit = LiveKit;
@@ -49,6 +64,13 @@ export class LiveKitNet {
     this.timer = null;
   }
 
+  /** Boleh menjadi MC? Mode terbuka: semua; mode terbatas: hanya pemilik/MC yang terverifikasi. */
+  canHost(id) {
+    if (!this.restricted) return true;
+    const role = id === this.id ? this.role : this.remotes.get(id)?.role;
+    return ROLES.includes(role);
+  }
+
   get players() {
     return [this.self, ...this.remotes.values()];
   }
@@ -63,7 +85,7 @@ export class LiveKitNet {
   }
 
   async connect(_url, name = 'Tamu') {
-    const res = await this.fetch(this.tokenUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, world: this.world, event: this.event }) });
+    const res = await this.fetch(this.tokenUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, world: this.world, event: this.event, key: this.key }) });
     if (!res.ok) throw new Error(`api/token HTTP ${res.status}`);
     const cred = await res.json();
     if (!cred.enabled) throw new Error(describeCredFailure(cred));
@@ -72,6 +94,9 @@ export class LiveKitNet {
     const room = new Room({ adaptiveStream: true, dynacast: true, audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     this.room = room;
     this.id = cred.id;
+    this.role = ROLES.includes(cred.role) ? cred.role : 'guest';
+    this.restricted = Boolean(cred.restricted);
+    this.self.role = this.role;
     this.self.id = cred.id;
     this.self.name = name;
     room.on(RoomEvent.DataReceived, (payload, participant, _kind, topic) => {
@@ -116,7 +141,7 @@ export class LiveKitNet {
   }
 
   #blank(p) {
-    return { id: p.identity, name: p.name || 'Tamu', x: 0, z: 9.4, y: 0, rot: 0, sit: null, act: null, with: null, av: null };
+    return { id: p.identity, name: p.name || 'Tamu', x: 0, z: 9.4, y: 0, rot: 0, sit: null, act: null, with: null, av: null, role: roleOf(p) };
   }
 
   #onData(participant, payload) {
@@ -142,6 +167,7 @@ export class LiveKitNet {
         act: kind,
         with: typeof m.w === 'string' ? m.w : null,
         av: Array.isArray(m.v) ? sanitizeConfig(m.v) : prev.av,
+        role: roleOf(participant), // dari metadata token (ditandatangani server), bukan dari isi pesan
       });
       // Dua orang di kursi yang sama: id lebih besar mengalah.
       if (this.self.sit !== null && Number.isInteger(m.i) && m.i === this.self.sit && id < this.id) this.self.sit = null;

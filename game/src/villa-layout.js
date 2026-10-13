@@ -11,7 +11,11 @@ export const LEVEL_HEIGHT = 3.4; // jarak antar lantai (tinggi permukaan lantai)
 export const LEVEL_COUNT = 3;
 export const levelY = (level) => (level ?? 0) * LEVEL_HEIGHT;
 export const PLAYER_RADIUS = 0.4;
+// BOUNDS = kompleks vila (pagar keliling, peta mini). Pemain TIDAK terkurung di sini: boleh keluar lewat gerbang
+// dan menjelajah di luar. WORLD_LIMIT hanya pengaman jarak (angka tak terbatas/ulah klien), bukan tembok.
 export const BOUNDS = Object.freeze({ minX: -42, maxX: 42, minZ: -26, maxZ: 42 });
+export const WORLD_LIMIT = Object.freeze({ minX: -600, maxX: 600, minZ: -600, maxZ: 600 });
+export const GATE_HALF_WIDTH = 3.2; // bukaan gerbang di pagar selatan
 export const SPAWN = Object.freeze({ x: 0, z: 37 });
 // Layar tancap di belakang pelaminan villa (di balik dinding utara aula, z = -20). Tiang berdiri di balik dedaunan pelaminan.
 export const VILLA_SCREEN = Object.freeze({ x: 0, y: 4.3, z: -19.7, ry: 0, width: 6, height: 3.375, posts: true });
@@ -163,6 +167,7 @@ export const PROP_SPECS = Object.freeze({
   palm: { hx: 0.25, hz: 0.25 },
   sofa: { hx: 1.1, hz: 0.5 },
   lounger: { hx: 0.35, hz: 0.95 },
+  tree: { hx: 0.3, hz: 0.3 },
 });
 
 function buildProps() {
@@ -201,6 +206,51 @@ function buildProps() {
   for (const x of [20, 24, 28, 32]) props.push({ type: 'lounger', x, z: 8, level: 2 });
   for (const x of [-32, -20]) for (const z of [8, 16]) props.push({ type: 'table', x, z, level: 2 });
   return props.map((p) => ({ level: 0, ...p }));
+}
+
+/** Pagar keliling: padat (tidak bisa ditembus) kecuali bukaan gerbang di sisi selatan. */
+function perimeterColliders() {
+  const { minX, maxX, minZ, maxZ } = BOUNDS;
+  const t = 0.25;
+  const g = GATE_HALF_WIDTH;
+  return [
+    { minX: minX - t, maxX: maxX + t, minZ: minZ - t, maxZ: minZ + t },
+    { minX: minX - t, maxX: minX + t, minZ, maxZ },
+    { minX: maxX - t, maxX: maxX + t, minZ, maxZ },
+    { minX: minX - t, maxX: -g, minZ: maxZ - t, maxZ: maxZ + t },
+    { minX: g, maxX: maxX + t, minZ: maxZ - t, maxZ: maxZ + t },
+    { minX: -g - 0.4, maxX: -g + 0.4, minZ: maxZ - 0.4, maxZ: maxZ + 0.4 }, // tiang gerbang
+    { minX: g - 0.4, maxX: g + 0.4, minZ: maxZ - 0.4, maxZ: maxZ + 0.4 },
+  ];
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Pepohonan di luar vila (posisi tetap/deterministik). Jalan tanah dari gerbang ke selatan dibiarkan kosong. */
+export const COUNTRYSIDE = Object.freeze({ trees: 240, radius: 320, margin: 14, roadHalf: 3.2, roadLength: 320 });
+function buildCountryside() {
+  const rand = mulberry32(20261012);
+  const { minX, maxX, minZ, maxZ } = BOUNDS;
+  const out = [];
+  let guard = 0;
+  while (out.length < COUNTRYSIDE.trees && guard++ < 20000) {
+    const x = (rand() * 2 - 1) * COUNTRYSIDE.radius;
+    const z = (rand() * 2 - 1) * COUNTRYSIDE.radius;
+    if (x > minX - COUNTRYSIDE.margin && x < maxX + COUNTRYSIDE.margin && z > minZ - COUNTRYSIDE.margin && z < maxZ + COUNTRYSIDE.margin) continue;
+    if (Math.abs(x) < COUNTRYSIDE.roadHalf + 2 && z > 0 && z < COUNTRYSIDE.roadLength) continue; // jalan
+    if (out.some((t) => Math.hypot(t.x - x, t.z - z) < 4)) continue;
+    out.push({ level: 0, type: 'tree', x, z, s: 0.8 + rand() * 0.7 });
+  }
+  return out;
 }
 
 export const HALL_SEATING = Object.freeze({ z0: -17, z1: -6, rowStep: 1.3, xInner: 2.4, xOuter: 11.2, colStep: 0.9 });
@@ -316,7 +366,7 @@ const FIXED_COLLIDERS = Object.freeze([
   { minX: -2.4, maxX: 2.4, minZ: 25.6, maxZ: 30.4 },
 ]);
 
-export function resolveMove(pos, radius, colliders, bounds = BOUNDS) {
+export function resolveMove(pos, radius, colliders, bounds = WORLD_LIMIT) {
   let x = Math.min(bounds.maxX - radius, Math.max(bounds.minX + radius, pos.x));
   let z = Math.min(bounds.maxZ - radius, Math.max(bounds.minZ + radius, pos.z));
   for (let pass = 0; pass < 3; pass++) {
@@ -353,7 +403,7 @@ export function resolveMove(pos, radius, colliders, bounds = BOUNDS) {
   return { x, z };
 }
 
-export function moveWithCollisions(pos, dx, dz, radius, colliders, bounds = BOUNDS, maxStep = 0.1) {
+export function moveWithCollisions(pos, dx, dz, radius, colliders, bounds = WORLD_LIMIT, maxStep = 0.1) {
   const len = Math.hypot(dx, dz);
   const steps = Math.max(1, Math.ceil(len / maxStep));
   let cur = { x: pos.x, z: pos.z };
@@ -363,7 +413,7 @@ export function moveWithCollisions(pos, dx, dz, radius, colliders, bounds = BOUN
   return cur;
 }
 
-export function isWalkable(x, z, radius, colliders, bounds = BOUNDS) {
+export function isWalkable(x, z, radius, colliders, bounds = WORLD_LIMIT) {
   if (x < bounds.minX + radius || x > bounds.maxX - radius || z < bounds.minZ + radius || z > bounds.maxZ - radius) return false;
   for (const c of colliders) {
     const cx = Math.min(c.maxX, Math.max(c.minX, x));
@@ -382,6 +432,8 @@ export function roomAt(x, z, level = 0) {
   if (level === 0) {
     const zone = ZONES.find((r) => inRect(r.rect, x, z));
     if (zone) return { id: zone.id, name: zone.name, kind: zone.kind, indoor: false, level };
+    const outside = x < BOUNDS.minX || x > BOUNDS.maxX || z < BOUNDS.minZ || z > BOUNDS.maxZ;
+    if (outside) return { id: 'outside', name: 'Di luar vila', kind: 'outside', indoor: false, level };
   }
   return { id: 'grounds', name: 'Villa Grounds', kind: 'grounds', indoor: false, level };
 }
@@ -442,7 +494,7 @@ export function sameVoiceSpace(a, b) {
 let cached = null;
 export function getVillaWorld() {
   if (cached) return cached;
-  const props = buildProps();
+  const props = [...buildProps(), ...buildCountryside()];
   const levels = [];
   for (let level = 0; level < LEVEL_COUNT; level++) {
     const rooms = roomsAtLevel(level);
@@ -452,7 +504,7 @@ export function getVillaWorld() {
     const levelProps = props.filter((p) => p.level === level);
     const colliders = [...walls.map(wallToRect), ...levelProps.map(propToRect)];
     if (level === 0) {
-      colliders.push(...FIXED_COLLIDERS);
+      colliders.push(...FIXED_COLLIDERS, ...perimeterColliders());
       for (const t of TOWERS) colliders.push({ minX: t.underBlock[0], minZ: t.underBlock[1], maxX: t.underBlock[2], maxZ: t.underBlock[3] });
     }
     levels.push(Object.freeze({ level, rooms, doors, walls, props: levelProps, colliders, region: level === 0 ? null : buildRegion(level) }));
@@ -488,10 +540,10 @@ export function getVillaWorld() {
         continue;
       }
       const L = levels[level];
-      let cand = resolveMove({ x: x + sx, z: z + sz }, PLAYER_RADIUS, L.colliders, BOUNDS);
+      let cand = resolveMove({ x: x + sx, z: z + sz }, PLAYER_RADIUS, L.colliders, WORLD_LIMIT);
       if (L.region && !inRegion(L.region, cand.x, cand.z, PLAYER_RADIUS)) {
-        const tryX = resolveMove({ x: x + sx, z }, PLAYER_RADIUS, L.colliders, BOUNDS);
-        const tryZ = resolveMove({ x, z: z + sz }, PLAYER_RADIUS, L.colliders, BOUNDS);
+        const tryX = resolveMove({ x: x + sx, z }, PLAYER_RADIUS, L.colliders, WORLD_LIMIT);
+        const tryZ = resolveMove({ x, z: z + sz }, PLAYER_RADIUS, L.colliders, WORLD_LIMIT);
         if (inRegion(L.region, tryX.x, tryX.z, PLAYER_RADIUS)) cand = tryX;
         else if (inRegion(L.region, tryZ.x, tryZ.z, PLAYER_RADIUS)) cand = tryZ;
         else cand = { x, z };
@@ -508,6 +560,7 @@ export function getVillaWorld() {
   cached = Object.freeze({
     name: 'nikora-villa',
     bounds: BOUNDS,
+    limit: WORLD_LIMIT,
     spawn: SPAWN,
     radius: PLAYER_RADIUS,
     rooms: ROOMS,
@@ -523,12 +576,12 @@ export function getVillaWorld() {
     spots: buildSpots(props),
     sitRange: SIT_RANGE,
     colliders: ground.colliders,
-    constrain: (pos) => resolveMove(pos, PLAYER_RADIUS, ground.colliders, BOUNDS),
+    constrain: (pos) => resolveMove(pos, PLAYER_RADIUS, ground.colliders, WORLD_LIMIT),
     move,
     /** Apakah titik (x,z) bisa diinjak di lantai `level`? */
     canStand: (level, x, z) => {
       const L = levels[level];
-      if (!isWalkable(x, z, PLAYER_RADIUS, L.colliders, BOUNDS)) return false;
+      if (!isWalkable(x, z, PLAYER_RADIUS, L.colliders, WORLD_LIMIT)) return false;
       return !L.region || inRegion(L.region, x, z, PLAYER_RADIUS);
     },
   });

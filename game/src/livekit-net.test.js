@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LiveKitNet, describeCredFailure } from './livekit-net.js';
+import { LiveKitNet, describeCredFailure, roleOf } from './livekit-net.js';
 import { createPartyController } from './party.js';
 
 // Hub palsu yang meniru Room LiveKit: mengantar data antar-peserta dan memicu event.
@@ -16,7 +16,7 @@ function makeHub() {
           for (const other of rooms.values()) {
             if (other === this) continue;
             if (opts.destinationIdentities && !opts.destinationIdentities.includes(other.identity)) continue;
-            other.emit('data', bytes, { identity: this.identity, name: this.name }, 0, opts.topic);
+            other.emit('data', bytes, { identity: this.identity, name: this.name, metadata: this.metadata }, 0, opts.topic);
           }
         },
       };
@@ -24,11 +24,11 @@ function makeHub() {
     on(e, f) { (this.h[e] ??= []).push(f); }
     emit(e, ...a) { for (const f of this.h[e] ?? []) f(...a); }
     async connect(_url, token) {
-      [this.identity, this.name] = token.split('|');
+      [this.identity, this.name, this.metadata] = token.split('|');
       for (const other of rooms.values()) {
-        this.remoteParticipants.set(other.identity, { identity: other.identity, name: other.name });
-        other.remoteParticipants.set(this.identity, { identity: this.identity, name: this.name });
-        other.emit('pc', { identity: this.identity, name: this.name });
+        this.remoteParticipants.set(other.identity, { identity: other.identity, name: other.name, metadata: other.metadata });
+        other.remoteParticipants.set(this.identity, { identity: this.identity, name: this.name, metadata: this.metadata });
+        other.emit('pc', { identity: this.identity, name: this.name, metadata: this.metadata });
       }
       rooms.set(this.identity, this);
     }
@@ -212,4 +212,56 @@ test('describeCredFailure: pesan jelas untuk konfigurasi kurang, acara tak ada, 
   assert.equal(describeCredFailure({ enabled: false, reason: 'config', missing: ['LIVEKIT_URL', '<script>'] }), 'server belum dikonfigurasi, kurang: LIVEKIT_URL');
   assert.equal(describeCredFailure({ enabled: false, reason: 'event' }), 'undangan tidak ditemukan');
   assert.equal(describeCredFailure({ enabled: false }), 'env LiveKit belum terbaca');
+});
+
+function makeRoleNet(hub, id, name, { role, restricted }) {
+  const metadata = role ? JSON.stringify({ role }) : '';
+  const fetchImpl = async () => ({ ok: true, json: async () => ({ enabled: true, url: 'wss://x', token: `${id}|${name}|${metadata}`, id, role: role ?? 'guest', restricted }) });
+  return new LiveKitNet({ LiveKit: hub.LiveKit, fetchImpl, now: () => 1000, key: role ? `${role}-${'A'.repeat(24)}` : undefined });
+}
+
+test('roleOf: hanya owner/mc dari metadata yang sah; selain itu tamu', () => {
+  assert.equal(roleOf({ metadata: JSON.stringify({ role: 'owner' }) }), 'owner');
+  assert.equal(roleOf({ metadata: JSON.stringify({ role: 'mc' }) }), 'mc');
+  for (const meta of [undefined, '', 'bukan json', '{"role":"admin"}', '{"role":1}', 'null', '[]']) assert.equal(roleOf({ metadata: meta }), 'guest');
+  assert.equal(roleOf(null), 'guest');
+});
+
+test('LiveKitNet: peran dibaca dari token (diri sendiri) dan metadata peserta (orang lain); kunci dikirim ke /api/token', async () => {
+  const hub = makeHub();
+  const calls = [];
+  const wrap = (net) => { const orig = net.fetch; net.fetch = async (url, init) => { calls.push(JSON.parse(init.body)); return orig(url, init); }; return net; };
+  const owner = wrap(makeRoleNet(hub, 'oooo', 'Pemilik', { role: 'owner', restricted: true }));
+  const guest = makeRoleNet(hub, 'gggg', 'Tamu', { restricted: true });
+  await owner.connect('', 'Pemilik');
+  await guest.connect('', 'Tamu');
+  assert.match(calls[0].key, /^owner-A{24}$/);
+  assert.equal(owner.role, 'owner');
+  assert.equal(owner.self.role, 'owner');
+  owner.sendInput(0, 0, 0, undefined, { x: 1, z: 1 });
+  guest.sendInput(0, 0, 0, undefined, { x: 2, z: 2 });
+  assert.equal(guest.players.find((p) => p.id === 'oooo').role, 'owner', 'tamu melihat peran pemilik');
+  assert.equal(owner.players.find((p) => p.id === 'gggg').role, 'guest');
+  assert.equal(owner.canHost('oooo'), true);
+  assert.equal(owner.canHost('gggg'), false);
+  assert.equal(guest.canHost('gggg'), false);
+  assert.equal(guest.canHost('oooo'), true);
+});
+
+test('LiveKitNet: peran tidak bisa dipalsukan lewat isi pesan; mode terbuka mengizinkan siapa pun', async () => {
+  const hub = makeHub();
+  const a = makeRoleNet(hub, 'aaaa', 'A', { restricted: true });
+  const b = makeRoleNet(hub, 'bbbb', 'B', { restricted: true });
+  await a.connect('', 'A');
+  await b.connect('', 'B');
+  // pengirim mencantumkan "role" di pesan statusnya: harus diabaikan
+  a.sendInput(0, 0, 0, undefined, { x: 1, z: 1 });
+  const room = hub.rooms.get('aaaa');
+  const forged = new TextEncoder().encode(JSON.stringify({ t: 's', x: 1, z: 1, r: 0, role: 'owner' }));
+  hub.rooms.get('bbbb').emit('data', forged, { identity: 'aaaa', name: 'A', metadata: '' }, 0, 'orbit');
+  assert.ok(room);
+  assert.equal(b.players.find((p) => p.id === 'aaaa').role, 'guest');
+  const open = makeRoleNet(makeHub(), 'cccc', 'C', { restricted: false });
+  await open.connect('', 'C');
+  assert.equal(open.canHost('cccc'), true, 'tanpa EVENT_ROLE_SECRET semua boleh (perilaku lama)');
 });

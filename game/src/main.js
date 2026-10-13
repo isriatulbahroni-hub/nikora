@@ -7,7 +7,8 @@ import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
 import { applyPose, createAvatar, makeBubble, setAvatarConfig, setStageRing } from './avatar.js';
-import { createPartyController, speakerIds } from './party.js';
+import { createPartyController, stageIds } from './party.js';
+import { takeRoleKey } from './role-key.js';
 import { loadConfig, saveConfig, toWire } from './avatar-config.js';
 import { createAvatarEditor } from './avatar-editor.js';
 import { GAME_RULES, cameraRelativeMovement, normalizeMovement } from './game-rules.js';
@@ -55,6 +56,18 @@ const me = { x: START.x, z: START.z, rot: Math.PI, sit: null };
 let joined = false;
 let playerName = 'Tamu';
 const eventParams = parseEventParams(window.location.search);
+// kunci pemilik/MC dari tautan privat (?key=): disimpan untuk sesi ini, dihapus dari URL, diperiksa server
+const roleKey = takeRoleKey({
+  search: window.location.search,
+  storage: (() => {
+    try {
+      return window.sessionStorage;
+    } catch {
+      return null;
+    }
+  })(),
+  replaceSearch: (q) => window.history.replaceState(null, '', `${window.location.pathname}${q}${window.location.hash}`),
+});
 if (shouldShowGate(window.location.search)) {
   mountGate({ world: 'hall', search: window.location.search, supabase: { url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_ANON_KEY } });
 }
@@ -522,7 +535,7 @@ function renderParty() {
 
 function applyStage() {
   if (!party || !multiplayer) return;
-  const speakers = speakerIds(party.state);
+  const speakers = stageIds(party.state, multiplayer.net.players);
   for (const p of multiplayer.net.players) {
     const group = p.id === multiplayer.net.id ? playerAvatar : multiplayer.view.getAvatar(p.id);
     if (group) setStageRing(group, speakers.has(p.id));
@@ -786,7 +799,7 @@ function renderFrame(time) {
   hallScreen?.tick(now * 1000);
   if (voice && multiplayer && Math.floor(now * 10) !== lastVoiceTick) {
     lastVoiceTick = Math.floor(now * 10);
-    voice.update(me, multiplayer.net.players, party ? speakerIds(party.state) : undefined, VOICE_CROWD);
+    voice.update(me, multiplayer.net.players, stageIds(party?.state, multiplayer.net.players), VOICE_CROWD);
     $('#mic-button').classList.toggle('is-speaking', voice.micOn && voice.speaking().has(multiplayer.net.id));
   }
   if (party && Math.floor(now * 2) !== lastPartyTick) {
@@ -1042,7 +1055,7 @@ function setupJoin() {
     joined = true;
     ui.joinOverlay.hidden = true;
     sfx.join();
-    startMultiplayer({ scene, search: window.location.search, name: playerName, onError: (m) => { netError = m; } })
+    startMultiplayer({ scene, search: window.location.search, name: playerName, roleKey, onError: (m) => { netError = m; } })
       .then((session) => {
         multiplayer = session;
         if (session) {
