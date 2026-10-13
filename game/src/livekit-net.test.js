@@ -264,6 +264,7 @@ test('LiveKitNet: peran tidak bisa dipalsukan lewat isi pesan; mode terbuka meng
   const open = makeRoleNet(makeHub(), 'cccc', 'C', { restricted: false });
   await open.connect('', 'C');
   assert.equal(open.canHost('cccc'), true, 'tanpa EVENT_ROLE_SECRET semua boleh (perilaku lama)');
+});
 
 // ---- hemat data: diam tidak mengirim, jauh lebih jarang daripada dekat ----
 function countingHub() {
