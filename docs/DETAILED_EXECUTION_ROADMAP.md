@@ -26,7 +26,7 @@ Atas instruksi pengguna, proyek offline pertama kini berada di `game/` dan memak
 
 - 5 unit test gameplay lulus; production build lulus; audit dependency melaporkan 0 kerentanan.
 - Rapier ESM/WASM dan satu langkah simulasi capsule telah lolos smoke test di Node.
-- Playwright desktop/mobile belum lulus: Chromium tidak dapat diluncurkan karena container tidak memiliki `libatk-1.0.so.0`.
+- ~~Playwright desktop/mobile belum lulus (Chromium tidak dapat diluncurkan)~~ — digantikan oleh pembaruan 2026-10-12 di bawah.
 - Gate Fase 1 belum dinyatakan lulus dan gate Fase 2 belum lulus. Belum ada multiplayer, server game, akun, atau sinkronisasi online di prototipe ini.
 
 ### Pembaruan status Fase 3 (awal)
@@ -35,6 +35,24 @@ Atas instruksi pengguna, proyek offline pertama kini berada di `game/` dan memak
 - `game/src/net-client.js` adalah klien jaringan, dan `game/src/multiplayer-view.js` menampilkan pemain lain di scene (aktif lewat `?server=`). Keduanya dites terhadap server di Node (14 tes game lulus), tetapi belum diuji di browser sungguhan.
 - `game/villa.html` + `src/villa-layout.js` + `src/villa-world.js`: dunia NIKORA Wedding Villa yang bisa dijelajahi (aula, kolam, taman, restoran, dapur, spa, suite, bridal, lobby, 8 kamar tamu, parkir). Server memakai denah dan tabrakan yang sama (`WORLD=villa`). Diuji di Chromium headless: berjalan dari gerbang ke aula lewat jembatan, dinding menahan pemain, dua pemain saling melihat lewat server.
 - Vila juga punya 210 titik duduk/tidur (kursi aula, restoran, sofa lobi, 10 kasur) yang divalidasi server, serta suara dekat LiveKit dengan aturan acara ramai (jarak dekat, maks 4 pendengar, MC/pembicara dikecualikan), panel MC, dan kamera orbit penuh. Belum ada: reconnect, simulasi latency/packet loss, akun, lantai 2, chat teks di vila, uji suara dengan dua perangkat sungguhan. Gate Fase 2 dan Fase 3 belum lulus secara resmi.
+
+### Pembaruan status 2026-10-12 (audit lanjutan, commit dasar `523ce8f`)
+
+Diperiksa dengan menjalankan perintahnya, bukan dari membaca kode:
+
+- **Tes unit:** `server/` 28, `game/` 100, `invitation/` 113 — semuanya lulus; build `game/` dan `invitation/` lulus.
+- **E2E (Playwright):** 3 skenario di `game/e2e/hall.spec.js` lulus dengan Chromium headless dan render perangkat lunak (SwiftShader). Dua tes sebelumnya usang terhadap UI yang berubah (tombol duduk kini hanya muncul dekat kursi, status teks aula dihapus, pembacaan piksel WebGL tanpa `preserveDrawingBuffer`) dan sudah disesuaikan. Tes duduk kini menyisir aula sampai tombol duduk siap, bukan memakai rute tetap.
+- **CI:** `.github/workflows/ci.yml` ditambahkan (tes unit + build, lalu E2E). **Belum pernah dijalankan di GitHub**; hasil pertamanya perlu diperiksa pemilik setelah push.
+- **Avatar:** editor avatar (warna, rambut, aksesori), model manusia (Michelle) dengan animasi jalan/diam/joget, Party Room (MC, angkat tangan, suara panggung). Lihat `docs/ASSETS.md` untuk sumber dan lisensi aset.
+
+Masih terbuka (tidak diklaim selesai):
+
+- Gate Fase 1 dan Fase 2 belum disetujui pemilik.
+- Perilaku multiplayer antar perangkat nyata dan performa di HP menengah belum diukur.
+- Aturan Party Room masih ditegakkan di klien, belum di server.
+- Belum ada moderasi/laporan pengguna, verifikasi usia, atau kontrol privasi (wajib sebelum fitur orang asing atau foto wajah).
+- Gandengan tangan, lebih banyak karakter manusia, kustomisasi pakaian model manusia, foto menjadi avatar, Voice Match, dan terjemahan langsung belum dikerjakan.
+- Lisensi aset Mixamo perlu ditinjau sebelum rilis komersial.
 
 ### Aturan gate
 

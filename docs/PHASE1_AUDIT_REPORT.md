@@ -2,6 +2,12 @@
 
 > Status: **draft untuk review pemilik**. Gate Fase 1 belum disetujui. Dokumen ini hanya mencatat apa yang diverifikasi; tidak menyatakan gate lulus.
 
+> **Pembaruan 2026-10-12 (commit dasar `523ce8f`):** isi di bawah adalah audit awal 2026-10-11 dan sebagian sudah usang.
+> Yang berubah: tes unit kini `server/` 28, `game/` 100, `invitation/` 113 (semua lulus); E2E sudah bisa dijalankan dan 3 skenario lulus
+> (dua tes disesuaikan dengan UI yang berubah); workflow CI ditambahkan (belum pernah dijalankan di GitHub); `main.js` kini jauh lebih besar dan
+> proyek mencakup server, undangan, studio, vila, dan avatar. Status terkini dan daftar yang masih terbuka ada di
+> `DETAILED_EXECUTION_ROADMAP.md` bagian "Pembaruan status 2026-10-12". Gate Fase 1 tetap **belum disetujui pemilik**.
+
 ## 1.1 Inventaris repository
 - Remote: `https://github.com/isriatulbahroni-hub/nikora`, branch `main` (satu-satunya).
 - Commit saat audit: `4b27e84` (`feat(game): add offline 3D prototype`) di atas `1ba64b5` (`Initial commit`).

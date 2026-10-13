@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Tes unit dan build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            game/package-lock.json
+            invitation/package-lock.json
+      # game/ mengimpor paket 'ws' dari server/ pada sebagian tesnya, jadi server dipasang lebih dulu.
+      - run: npm ci --prefix server
+      - run: npm ci --prefix game
+      - run: npm ci --prefix invitation
+      - run: npm test --prefix server
+      - run: npm test --prefix game
+      - run: npm test --prefix invitation
+      - run: npm run build --prefix game
+      - run: npm run build --prefix invitation
+
+  e2e:
+    name: E2E (Playwright, Chromium)
+    needs: unit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            game/package-lock.json
+      - run: npm ci --prefix server
+      - run: npm ci --prefix game
+      - run: npx playwright install --with-deps chromium
+        working-directory: game
+      - run: npm run test:e2e
+        working-directory: game
+        env:
+          CI: "true"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-test-results
+          path: game/test-results
+          retention-days: 7

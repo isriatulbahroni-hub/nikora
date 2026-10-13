@@ -1,27 +1,56 @@
 import { expect, test } from '@playwright/test';
 
+/**
+ * Contoh warna kanvas WebGL. Kanvas dibaca di dalam requestAnimationFrame (setelah game menggambar pada frame yang sama)
+ * lewat drawImage, karena buffer WebGL tanpa preserveDrawingBuffer sudah kosong setelah frame dikomposit.
+ */
 async function inspectCanvas(canvas) {
-  return canvas.evaluate((element) => {
-    const gl = element.getContext('webgl2');
-    if (!gl) return { webgl: false, width: element.width, height: element.height, colors: 0 };
+  return canvas.evaluate((element) => new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      const webgl = element.getContext('webgl2') !== null;
+      const probe = document.createElement('canvas');
+      probe.width = element.width;
+      probe.height = element.height;
+      const ctx = probe.getContext('2d');
+      ctx.drawImage(element, 0, 0);
+      const colors = new Set();
+      for (const xf of [0.12, 0.32, 0.5, 0.68, 0.88]) {
+        for (const yf of [0.12, 0.32, 0.5, 0.68, 0.88]) {
+          const x = Math.min(element.width - 1, Math.floor(element.width * xf));
+          const y = Math.min(element.height - 1, Math.floor(element.height * yf));
+          colors.add(Array.from(ctx.getImageData(x, y, 1, 1).data).join(','));
+        }
+      }
+      resolve({ webgl, width: element.width, height: element.height, colors: colors.size });
+    });
+  }));
+}
 
-    gl.finish();
-    const colors = new Set();
-    const pixel = new Uint8Array(4);
-    const fractions = [0.12, 0.32, 0.5, 0.68, 0.88];
-    for (const xFraction of fractions) {
-      for (const yFraction of fractions) {
-        const x = Math.min(element.width - 1, Math.floor(element.width * xFraction));
-        const y = Math.min(element.height - 1, Math.floor(element.height * yFraction));
-        gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-        colors.add(`${pixel[0]},${pixel[1]},${pixel[2]},${pixel[3]}`);
+/**
+ * Tombol duduk menandai 'is-ready' hanya bila avatar dekat kursi kosong atau sedang duduk.
+ * Tombol ditahan sambil memeriksa tombol duduk: gerak game dibatasi per frame, jadi di render perangkat lunak (CI)
+ * jarak tempuh per detik nyata bisa kecil. Yang dibatasi adalah waktu tunggu, bukan jumlah langkah.
+ */
+async function walkUntilNearSeat(page) {
+  const ready = () => page.locator('#touch-sit').evaluate((el) => el.classList.contains('is-ready'));
+  const plan = [['KeyD', 14_000], ['KeyW', 10_000], ['KeyA', 20_000], ['KeyS', 12_000]];
+  for (const [key, budget] of plan) {
+    await page.keyboard.down(key);
+    const until = Date.now() + budget;
+    while (Date.now() < until) {
+      await page.waitForTimeout(200);
+      if (await ready()) {
+        await page.keyboard.up(key);
+        return true;
       }
     }
-    return { webgl: true, width: element.width, height: element.height, colors: colors.size };
-  });
+    await page.keyboard.up(key);
+  }
+  return false;
 }
 
 test('desktop: aula tampil, masuk dengan nama, berjalan, duduk, dan berdiri', async ({ page }) => {
+  test.setTimeout(120_000);
   const pageErrors = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -39,22 +68,17 @@ test('desktop: aula tampil, masuk dengan nama, berjalan, duduk, dan berdiri', as
   await page.locator('#name-input').fill('Tamu Uji');
   await page.getByRole('button', { name: /Masuk/ }).click();
   await expect(page.locator('#join-overlay')).toBeHidden();
-  await expect(page.locator('#hall-status')).toHaveText('BERJALAN');
+  await expect(page.locator('#sit-label')).toHaveText('DUDUK'); // HUD hidup (status teks lama sudah dihapus dari UI)
   await page.screenshot({ path: '/tmp/orbit-hall-desktop.png' });
 
-  // Dari pintu masuk berjalan ke arah meja kanan bawah (x=6, z=7.6) lalu duduk.
-  await page.keyboard.down('KeyD');
-  await page.waitForTimeout(900);
-  await page.keyboard.up('KeyD');
-  await page.keyboard.down('KeyW');
-  await page.waitForTimeout(350);
-  await page.keyboard.up('KeyW');
-  await expect(page.locator('#hall-status')).toContainText('KURSI KOSONG');
+  // Berjalan menyisir aula sampai dekat kursi kosong (tata letak dan kamera bisa berubah, jadi jangan memakai rute tetap).
+  expect(await walkUntilNearSeat(page)).toBe(true);
+  await expect(page.locator('#touch-sit')).toHaveClass(/is-ready/); // dekat kursi kosong
   await page.keyboard.press('KeyE');
-  await expect(page.locator('#hall-status')).toContainText('DUDUK · MEJA');
+  await expect(page.locator('#sit-label')).toHaveText('BERDIRI');
   await page.keyboard.press('Space'); // tepuk tangan tidak boleh error
   await page.keyboard.press('KeyE');
-  await expect(page.locator('#hall-status')).not.toContainText('DUDUK · MEJA');
+  await expect(page.locator('#sit-label')).toHaveText('DUDUK');
   expect(pageErrors).toEqual([]);
 });
 
@@ -69,8 +93,10 @@ test('mobile: kontrol sentuh aula tampil dan joystick menggerakkan avatar', asyn
   await page.locator('#name-input').fill('Tamu HP');
   await page.getByRole('button', { name: /Masuk/ }).click();
   await expect(page.locator('.controls')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Duduk atau berdiri' })).toBeVisible();
+  // Tombol duduk hanya muncul saat avatar dekat kursi kosong; di pintu masuk harus tersembunyi.
+  await expect(page.getByRole('button', { name: 'Duduk atau berdiri' })).toBeHidden();
   await expect(page.getByRole('button', { name: 'Tepuk tangan' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Joget' })).toBeVisible();
   await page.waitForTimeout(500);
 
   const visual = await inspectCanvas(canvas);
