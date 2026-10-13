@@ -41,3 +41,38 @@ test('buildLink: format tautan vila/aula, dengan dan tanpa acara; peran tidak di
   await assert.rejects(() => buildLink({ origin: 'https://x', event: '', role: 'admin', secret: SECRET }));
   await assert.rejects(() => deriveRoleKeyWeb(SECRET, '', 'owner', null), /WebCrypto/);
 });
+
+import { generateSecret, interpretServerCheck, MIN_SECRET } from './role-link.js';
+
+test('generateSecret: 32 karakter dari alfabet aman, berbeda tiap panggilan, memenuhi panjang minimum', () => {
+  const a = generateSecret();
+  const b = generateSecret();
+  assert.equal(a.length, 32);
+  assert.match(a, /^[A-HJ-NP-Za-km-z2-9]{32}$/, 'tanpa huruf mirip');
+  assert.notEqual(a, b);
+  assert.ok(a.length >= MIN_SECRET);
+  assert.equal(generateSecret(48).length, 48);
+  assert.throws(() => generateSecret(32, {}), /WebCrypto/);
+});
+
+test('generateSecret: sebaran merata (tanpa bias modulo yang mencolok)', () => {
+  const counts = new Map();
+  for (let i = 0; i < 400; i++) for (const ch of generateSecret(32)) counts.set(ch, (counts.get(ch) ?? 0) + 1);
+  const values = [...counts.values()];
+  assert.equal(counts.size, 57, 'semua huruf alfabet muncul');
+  assert.ok(Math.max(...values) / Math.min(...values) < 1.5, 'sebaran kira-kira merata');
+});
+
+test('interpretServerCheck: diterima, ditolak, belum terpasang, server belum siap', () => {
+  assert.equal(interpretServerCheck({ enabled: true, restricted: true, role: 'owner' }, 'owner').ok, true);
+  assert.equal(interpretServerCheck({ enabled: true, restricted: true, role: 'mc' }, 'mc').ok, true);
+  const wrong = interpretServerCheck({ enabled: true, restricted: true, role: 'guest' }, 'owner');
+  assert.equal(wrong.ok, false);
+  assert.match(wrong.message, /berbeda dengan EVENT_ROLE_SECRET/);
+  const open = interpretServerCheck({ enabled: true, restricted: false, role: 'guest' }, 'owner');
+  assert.equal(open.ok, false);
+  assert.match(open.message, /belum membaca EVENT_ROLE_SECRET/);
+  assert.match(interpretServerCheck({ enabled: false }, 'owner').message, /belum siap/);
+  assert.match(interpretServerCheck(null, 'mc').message, /belum siap/);
+  assert.equal(interpretServerCheck({ enabled: true, restricted: true, role: 'owner' }, 'mc').ok, false, 'peran berbeda dari yang diharapkan');
+});

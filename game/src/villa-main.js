@@ -410,7 +410,7 @@ async function start() {
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => {
       toastEl.style.display = 'none';
-    }, 3500);
+    }, Math.max(3500, text.length * 70)); // pesan panjang tampil lebih lama
   };
   const micBtn = $('mic-button');
   const toggleMic = async () => {
@@ -507,6 +507,14 @@ async function start() {
       setupVoice(session);
       setupParty(session);
       screen.attach(session);
+      if (session && roleKey && session.net.role === 'guest') {
+        // kunci ada di tautan tetapi server tidak mengenalinya: jangan diam saja
+        toast(
+          session.net.restricted
+            ? 'Kunci pemilik/MC tidak dikenali server. Buat ulang tautan di /admin.html dengan rahasia yang sama persis dengan EVENT_ROLE_SECRET di Vercel (gunakan tombol Periksa di server).'
+            : 'Server belum membaca EVENT_ROLE_SECRET, jadi peran belum aktif. Pasang di Vercel lalu Redeploy.',
+        );
+      }
       if (session && (session.net.role === 'owner' || session.net.role === 'mc')) {
         toast(`Masuk sebagai ${session.net.role === 'owner' ? 'pemilik acara' : 'MC'}. Suaramu terdengar di seluruh vila.`);
       }
