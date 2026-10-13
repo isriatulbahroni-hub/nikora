@@ -100,3 +100,50 @@ test('hadiah: rekening tampil, salin nomor memakai clipboard', async () => {
   assert.equal(copied, '123456');
   assert.equal(root.querySelector('.g-copy').textContent, 'Tersalin');
 });
+
+test('kartu bank: rasio kartu, nomor dikelompokkan 4 digit, nilai salin tetap asli, label aksesibel', async () => {
+  const { formatAccountNo, bankCard } = await import('../src/scenes/guest.js');
+  assert.equal(formatAccountNo('1234567890'), '1234 5678 90');
+  assert.equal(formatAccountNo('081234567890'), '0812 3456 7890');
+  assert.equal(formatAccountNo('12345'), '12345');
+  assert.equal(formatAccountNo('ABC-123'), 'ABC-123');
+  assert.equal(formatAccountNo(null), '');
+
+  const card = bankCard({ kind: 'bank', label: 'BCA', accountName: 'Dimas Pratama', accountNo: '1234567890' });
+  assert.equal(card.querySelector('.bc-number').textContent, '1234 5678 90');
+  assert.equal(card.querySelector('.bc-holder').textContent, 'Dimas Pratama');
+  assert.equal(card.querySelector('.bc-tag').textContent, 'TRANSFER BANK');
+  assert.equal(card.getAttribute('aria-label'), 'BCA, atas nama Dimas Pratama, nomor 1234567890');
+  assert.equal(card.querySelector('.bc-contactless').namespaceURI, 'http://www.w3.org/2000/svg');
+});
+
+test('kartu bank: teks dari data tidak pernah jadi HTML; QRIS tanpa nomor tidak punya tombol salin', async () => {
+  const { root, view } = mk('rani-dimas');
+  mountGifts(root, { view, api: { url: 'https://x.supabase.co', key: 'k', fetchImpl: okFetch([
+    { kind: 'bank', label: '<img src=x onerror=alert(1)>', account_name: '<b>x</b>', account_no: '123456' },
+    { kind: 'qris', label: 'QRIS', account_name: null, account_no: null },
+  ]) } });
+  await tick(); await tick();
+  assert.equal(root.querySelector('.bank-card img'), null);
+  assert.equal(root.querySelector('.bank-card b'), null);
+  assert.match(root.querySelector('.bc-brand').textContent, /<img/);
+  assert.equal(root.querySelectorAll('.bank-card').length, 2);
+  assert.equal(root.querySelectorAll('.g-copy').length, 1);
+  assert.equal(root.querySelector('[data-kind=qris] .bc-number').textContent, 'Pindai kode QRIS');
+});
+
+test('kartu bank: miring mengikuti pointer, kembali saat lepas; mode kurangi gerak tidak memasang efek', async () => {
+  const { bankCard } = await import('../src/scenes/guest.js');
+  const card = bankCard({ kind: 'bank', label: 'BCA', accountNo: '1234567890' });
+  card.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 126 });
+  card.dispatchEvent(new dom.window.MouseEvent('pointermove', { clientX: 200, clientY: 0 }));
+  assert.equal(card.style.getPropertyValue('--ry'), '7.00deg');
+  assert.equal(card.style.getPropertyValue('--rx'), '7.00deg');
+  card.dispatchEvent(new dom.window.Event('pointerleave'));
+  assert.equal(card.style.getPropertyValue('--ry'), '');
+
+  const still = bankCard({ kind: 'bank', label: 'BCA', accountNo: '1234567890' }, { reduced: true });
+  still.getBoundingClientRect = () => ({ left: 0, top: 0, width: 200, height: 126 });
+  still.dispatchEvent(new dom.window.MouseEvent('pointermove', { clientX: 200, clientY: 0 }));
+  assert.equal(still.style.getPropertyValue('--ry'), '');
+});

@@ -11,7 +11,61 @@ const DEMO_WISHES = [
   { name: 'Keluarga Pak Ahmad', wish: 'Semoga sakinah, mawaddah, warahmah.' },
   { name: 'Sinta', wish: 'Bahagia selalu, sampai jumpa di dunia pernikahan!' },
 ];
-const DEMO_GIFTS = [{ kind: 'bank', label: 'Bank Contoh', accountName: 'Nama Contoh', accountNo: '0000000000', qrPath: null }];
+const DEMO_GIFTS = [
+  { kind: 'bank', label: 'Bank Contoh', accountName: 'Nama Contoh', accountNo: '1234567890', qrPath: null },
+  { kind: 'ewallet', label: 'E-Wallet Contoh', accountName: 'Nama Contoh', accountNo: '081234567890', qrPath: null },
+];
+
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const KIND_TAG = { bank: 'TRANSFER BANK', ewallet: 'E-WALLET', qris: 'QRIS' };
+
+/** Nomor rekening dikelompokkan per 4 digit agar terbaca seperti kartu. Nilai asli (untuk salin) tidak diubah. */
+export function formatAccountNo(no) {
+  const raw = String(no || '').trim();
+  return /^\d{8,}$/.test(raw) ? raw.replace(/(\d{4})(?=\d)/g, '$1 ') : raw;
+}
+
+function contactless() {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('class', 'bc-contactless');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const d of ['M8 7a7 7 0 0 1 0 10', 'M12 4.5a11 11 0 0 1 0 15', 'M16 2a15 15 0 0 1 0 20']) {
+    const path = document.createElementNS(SVG_NS, 'path');
+    path.setAttribute('d', d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+/** Kartu bank penuh: rasio kartu asli (85,6 x 54 mm), chip emas, nomor timbul, warna dari tema. */
+export function bankCard(g, { reduced = false } = {}) {
+  const number = formatAccountNo(g.accountNo);
+  const card = h('div', {
+    class: 'bank-card', 'data-kind': g.kind, role: 'group',
+    'aria-label': [g.label, g.accountName ? `atas nama ${g.accountName}` : null, g.accountNo ? `nomor ${g.accountNo}` : null].filter(Boolean).join(', '),
+  },
+  h('div', { class: 'bc-top' }, h('strong', { class: 'bc-brand', text: g.label }), h('span', { class: 'bc-tag', text: KIND_TAG[g.kind] || 'HADIAH' })),
+  h('div', { class: 'bc-mid' }, h('span', { class: 'bc-chip', 'aria-hidden': 'true' }), contactless()),
+  number ? h('div', { class: 'bc-number', text: number }) : h('div', { class: 'bc-number bc-number-qris', text: 'Pindai kode QRIS' }),
+  h('div', { class: 'bc-bottom' }, h('span', { class: 'bc-holder-label', text: 'ATAS NAMA' }), h('span', { class: 'bc-holder', text: g.accountName || '' })));
+  if (!reduced) {
+    // Miring mengikuti jari/kursor: efek kartu fisik yang berkilau.
+    card.addEventListener('pointermove', (e) => {
+      const r = card.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      const x = (e.clientX - r.left) / r.width - 0.5;
+      const y = (e.clientY - r.top) / r.height - 0.5;
+      card.style.setProperty('--ry', `${(x * 14).toFixed(2)}deg`);
+      card.style.setProperty('--rx', `${(-y * 14).toFixed(2)}deg`);
+    });
+    const reset = () => { card.style.removeProperty('--rx'); card.style.removeProperty('--ry'); };
+    card.addEventListener('pointerleave', reset);
+    card.addEventListener('pointercancel', reset);
+  }
+  return card;
+}
 
 const isDemo = (view) => !view.slug || view.slug === 'demo';
 
@@ -132,10 +186,8 @@ export function mountGifts(container, ctx) {
     if (!alive) return;
     if (!gifts.length) { f.finish(); return; }
     f.stage.hidden = false;
-    list.replaceChildren(...gifts.map((g) => h('li', {},
-      h('strong', { text: g.label }),
-      g.accountName ? h('span', { text: g.accountName }) : null,
-      g.accountNo ? h('code', { text: g.accountNo }) : null,
+    list.replaceChildren(...gifts.map((g) => h('li', { class: 'g-giftitem' },
+      bankCard(g, { reduced: !!(ctx.env && ctx.env.reduced) }),
       g.accountNo ? h('button', { type: 'button', class: 'g-copy', text: 'Salin nomor', onclick: (e) => copy(g.accountNo, e.currentTarget) }) : null)));
   };
   const load = isDemo(view) ? Promise.resolve(DEMO_GIFTS) : loadGifts(view.slug, ctx.api || {});
