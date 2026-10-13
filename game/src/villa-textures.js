@@ -41,15 +41,15 @@ function wrapped(w, h, x, y, margin, draw) {
 const rgb = (r, g, b, a = 1) => `rgba(${r | 0},${g | 0},${b | 0},${a})`;
 
 export function grassTexture() {
-  const size = 512;
+  const size = 1024;
   const rand = rng(11);
   const [canvas, ctx] = surface(size);
   ctx.fillStyle = '#4d8a3b';
   ctx.fillRect(0, 0, size, size);
-  for (let i = 0; i < 46; i++) {
+  for (let i = 0; i < 70; i++) {
     const x = rand() * size;
     const y = rand() * size;
-    const r = 30 + rand() * 70;
+    const r = 50 + rand() * 130;
     const dark = rand() < 0.5;
     wrapped(size, size, x, y, r, (px, py) => {
       const g = ctx.createRadialGradient(px, py, 0, px, py, r);
@@ -61,10 +61,10 @@ export function grassTexture() {
   }
   const greens = ['#2f6a2a', '#3f7d33', '#5a9a43', '#74ad55', '#8cbc66', '#355f26'];
   ctx.lineCap = 'round';
-  for (let i = 0; i < 14000; i++) {
+  for (let i = 0; i < 52000; i++) {
     const x = rand() * size;
     const y = rand() * size;
-    const len = 4 + rand() * 7;
+    const len = 5 + rand() * 9;
     const angle = -Math.PI / 2 + (rand() - 0.5) * 1.3;
     ctx.strokeStyle = greens[(rand() * greens.length) | 0];
     ctx.globalAlpha = 0.35 + rand() * 0.4;
@@ -80,8 +80,8 @@ export function grassTexture() {
   return finish(canvas);
 }
 
-export function stoneTexture({ slabs = 4, base = [214, 202, 178], seed = 21 } = {}) {
-  const size = 512;
+export function stoneTexture({ slabs = 4, base = [196, 183, 158], seed = 21 } = {}) {
+  const size = 1024;
   const cell = size / slabs;
   const rand = rng(seed);
   const [canvas, ctx] = surface(size);
@@ -97,13 +97,13 @@ export function stoneTexture({ slabs = 4, base = [214, 202, 178], seed = 21 } = 
       ctx.fillRect(c * cell, r * cell, cell, cell);
     }
   }
-  for (let i = 0; i < 5000; i++) {
+  for (let i = 0; i < 20000; i++) {
     const dark = rand() < 0.55;
     ctx.fillStyle = dark ? 'rgba(70,60,45,0.10)' : 'rgba(255,255,255,0.10)';
     ctx.fillRect(rand() * size, rand() * size, 1 + rand() * 2, 1 + rand() * 2);
   }
   ctx.strokeStyle = 'rgba(96,86,70,0.85)';
-  ctx.lineWidth = 3;
+  ctx.lineWidth = 5;
   for (let i = 0; i <= slabs; i++) {
     ctx.beginPath();
     ctx.moveTo(i * cell, 0);
@@ -116,37 +116,37 @@ export function stoneTexture({ slabs = 4, base = [214, 202, 178], seed = 21 } = 
 }
 
 export function parquetTexture({ seed = 31 } = {}) {
-  const size = 512;
+  const size = 1024;
   const columns = 8;
   const plankW = size / columns;
   const rand = rng(seed);
   const palette = [[168, 120, 78], [152, 105, 66], [182, 134, 92], [140, 96, 60], [171, 124, 84]];
   const [canvas, ctx] = surface(size);
   for (let c = 0; c < columns; c++) {
-    const offset = Math.floor(rand() * 4) * 64;
+    const offset = Math.floor(rand() * 4) * 128;
     for (let seg = 0; seg < 2; seg++) {
-      const y0 = (offset + seg * 256) % size;
+      const y0 = (offset + seg * 512) % size;
       const base = palette[(rand() * palette.length) | 0];
       const v = (rand() - 0.5) * 16;
       const x = c * plankW;
       const draw = (yy) => {
         ctx.fillStyle = rgb(base[0] + v, base[1] + v, base[2] + v);
-        ctx.fillRect(x, yy, plankW, 256);
-        for (let g = 0; g < 22; g++) {
+        ctx.fillRect(x, yy, plankW, 512);
+        for (let g = 0; g < 44; g++) {
           ctx.strokeStyle = rgba2(rand() < 0.5 ? [90, 56, 30] : [210, 165, 120], 0.10 + rand() * 0.12);
           ctx.lineWidth = 0.6 + rand() * 1.2;
           const gx = x + 3 + rand() * (plankW - 6);
           ctx.beginPath();
           ctx.moveTo(gx, yy);
-          ctx.bezierCurveTo(gx + (rand() - 0.5) * 6, yy + 85, gx + (rand() - 0.5) * 6, yy + 170, gx + (rand() - 0.5) * 4, yy + 256);
+          ctx.bezierCurveTo(gx + (rand() - 0.5) * 8, yy + 170, gx + (rand() - 0.5) * 8, yy + 340, gx + (rand() - 0.5) * 5, yy + 512);
           ctx.stroke();
         }
         ctx.strokeStyle = 'rgba(40,24,12,0.65)';
         ctx.lineWidth = 2;
-        ctx.strokeRect(x, yy, plankW, 256);
+        ctx.strokeRect(x, yy, plankW, 512);
       };
       draw(y0);
-      if (y0 + 256 > size) draw(y0 - size);
+      if (y0 + 512 > size) draw(y0 - size);
     }
   }
   return finish(canvas);
@@ -157,7 +157,7 @@ function rgba2([r, g, b], a) {
 }
 
 export function marbleTexture({ checker = false, seed = 41 } = {}) {
-  const size = 512;
+  const size = 1024;
   const tiles = 2;
   const cell = size / tiles;
   const rand = rng(seed);
@@ -186,7 +186,7 @@ export function marbleTexture({ checker = false, seed = 41 } = {}) {
       ctx.restore();
     }
   }
-  for (let i = 0; i < 3000; i++) {
+  for (let i = 0; i < 12000; i++) {
     ctx.fillStyle = rand() < 0.5 ? 'rgba(255,255,255,0.12)' : 'rgba(110,100,90,0.08)';
     ctx.fillRect(rand() * size, rand() * size, 1 + rand() * 2, 1 + rand() * 2);
   }
@@ -340,4 +340,79 @@ export function rugTexture(main = '#8c2f39', accent = '#e8d9b0') {
   ctx.arc(size / 2, size / 2, 9, 0, Math.PI * 2);
   ctx.fill();
   return finish(canvas, { repeat: false });
+}
+
+/** Plester dinding: dasar hampir putih berbintik halus + goresan kuas; diwarnai per instance dan dipetakan di ruang dunia. */
+export function plasterTexture() {
+  const size = 512;
+  const rand = rng(91);
+  const [canvas, ctx] = surface(size);
+  ctx.fillStyle = '#ece6da';
+  ctx.fillRect(0, 0, size, size);
+  for (let i = 0; i < 60; i++) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const r = 40 + rand() * 110;
+    wrapped(size, size, x, y, r, (px, py) => {
+      const g = ctx.createRadialGradient(px, py, 0, px, py, r);
+      const dark = rand() < 0.5;
+      g.addColorStop(0, dark ? 'rgba(120,108,92,0.055)' : 'rgba(255,255,255,0.08)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(px - r, py - r, r * 2, r * 2);
+    });
+  }
+  for (let i = 0; i < 9000; i++) {
+    ctx.fillStyle = rand() < 0.5 ? 'rgba(110,98,84,0.07)' : 'rgba(255,255,255,0.10)';
+    ctx.fillRect(rand() * size, rand() * size, 1 + rand() * 2, 1 + rand() * 2);
+  }
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 140; i++) {
+    ctx.strokeStyle = rand() < 0.5 ? 'rgba(120,108,92,0.03)' : 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 6 + rand() * 14;
+    const x = rand() * size;
+    const y = rand() * size;
+    const a = rand() * Math.PI;
+    wrapped(size, size, x, y, 60, (px, py) => {
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + Math.cos(a) * 60, py + Math.sin(a) * 60);
+      ctx.stroke();
+    });
+  }
+  return finish(canvas);
+}
+
+/** Genteng tanah liat: baris gelombang dengan variasi warna per genteng. */
+export function roofTileTexture() {
+  const size = 512;
+  const rand = rng(97);
+  const [canvas, ctx] = surface(size);
+  const rows = 16;
+  const cols = 8;
+  const h = size / rows;
+  const w = size / cols;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = c * w + (r % 2 ? w / 2 : 0);
+      const v = (rand() - 0.5) * 34;
+      const base = [168 + v, 82 + v * 0.55, 56 + v * 0.4];
+      for (const dx of [0, -size]) {
+        const g = ctx.createLinearGradient(0, r * h, 0, (r + 1) * h);
+        g.addColorStop(0, rgb(base[0] * 0.78, base[1] * 0.78, base[2] * 0.78));
+        g.addColorStop(0.55, rgb(base[0], base[1], base[2]));
+        g.addColorStop(1, rgb(base[0] * 0.62, base[1] * 0.62, base[2] * 0.62));
+        ctx.fillStyle = g;
+        ctx.fillRect(x + dx, r * h, w, h);
+        ctx.strokeStyle = 'rgba(52,26,16,0.55)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + dx, r * h, w, h);
+      }
+    }
+  }
+  for (let i = 0; i < 3500; i++) {
+    ctx.fillStyle = rand() < 0.5 ? 'rgba(40,24,16,0.10)' : 'rgba(255,230,200,0.07)';
+    ctx.fillRect(rand() * size, rand() * size, 1 + rand() * 2, 1 + rand() * 2);
+  }
+  return finish(canvas);
 }

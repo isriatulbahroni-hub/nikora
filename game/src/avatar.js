@@ -16,8 +16,8 @@ export function makeLabel(text) {
   ctx.fillStyle = '#fff';
   ctx.fillText(text, 128, 42);
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true }));
-  sprite.scale.set(2, 0.5, 1);
-  sprite.position.y = 2.05;
+  sprite.scale.set(1.0, 0.25, 1);
+  sprite.position.y = 2.0;
   return sprite;
 }
 
