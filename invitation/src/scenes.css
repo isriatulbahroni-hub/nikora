@@ -264,3 +264,6 @@ a.pg-cta { display: inline-block; text-decoration: none; text-align: center; }
   .sc-layer { animation: none; transition: none; }
   .ks-inner, .gl-item, .ks-dot { transition: none; }
 }
+
+/* pratinjau Studio: adegan yang diedit masih kosong */
+.pv-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 28px; text-align: center; background: #101a1d; color: #fff; font-family: system-ui, sans-serif; line-height: 1.6; }

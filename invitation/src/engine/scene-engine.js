@@ -9,14 +9,16 @@ import { enterLabel } from './world-link.js';
 const registry = new Map();
 export const registerScene = (kind, mount) => registry.set(kind, mount);
 
-export function createEngine({ root, view, env, api, onRestart }) {
+export function createEngine({ root, view, env, api, onRestart, startAt = null, onScene = null }) {
   let run = 0;
   let current = null;
 
   async function start() {
     const my = ++run;
     root.replaceChildren();
-    const active = view.scenes.filter((s) => s.active !== false);
+    let active = view.scenes.filter((s) => s.active !== false);
+    // Pratinjau studio: mulai dari adegan yang sedang diedit, bukan dari amplop.
+    if (startAt) { const i = active.findIndex((s) => s.kind === startAt); if (i > 0) active = active.slice(i); }
     const pending = [];
     for (const sc of active) {
       if (!registry.has(sc.kind)) { pending.push(sc.kind); continue; }
@@ -25,6 +27,12 @@ export function createEngine({ root, view, env, api, onRestart }) {
       root.append(layer);
       const scene = registry.get(sc.kind)(layer, { view, env, api, scene: sc });
       current = { scene, layer };
+      if (onScene) onScene({ kind: sc.kind, skipped: !!scene.skipped });
+      if (startAt && scene.skipped && sc.kind === startAt && sc === active[0]) {
+        // adegan yang diedit masih kosong: tahan di sini dan beri tahu, jangan lompat ke adegan lain
+        layer.append(h('div', { class: 'pv-empty', role: 'status', text: 'Adegan ini belum ada isinya, jadi belum tampil untuk tamu.' }));
+        return;
+      }
       // Adegan tanpa isi (mis. galeri kosong) menandai diri skipped dan dilewati tanpa transisi.
       if (scene.skipped) { scene.destroy(); layer.remove(); current = null; continue; }
       await scene.done;

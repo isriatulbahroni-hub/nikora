@@ -47,3 +47,14 @@ Setelah mengubah tema jalankan `node game/scripts/sync-event-themes.mjs` (kontra
 
 ## Studio: Isi undangan
 Di detail undangan, tombol "Isi undangan" membuka editor per adegan (`studio/editor.js`). Disimpan ke `invitation_scenes.config` lewat PATCH (RLS: hanya pemilik). Foto galeri diunggah dari ponsel: dikecilkan di peramban (maks 1600 px, JPEG, EXIF/GPS hilang) lalu masuk bucket publik `media` di folder `<user id>/galeri/<slug>/`. Waktu acara diisi di zona waktu undangan (`extra.tz`) dan disimpan sebagai ISO UTC.
+
+## Pratinjau langsung di Studio
+Editor "Isi undangan" menampilkan undangan asli di dalam bingkai (`/?slug=...&preview=1&frame=1`). Di ponsel ada tombol Edit | Pratinjau; di layar lebar dua kolom berdampingan. Tiap ketikan (jeda 450 ms) dikirim ke bingkai lewat `postMessage` dan undangan diputar ulang mulai dari adegan yang sedang diedit. Adegan yang masih kosong menampilkan catatan, bukan melompat ke adegan lain.
+
+Keamanan (`src/preview-frame.js`): bingkai hanya menerima pesan dari `window.parent` dengan asal (origin) yang sama; jenis adegan harus dikenal, config berupa objek dan maks 24 KB. Teks tetap disaring `content.js` saat dirender. Halaman tamu biasa (tanpa `frame=1`) tidak mendengarkan pesan apa pun.
+
+## Keluar dari Studio
+Bilah atas Studio (setelah masuk) punya tombol **Keluar** di semua layar. Alurnya (`studio/exit.js`): tanya dulu bila ada isian belum tersimpan, hapus sesi di perangkat lalu cabut di server (`/auth/v1/logout`), lalu:
+- bila `VITE_EXIT_URL` (https) diisi, pindah ke alamat itu (meninggalkan situs);
+- bila kosong, tampil layar "Kamu sudah keluar" dan halaman mencoba menutup tab (peramban hanya mengizinkan itu untuk tab yang dibuka lewat skrip).
+Menutup tab atau pindah situs saat ada isian belum tersimpan memunculkan peringatan peramban.

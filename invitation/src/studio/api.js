@@ -157,7 +157,14 @@ export function createClient({ url, key, fetchImpl = globalThis.fetch, store }) 
       const d = await auth('signup', { email: cleanText(email, 254), password });
       return { session: keep(d), needsConfirm: !d.access_token };
     },
-    signOut() { store.set(null); },
+    /** Hapus sesi di perangkat ini seketika, lalu cabut di server (gagal jaringan tidak menahan keluar). */
+    async signOut() {
+      const s = read();
+      store.set(null);
+      if (s && s.access_token) {
+        try { await fetchImpl(`${base}/auth/v1/logout`, { method: 'POST', headers: { apikey: key, Authorization: `Bearer ${s.access_token}` } }); } catch { /* sudah keluar di perangkat ini */ }
+      }
+    },
     userId() { const s = read(); return s && s.user ? s.user.id : null; },
     rest,
     myInvitations: () => rest('invitations?select=slug,groom,bride,event_type,event_date,theme,status,created_at&order=created_at.desc'),

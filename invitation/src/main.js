@@ -16,6 +16,7 @@ import { mountGaleri } from './scenes/galeri.js';
 import { mountPenutup } from './scenes/penutup.js';
 import { mountHariAcara } from './scenes/hari.js';
 import { mountArsip } from './scenes/arsip.js';
+import { acceptPreviewMessage, applyDraft } from './preview-frame.js';
 import { worldUrl } from './engine/world-link.js';
 
 registerScene('amplop', mountEnvelopeAuto);   // 3D interaktif bila perangkat mampu, jika tidak 2D
@@ -42,11 +43,32 @@ let engine = null;
 /** Tambahkan tautan ke dunia 3D (ruang bersama per undangan) di akhir adegan. */
 const withWorld = (view) => ({ ...view, worldUrl: worldUrl(view, { base: import.meta.env.VITE_WORLD_URL }) });
 
-function play(rawView) {
+function play(rawView, opts = {}) {
   const view = withWorld(rawView);
   if (engine) engine.stop();
-  engine = createEngine({ root: app, view, env, api, onRestart: () => play(view) });
+  engine = createEngine({ root: app, view, env, api, onRestart: () => play(view), ...opts });
   engine.start();
+}
+
+/** Pratinjau di dalam Studio: terima draf dari halaman induk dan putar ulang dari adegan yang diedit. */
+function frameMode(data) {
+  const parent = window.parent;
+  let scenes = data.scenes;
+  let timer = null;
+  const tell = (msg) => parent.postMessage(msg, location.origin);
+  window.addEventListener('message', (e) => {
+    const draft = acceptPreviewMessage(e, { origin: location.origin, parent });
+    if (!draft) return;
+    scenes = applyDraft(scenes, draft);
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      play(buildView({ ...data, scenes, query: { to: query.to, tema: query.tema } }), {
+        startAt: draft.kind,
+        onScene: (s) => tell({ type: 'orbit-preview:scene', kind: s.kind, skipped: s.skipped }),
+      });
+    }, 250);
+  });
+  tell({ type: 'orbit-preview:ready' });
 }
 
 function fatal(message) {
@@ -60,6 +82,7 @@ async function boot() {
         url: import.meta.env.VITE_SUPABASE_URL,
         key: import.meta.env.VITE_SUPABASE_ANON_KEY,
       });
+      if (query.frame === '1' && window.parent !== window) { frameMode(data); return; }
       // ?tema= hanya berlaku untuk pratinjau editor (?preview=1), tidak untuk tamu.
       play(buildView({ ...data, query: { to: query.to, tema: query.preview ? query.tema : undefined } }));
     } catch (e) {

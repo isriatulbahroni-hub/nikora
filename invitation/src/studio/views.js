@@ -113,7 +113,7 @@ const fmtDate = (v) => { try { return new Date(v).toLocaleString('id-ID', { date
 /** Daftar undangan milik pengguna. */
 export function listView({ items, onOpen, onNew, onSignOut, email }) {
   return h('div', { class: 's-card' },
-    h('div', { class: 's-row s-between' }, h('h1', { text: 'Undangan saya' }), h('button', { class: 's-link', type: 'button', text: 'Keluar', onclick: onSignOut })),
+    h('div', { class: 's-row s-between' }, h('h1', { text: 'Undangan saya' }), onSignOut ? h('button', { class: 's-link', type: 'button', text: 'Keluar', onclick: onSignOut }) : null),
     email ? h('p', { class: 's-sub', text: email }) : null,
     items.length ? h('ul', { class: 's-list' }, items.map((i) => h('li', {}, h('button', { class: 's-item', type: 'button', onclick: () => onOpen(i.slug) },
       h('strong', { text: [i.groom, i.bride].filter(Boolean).join(' & ') }), h('span', { text: `${fmtDate(i.event_date)} - ${i.status}` }))))) : h('p', { class: 's-sub', text: 'Belum ada undangan.' }),

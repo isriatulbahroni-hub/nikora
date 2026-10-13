@@ -32,3 +32,26 @@
 .s-check { display: flex; gap: 8px; align-items: center; }
 .s-photo img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; }
 textarea.s-input { resize: vertical; }
+
+/* bilah atas + keluar */
+.s-topbar { display: flex; align-items: center; gap: 10px; max-width: 520px; margin: 0 auto 10px; padding: 8px 14px; border-radius: 14px; background: color-mix(in srgb, var(--s-card) 92%, transparent); }
+.s-topbar strong { font-size: .95rem; }
+.s-who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; opacity: .75; }
+.s-bye { text-align: center; }
+
+/* editor + pratinjau */
+.s-card.s-wide { max-width: 1080px; }
+.s-seg { display: flex; gap: 6px; }
+.s-seg [aria-pressed="true"] { background: var(--s-accent); color: #fff; }
+.s-split { display: grid; gap: 14px; }
+.s-previewpane { display: grid; gap: 8px; align-content: start; }
+.s-frame { width: 100%; height: min(72vh, 720px); border: 0; border-radius: 18px; background: #101a1d; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+.s-pvnote:empty { display: none; }
+.s-card.s-wide[data-pane="edit"] .s-previewpane { display: none; }
+.s-card.s-wide[data-pane="preview"] .s-editpane { display: none; }
+@media (min-width: 900px) {
+  .s-seg { display: none; }
+  .s-split { grid-template-columns: minmax(0, 1fr) 390px; align-items: start; }
+  .s-card.s-wide[data-pane] .s-previewpane, .s-card.s-wide[data-pane] .s-editpane { display: grid; }
+  .s-previewpane { position: sticky; top: 12px; }
+}
