@@ -659,8 +659,10 @@ function updateHud() {
   ui.sitButton.classList.toggle('is-ready', canAct);
   ui.sitLabel.textContent = me.sit !== null ? 'BERDIRI' : 'DUDUK';
   const remote = multiplayer?.view.count ?? 0;
-  ui.guests.textContent = multiplayer ? `${remote + 1}` : netError ? `offline · ${netError}` : joined ? '…' : 'offline';
-  $('#online-dot').classList.toggle('is-online', Boolean(multiplayer));
+  ui.guests.textContent = multiplayer ? (multiplayer.net.status === 'reconnecting' ? 'menyambung ulang…' : `${remote + 1}`) : netError ? `offline · ${netError}` : joined ? '…' : 'offline';
+  const reconnecting = multiplayer?.net.status === 'reconnecting';
+  $('#online-dot').classList.toggle('is-online', Boolean(multiplayer) && !reconnecting);
+  $('#online-dot').classList.toggle('is-wait', reconnecting);
 }
 
 // ---- Obrolan ----

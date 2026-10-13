@@ -622,7 +622,7 @@ async function start() {
     }
     const others = multiplayer ? multiplayer.net.players.filter((p) => p.id !== multiplayer.net.id) : [];
     if (!mapCanvas.hidden) drawMap(me, others, me.level);
-    $('online').textContent = multiplayer ? `Online: ${others.length + 1}` : netStatus;
+    $('online').textContent = multiplayer ? (multiplayer.net.status === 'reconnecting' ? 'Menyambung ulang…' : `Online: ${others.length + 1}`) : netStatus;
   }
   requestAnimationFrame(frame);
 
