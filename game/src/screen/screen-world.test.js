@@ -31,12 +31,12 @@ test('CSS3D: lapisan di belakang kanvas, objek ukuran proporsional dan hanya tam
   const canvas = document.createElement('canvas');
   host.append(canvas);
   const group = new THREE.Group();
-  const css = createScreenCss3d({ host, group, width: 8, height: 4.5, px: 960 });
+  const css = createScreenCss3d({ host, group, width: 8, height: 4.5, px: 640 });
   assert.equal(host.firstChild, css.layer, 'lapisan CSS3D diletakkan sebelum kanvas');
   const obj = group.children[0];
   assert.equal(obj.visible, false);
-  assert.ok(Math.abs(obj.scale.x - 8 / 960) < 1e-9);
-  assert.equal(css.container.style.height, '540px');
+  assert.ok(Math.abs(obj.scale.x - 8 / 640) < 1e-9);
+  assert.equal(css.container.style.height, '360px');
   css.setActive(true);
   assert.equal(obj.visible, true);
   assert.equal(css.container.style.display, 'block');

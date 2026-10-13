@@ -8,6 +8,19 @@ import { mountGate, shouldShowGate } from './gate.js';
 import { LEVEL_HEIGHT, VILLA_SCREEN, findNearestSpot, getVillaWorld, levelY, roomAt, sameVoiceSpace, spotPose } from './villa-layout.js';
 import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
+import { createQualityGovernor } from './quality.js';
+// Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
+const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
+function applyQuality(renderer, scene, q) {
+  renderer.setPixelRatio(q.ratio);
+  if (renderer.shadowMap.enabled !== q.shadows) {
+    renderer.shadowMap.enabled = q.shadows;
+    scene.traverse((o) => {
+      if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; });
+    });
+  }
+}
+
 import { createPartyController, speakerIds } from './party.js';
 import { renderPartyPanel } from './party-panel.js';
 import { VOICE_CROWD, VoiceChat } from './voice.js';
@@ -255,6 +268,7 @@ async function start() {
   const root = $('villa-root');
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setClearAlpha(1);
+  const quality = createQualityGovernor({ deviceRatio: window.devicePixelRatio || 1, cap: window.matchMedia?.('(pointer: coarse)').matches ? 1.75 : 2, floor: lowQuality ? 2 : 0 });
   const coarse = window.matchMedia?.('(pointer: coarse)').matches;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarse ? 1.75 : 2));
   renderer.shadowMap.enabled = true;
@@ -266,6 +280,7 @@ async function start() {
 
   const scene = new THREE.Scene();
   const built = buildVillaWorld(scene, world, { renderer });
+  if (lowQuality) applyQuality(renderer, scene, quality.settings()); // ?q=low: mulai langsung dengan kualitas hemat
   const camera = new THREE.PerspectiveCamera(48, 1, 0.5, 400);
   // target kamera (diubah oleh gestur) dan nilai yang dihaluskan untuk tampilan
   const camState = { yaw: 0, pitch: CAM_PRESETS[0].pitch, dist: CAM_PRESETS[0].dist };
@@ -571,6 +586,8 @@ async function start() {
     camera.position.set(me.x + Math.sin(camNow.yaw) * cp * d, me.y + 0.8 + Math.sin(camNow.pitch) * d, me.z + Math.cos(camNow.yaw) * cp * d);
     camera.lookAt(me.x, me.y + 0.8, me.z);
     built.update(me.x, me.z, delta, me.level, { x: Math.sin(camNow.yaw), z: Math.cos(camNow.yaw) }, camNow.pitch, me.y);
+    const qChange = quality.setFloor(lowQuality ? 2 : screen?.controller?.state?.src ? 1 : 0) ?? quality.tick(performance.now());
+    if (qChange) applyQuality(renderer, scene, qChange);
     renderer.render(scene, camera);
     screen.render(scene, camera);
 

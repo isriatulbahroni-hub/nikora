@@ -5,6 +5,7 @@ import './gate.css';
 import { mountGate, shouldShowGate } from './gate.js';
 import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
+import { createQualityGovernor } from './quality.js';
 import { applyPose, createAvatar, makeBubble, setAvatarConfig, setStageRing } from './avatar.js';
 import { createPartyController, speakerIds } from './party.js';
 import { loadConfig, saveConfig, toWire } from './avatar-config.js';
@@ -77,6 +78,19 @@ let playerAvatar;
 let npcs = [];
 let netError = '';
 let hallScreen = null;
+let quality = null;
+// Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
+const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
+function applyQuality(renderer, scene, q) {
+  renderer.setPixelRatio(q.ratio);
+  if (renderer.shadowMap.enabled !== q.shadows) {
+    renderer.shadowMap.enabled = q.shadows;
+    scene.traverse((o) => {
+      if (o.material) [].concat(o.material).forEach((m) => { m.needsUpdate = true; });
+    });
+  }
+}
+
 const focus = new THREE.Vector3(START.x, 0.5, START.z);
 let priorFrameTime = 0;
 let idleAngle = 0;
@@ -233,7 +247,9 @@ function createScene() {
 
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
   renderer.setClearAlpha(1);
+  quality = createQualityGovernor({ deviceRatio: window.devicePixelRatio || 1, cap: 1.75, floor: lowQuality ? 2 : 0 });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+  if (lowQuality) applyQuality(renderer, scene, quality.settings());
   renderer.setSize(size.width, size.height);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -781,6 +797,8 @@ function renderFrame(time) {
   updateLabels();
   updateHud();
   updateCamera(delta, now);
+  const qChange = quality?.setFloor(lowQuality ? 2 : hallScreen?.controller?.state?.src ? 1 : 0) ?? quality?.tick(performance.now());
+  if (qChange) applyQuality(renderer, scene, qChange);
   renderer.render(scene, camera);
   hallScreen?.render(scene, camera);
 }

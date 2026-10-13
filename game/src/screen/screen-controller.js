@@ -14,6 +14,9 @@ export function createScreenController({ net, mesh, doc = document, now = () => 
   let status = '';
   let local = null; // { video, stream, stop, url, kind } milik operator (file/live)
   let ytTime = null;
+  let ytState = null; // 1 = sedang memutar (dari infoDelivery YouTube)
+  let lastSeekAt = -Infinity;
+  let lastPlayAt = -Infinity;
   let ytReady = false;
   let embedKey = '';
   const media = new Map(); // track -> elemen yang sudah di-attach
@@ -58,6 +61,7 @@ export function createScreenController({ net, mesh, doc = document, now = () => 
     if (data?.event === 'onReady' || data?.event === 'initialDelivery') ytReady = true;
     const t = data?.info?.currentTime;
     if (Number.isFinite(t)) ytTime = t;
+    if (Number.isFinite(data?.info?.playerState)) ytState = data.info.playerState;
   };
   doc.defaultView?.addEventListener('message', onMessage);
   frame.addEventListener('load', () => {
@@ -70,7 +74,9 @@ export function createScreenController({ net, mesh, doc = document, now = () => 
 
   const set = (next) => {
     if (JSON.stringify(next) === JSON.stringify(state)) return;
+    const changedPlayback = next.st !== state.st || next.src?.id !== state.src?.id || Math.abs((next.pos ?? 0) - (state.pos ?? 0)) > 1.5;
     state = next;
+    if (changedPlayback) { lastSeekAt = -Infinity; lastPlayAt = -Infinity; }
     render();
     onChange(state);
   };
@@ -89,13 +95,25 @@ export function createScreenController({ net, mesh, doc = document, now = () => 
     for (const el of media.values()) if (el.tagName === 'AUDIO') el.volume = v;
   }
 
+  /**
+   * Ikuti operator tanpa mengganggu pemutaran: loncat HANYA bila selisih besar dan sudah lewat jeda
+   * (atau saat state berubah/pertama kali dimuat), dan tidak pernah loncat bila posisi pemutar belum diketahui.
+   */
   function followYouTube(force = false) {
     if (state.src?.type !== 'youtube' || !ytReady) return;
-    const target = positionAt(state, now());
+    const t = now();
+    const target = positionAt(state, t);
     if (state.st === 'playing') {
-      if (force || ytTime === null || Math.abs(ytTime - target) > SCREEN.driftSec) ytCmd('seekTo', [target, true]);
-      ytCmd('playVideo');
-    } else if (state.st === 'paused') {
+      const drifted = ytTime !== null && Math.abs(ytTime - target) > SCREEN.driftSec;
+      if (force || (drifted && t - lastSeekAt >= SCREEN.seekCooldownMs)) {
+        lastSeekAt = t;
+        ytCmd('seekTo', [target, true]);
+      }
+      if (force || (ytState !== 1 && t - lastPlayAt >= SCREEN.playCooldownMs)) {
+        lastPlayAt = t;
+        ytCmd('playVideo');
+      }
+    } else if (state.st === 'paused' && (force || ytState === 1)) {
       ytCmd('seekTo', [state.pos, true]);
       ytCmd('pauseVideo');
     }
@@ -109,6 +127,7 @@ export function createScreenController({ net, mesh, doc = document, now = () => 
       embedKey = key;
       ytReady = false;
       ytTime = null;
+      ytState = null;
       frame.src = url;
     }
     setEmbedVisible(true);

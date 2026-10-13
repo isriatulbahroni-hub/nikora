@@ -127,3 +127,38 @@ test('video dari HP tanpa dukungan captureStream (iPhone) memberi pesan jujur, b
   globalThis.URL.createObjectURL = realCreateUrl;
   globalThis.URL.revokeObjectURL = realRevokeUrl;
 });
+
+test('sinkron YouTube tidak tersendat: tanpa posisi pemutar tidak pernah loncat berulang; loncat hanya bila selisih besar dan lewat jeda', async () => {
+  const g = setup('bbbb');
+  g.net.emit('screen', { from: 'aaaa', msg: { k: 'claim' } });
+  g.net.emit('screen', { from: 'aaaa', msg: { k: 'load', src: { type: 'youtube', id: 'dQw4w9WgXcQ', start: 0 } } });
+  const win = g.dom.window;
+  const frame = win.document.querySelector('.screen-embed-frame');
+  const fw = frame.contentWindow;
+  const cmds = [];
+  fw.postMessage = (m) => cmds.push(JSON.parse(m).func);
+  const info = (currentTime, playerState = 1) => win.dispatchEvent(new win.MessageEvent('message', { origin: 'https://www.youtube-nocookie.com', source: fw, data: JSON.stringify({ event: 'infoDelivery', info: { currentTime, playerState } }) }));
+  frame.dispatchEvent(new win.Event('load')); // pemutar siap: satu kali seekTo + playVideo awal
+  const seeks = () => cmds.filter((c) => c === 'seekTo').length;
+  assert.equal(seeks(), 1);
+
+  // 60 detik tanpa kabar posisi dari pemutar: tidak boleh ada loncatan tambahan
+  for (let i = 0; i < 120; i++) { g.tick(500); g.ctl.tick(); }
+  assert.equal(seeks(), 1, 'tanpa posisi pemutar tidak ada loncat berulang');
+
+  // posisi pemutar cocok dengan operator: tidak loncat
+  const target = (Date.now() && 0, 60); // sekitar detik ke-60 sejak state dimuat
+  info(61);
+  for (let i = 0; i < 4; i++) { g.tick(500); g.ctl.tick(); }
+  assert.equal(seeks(), 1);
+
+  // selisih besar: loncat sekali, lalu tidak lagi dalam masa jeda meski masih berselisih
+  info(5);
+  g.tick(500); g.ctl.tick();
+  assert.equal(seeks(), 2, 'loncat sekali untuk selisih besar');
+  for (let i = 0; i < 6; i++) { info(5); g.tick(500); g.ctl.tick(); }
+  assert.equal(seeks(), 2, 'tidak loncat lagi sebelum masa jeda lewat');
+  assert.ok(target > 0);
+  g.net.emit('screen', { from: 'aaaa', msg: { k: 'pause', pos: 70 } });
+  assert.ok(cmds.includes('pauseVideo'), 'jeda dari operator langsung diterapkan');
+});

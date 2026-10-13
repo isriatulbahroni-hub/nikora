@@ -1,7 +1,8 @@
 // Mesin status Layar Tancap: logika murni (tanpa jaringan/DOM) agar bisa diuji.
 // Seperti Party Room, transport LiveKit tidak punya server otoritatif: aturan "hanya operator yang boleh mengatur layar"
 // ditegakkan di tiap klien (cukup untuk prototipe, belum tahan terhadap klien yang dimodifikasi).
-export const SCREEN = Object.freeze({ syncMs: 3000, driftSec: 1.5, claimTieMs: 1500, maxPos: 86400 });
+// driftSec: selisih yang dibiarkan; seekCooldownMs: jeda minimum antar loncatan (loncat terlalu sering = video tersendat/buffering).
+export const SCREEN = Object.freeze({ syncMs: 3000, driftSec: 2.5, seekCooldownMs: 6000, playCooldownMs: 3000, claimTieMs: 1500, maxPos: 86400 });
 
 export const emptyScreen = () => ({ op: null, opAt: 0, src: null, st: 'idle', pos: 0, at: 0 });
 

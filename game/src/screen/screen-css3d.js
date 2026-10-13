@@ -5,7 +5,7 @@ import { CSS3DObject, CSS3DRenderer } from 'three/examples/jsm/renderers/CSS3DRe
  * lapisan CSS3D berada di belakang kanvas WebGL, dan bidang layar di kanvas dilubangi (alpha 0) sehingga
  * video tampak menempel di dinding, ikut bergerak mengikuti kamera, dan tertutup avatar/benda yang ada di depannya.
  */
-export function createScreenCss3d({ host, group, width, height, px = 960 }) {
+export function createScreenCss3d({ host, group, width, height, px = 640 }) {
   const renderer = new CSS3DRenderer();
   const layer = renderer.domElement;
   layer.className = 'sc-css3d';

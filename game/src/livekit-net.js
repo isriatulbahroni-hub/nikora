@@ -271,7 +271,9 @@ export class LiveKitNet {
     const published = [];
     for (const track of stream.getTracks()) {
       const source = track.kind === 'video' ? LiveKit.Track.Source.ScreenShare : LiveKit.Track.Source.ScreenShareAudio;
-      await this.room.localParticipant.publishTrack(track, { source });
+      // Simulcast + batas bitrate: tamu yang jauh/jaringan lemah otomatis menerima lapisan lebih ringan.
+      const options = track.kind === 'video' ? { source, simulcast: true, videoEncoding: { maxBitrate: 1_500_000, maxFramerate: 30 } } : { source };
+      await this.room.localParticipant.publishTrack(track, options);
       published.push(track);
     }
     return async () => {
