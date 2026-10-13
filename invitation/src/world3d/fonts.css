@@ -1,0 +1,6 @@
+/* Nama pendek yang dipakai kanvas tekstur 3D (amplop & kartu). Berkas font berlisensi OFL dari @fontsource. */
+@font-face { font-family: 'GV'; font-weight: 400; font-display: swap; src: url('../../node_modules/@fontsource/great-vibes/files/great-vibes-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Cin'; font-weight: 400; font-display: swap; src: url('../../node_modules/@fontsource/cinzel/files/cinzel-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Cin'; font-weight: 600; font-display: swap; src: url('../../node_modules/@fontsource/cinzel/files/cinzel-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Cor'; font-weight: 500; font-display: swap; src: url('../../node_modules/@fontsource/cormorant-garamond/files/cormorant-garamond-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Cor'; font-weight: 500; font-style: italic; font-display: swap; src: url('../../node_modules/@fontsource/cormorant-garamond/files/cormorant-garamond-latin-500-italic.woff2') format('woff2'); }
