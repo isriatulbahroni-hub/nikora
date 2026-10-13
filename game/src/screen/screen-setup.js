@@ -2,6 +2,7 @@ import { createScreenMesh } from './screen-mesh.js';
 import { createScreenController } from './screen-controller.js';
 import { mountScreenUI } from './screen-ui.js';
 import { createScreenCss3d } from './screen-css3d.js';
+import { disabledScreen, isScreenEnabled } from './screen-config.js';
 
 const safeStorage = () => {
   try { return window.localStorage; } catch { return undefined; }
@@ -11,7 +12,9 @@ const safeStorage = () => {
  * Satu pintu untuk aula dan villa: buat layar 3D di `spec`, lalu `attach(session)` setelah tersambung
  * (memasang pengendali + tombol 🎬) dan `tick(ms)` dari loop render.
  */
-export function createScreen({ scene, spec, renderer = null, host = null }) {
+export function createScreen({ scene, spec, renderer = null, host = null, enabled = isScreenEnabled() }) {
+  // Mati secara bawaan: tidak ada papan layar, tidak ada tombol 🎬, tidak ada pengendali. Lihat screen-config.js.
+  if (!enabled) return disabledScreen();
   const mesh = createScreenMesh(spec);
   mesh.showIdle({ title: 'LAYAR ACARA', sub: 'Belum ada yang memutar' });
   scene.add(mesh.group);
@@ -32,6 +35,7 @@ export function createScreen({ scene, spec, renderer = null, host = null }) {
   let ui = null;
   let last = -1;
   return {
+    enabled: true,
     mesh,
     get controller() { return ctl; },
     attach(session) {

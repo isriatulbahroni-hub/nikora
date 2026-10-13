@@ -85,3 +85,14 @@ Posisi, aksi, chat, salaman, dan suara semuanya lewat satu ruang LiveKit (`orbit
 3. Buka situs di dua perangkat: indikator di kiri atas menyala hijau dan 🎙 muncul.
 
 Tanpa variabel itu game tetap berjalan offline. Batasan: tanpa server otoritatif, tiap klien memegang posisinya sendiri (cocok untuk ruang sosial, bukan kompetitif). `?server=ws://...` masih bisa memakai `server/` bila suatu saat dibutuhkan.
+
+## Layar acara (video di dinding) — mati secara bawaan
+Layar (papan di dinding, tombol 🎬 di menu, sinkron operator, YouTube/TikTok/video/siaran) **tidak aktif** di semua acara,
+supaya tidak mengganggu orang yang menonton acara langsung atau film. Kodenya tidak dihapus.
+Untuk acara tertentu, tuan rumah menambahkan `?layar=1` pada tautan acara (contoh: `/?acara=slug&layar=1`).
+Tanpa parameter itu tidak ada papan, tombol, pengendali, maupun lapisan CSS3D yang dibuat. Lihat `src/screen/screen-config.js`.
+Catatan: pada acara yang layarnya menyala, siapa pun bisa menjadi operator lebih dulu; pembatasan hanya untuk tuan rumah belum ada.
+
+## Tata letak antarmuka
+Dock bawah: obrolan, mikrofon, gerakan (joget, tepuk), dan menu ≡. Menu ≡ berisi suara, panggung, avatar, pintu masuk,
+dan layar (bila diaktifkan). Titik merah di ≡ muncul bila MC punya tamu yang mengangkat tangan.

@@ -110,47 +110,9 @@ button {
   touch-action: none;
 }
 
-.arena-topline {
-  position: absolute;
-  z-index: 2;
-  top: clamp(105px, 15vh, 150px);
-  left: clamp(24px, 7vw, 108px);
-  pointer-events: none;
-}
-
 .eyebrow {
   margin: 0 0 11px;
   color: var(--amber);
-}
-
-.arena-topline h1 {
-  margin: 0;
-  color: var(--ink);
-  font-size: clamp(1.75rem, 4vw, 3.1rem);
-  font-weight: 600;
-  line-height: 1.05;
-}
-
-.icon-button {
-  position: absolute;
-  top: 11px;
-  left: calc(100vw - clamp(84px, 12vw, 160px));
-  display: grid;
-  width: 48px;
-  height: 48px;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: rgba(29, 23, 34, 0.62);
-  color: var(--ink);
-  font-size: 1.5rem;
-  pointer-events: auto;
-  transition: background 160ms ease, transform 160ms ease;
-}
-
-.icon-button:hover {
-  transform: rotate(-30deg);
-  background: rgba(239, 189, 114, 0.2);
 }
 
 .match-hud {
@@ -351,22 +313,6 @@ a:focus-visible {
     padding: 20px 22px;
   }
 
-  .arena-topline {
-    top: 100px;
-    left: 24px;
-  }
-
-  .arena-topline h1 {
-    font-size: 1.8rem;
-  }
-
-  .icon-button {
-    top: -3px;
-    left: calc(100vw - 94px);
-    width: 42px;
-    height: 42px;
-  }
-
   .match-hud {
     top: 185px;
     right: 24px;
@@ -424,8 +370,6 @@ a:focus-visible {
 }
 
 /* ---- Tata letak profesional: HUD tengah, kontrol ala MOBA ---- */
-.arena-topline{top:calc(8px + env(safe-area-inset-top));right:calc(14px + env(safe-area-inset-right));left:auto;pointer-events:auto}
-.arena-topline .icon-button{position:static;width:38px;height:38px;font-size:1.05rem;background:rgba(29, 23, 34, .7);backdrop-filter:blur(6px)}
 .build-label{display:none}
 .match-hud{top:calc(52px + env(safe-area-inset-top));right:auto;left:50%;width:min(560px,calc(100vw - 32px));transform:translateX(-50%);pointer-events:none;padding:10px 14px;border:1px solid var(--line);border-radius:14px;background:rgba(29, 23, 34, .62);backdrop-filter:blur(8px)}
 .arena-footer{left:clamp(16px,3vw,40px);right:clamp(16px,3vw,40px);bottom:calc(20px + env(safe-area-inset-bottom));justify-content:flex-start}
@@ -443,9 +387,6 @@ body[data-input=touch] .arena-footer{display:none}
 .arena-frame{touch-action:none}
 @media (max-width:760px){.match-hud{top:calc(48px + env(safe-area-inset-top));padding:8px 10px;gap:8px}}
 @media (max-height:480px){.joy-base{width:112px;height:112px;margin:-56px 0 0 -56px}.atk-btn{width:80px;height:80px;bottom:calc(20px + env(safe-area-inset-bottom))}}
-
-.arena-topline{display:flex;gap:8px}
-.icon-button[aria-pressed=true]{opacity:.55}
 .dash-btn{width:68px;height:68px;right:calc(142px + env(safe-area-inset-right));bottom:calc(46px + env(safe-area-inset-bottom));background:radial-gradient(circle at 35% 30%,#f3d58a,#b8872e);border-color:rgba(200,240,255,.7);font-size:.62rem}
 .combatant-line{font-size:.82rem;letter-spacing:.06em}
 .combatant-line strong{font-size:1rem}
@@ -479,8 +420,7 @@ body.joined .game-header,body.joined .page-footer{opacity:0;pointer-events:none;
 .joy-base.active{opacity:.9}
 #touch-sit:not(.is-ready){display:none}
 #touch-sit{right:calc(28px + env(safe-area-inset-right));bottom:calc(112px + env(safe-area-inset-bottom));width:84px;height:84px}
-#touch-clap{right:calc(28px + env(safe-area-inset-right));bottom:calc(34px + env(safe-area-inset-bottom));width:64px;height:64px;opacity:.7}
-@media (max-height:480px){#touch-sit{bottom:calc(88px + env(safe-area-inset-bottom));width:70px;height:70px}#touch-clap{bottom:calc(20px + env(safe-area-inset-bottom));width:52px;height:52px}}
+@media (max-height:480px){#touch-sit{bottom:calc(88px + env(safe-area-inset-bottom));width:70px;height:70px}}
 
 /* ---- Obrolan ---- */
 .chat-box{position:absolute;z-index:5;left:calc(14px + env(safe-area-inset-left));bottom:calc(14px + env(safe-area-inset-bottom));width:min(360px,calc(100vw - 28px));display:flex;flex-direction:column;gap:6px;pointer-events:none}
@@ -578,5 +518,41 @@ body{background:radial-gradient(120% 90% at 50% 0%,#2b2030,#1d1722 70%)}
 @media (max-height:520px) and (orientation:landscape){.editor-layout{grid-template-columns:minmax(0,.9fr) minmax(0,1.4fr)}.avatar-preview{height:220px}}
 #join-overlay{z-index:9}
 
-#touch-dance{right:calc(104px + env(safe-area-inset-right));bottom:calc(34px + env(safe-area-inset-bottom));width:64px;height:64px;opacity:.85}
-@media (max-height:480px){#touch-dance{right:calc(92px + env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom));width:52px;height:52px}}
+
+/* ---- Dock bawah + lembar menu (gaya aplikasi sosial): fitur jarang dipakai disembunyikan di balik ≡ ---- */
+:root{--dock:68px}
+.dock{position:absolute;z-index:6;left:50%;transform:translateX(-50%);bottom:calc(10px + env(safe-area-inset-bottom));display:flex;gap:10px;padding:8px 12px;border:1px solid var(--line);border-radius:30px;background:rgba(29,23,34,.82);backdrop-filter:blur(8px)}
+.dock-btn{position:relative;width:46px;height:46px;border:0;border-radius:50%;background:rgba(244,223,190,.1);color:var(--ink);font-size:1.3rem;line-height:1;cursor:pointer;display:grid;place-items:center;-webkit-tap-highlight-color:transparent}
+.dock-btn[hidden]{display:none}
+.dock-btn[aria-expanded=true]{background:var(--amber);color:#2a1d14}
+.dock-btn[aria-pressed=false]#mic-button{opacity:.7}
+.dock-btn.is-on{background:#2e9e6b;opacity:1}
+.dock-btn.is-speaking{box-shadow:0 0 0 3px rgba(61,220,132,.55)}
+.dock-dot{position:absolute;top:5px;right:5px;width:10px;height:10px;border-radius:50%;background:#ff5a5f;box-shadow:0 0 0 2px #1d1722}
+.dock-dot[hidden]{display:none}
+.sheet{position:absolute;z-index:8;background:#241b2b;border:1px solid var(--line);color:var(--ink);font:500 .9rem system-ui,sans-serif;box-shadow:0 -8px 30px rgba(0,0,0,.45)}
+.sheet[hidden]{display:none}
+.sheet-bottom{left:0;right:0;bottom:0;max-height:72%;overflow:auto;border-radius:22px 22px 0 0;padding:14px 16px calc(18px + env(safe-area-inset-bottom));animation:sheet-up .18s ease-out}
+.sheet-pop{left:50%;bottom:calc(var(--dock) + 14px + env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;gap:6px;padding:8px;border-radius:18px;animation:sheet-pop .14s ease-out}
+.sheet-pop[hidden]{display:none}
+.sheet-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.sheet-close{background:none;border:0;color:var(--muted);font-size:1.1rem;cursor:pointer}
+.sheet-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:10px}
+.sheet-tile{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:72px;padding:12px 6px 10px;border:0;border-radius:14px;background:rgba(244,223,190,.08);color:var(--ink);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.sheet-tile[hidden]{display:none}
+.sheet-tile:active{background:rgba(244,223,190,.18)}
+.sheet-tile .tile-ico{font-size:1.6rem;line-height:1}
+.sheet-tile .tile-label{font-size:.72rem;color:var(--muted);text-align:center}
+.sheet-tile.is-active{box-shadow:0 0 0 2px rgba(255,120,120,.85)}
+.sheet-tile[aria-pressed=true] .tile-ico{opacity:.55}
+@keyframes sheet-up{from{transform:translateY(24px);opacity:0}to{transform:none;opacity:1}}
+@keyframes sheet-pop{from{transform:translate(-50%,8px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+@media (prefers-reduced-motion:reduce){.sheet-bottom,.sheet-pop{animation:none}}
+/* Kontrol sentuh dan elemen bawah naik di atas dock */
+.controls{inset:0 0 calc(var(--dock) + env(safe-area-inset-bottom)) 0}
+.arena-footer{bottom:calc(var(--dock) + 14px + env(safe-area-inset-bottom))}
+.chat-box{bottom:calc(var(--dock) + 14px + env(safe-area-inset-bottom))}
+body[data-input=touch] .chat-box{bottom:calc(var(--dock) + 180px + env(safe-area-inset-bottom))}
+@media (max-height:480px){body[data-input=touch] .chat-box{bottom:calc(var(--dock) + 8px + env(safe-area-inset-bottom))}}
+.greet-menu{bottom:calc(var(--dock) + 120px)}
+.party-panel{top:calc(14px + env(safe-area-inset-top))}

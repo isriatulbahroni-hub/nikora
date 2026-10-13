@@ -28,8 +28,8 @@ const ui = {
   nameInput: $('#name-input'),
   sitButton: $('#touch-sit'),
   sitLabel: $('#sit-label'),
-  clapButton: $('#touch-clap'),
-  danceButton: $('#touch-dance'),
+  clapButton: $('#emote-clap'),
+  danceButton: $('#emote-dance'),
   muteButton: $('#mute-button'),
   chatBox: $('#chat-box'),
   chatLog: $('#chat-log'),
@@ -146,7 +146,7 @@ function toggleMute() {
   muted = !muted;
   ui.muteButton.setAttribute('aria-pressed', String(muted));
   ui.muteButton.setAttribute('aria-label', muted ? 'Nyalakan suara' : 'Matikan suara');
-  ui.muteButton.textContent = muted ? '×' : '♪';
+  ui.muteButton.querySelector('.tile-ico').textContent = muted ? '×' : '♪';
 }
 
 function spawnFloat(text, position, kind) {
@@ -508,6 +508,7 @@ function renderParty() {
   const body = $('#party-body');
   body.replaceChildren();
   $('#party-button').dataset.count = role === 'host' ? String(s.hands.length) : '0';
+  $('#menu-dot').hidden = !(role === 'host' && s.hands.length > 0); // titik merah di ≡: ada tamu yang angkat tangan
   if (!s.host) {
     body.append(partyRow('Belum ada MC. Jadi MC untuk membuka panggung.'), partyButton('Jadi MC', () => party.claimHost()));
     return;
@@ -1011,7 +1012,36 @@ function openAvatarEditor(edit) {
   avatarEditor.start();
 }
 
+/** Dock bawah: lembar emoji (gerakan) dan lembar menu (≡). Hanya satu lembar terbuka; ketuk di luar atau Esc menutup. */
+function setupDock() {
+  const sheets = { emoji: { btn: $('#emoji-button'), el: $('#emoji-sheet') }, menu: { btn: $('#menu-button'), el: $('#menu-sheet') } };
+  const closeAll = () => {
+    for (const s of Object.values(sheets)) {
+      s.el.hidden = true;
+      s.btn.setAttribute('aria-expanded', 'false');
+    }
+  };
+  const toggle = (name) => {
+    const open = sheets[name].el.hidden;
+    closeAll();
+    if (open) {
+      sheets[name].el.hidden = false;
+      sheets[name].btn.setAttribute('aria-expanded', 'true');
+    }
+  };
+  sheets.emoji.btn.addEventListener('click', () => toggle('emoji'));
+  sheets.menu.btn.addEventListener('click', () => toggle('menu'));
+  $('#menu-close').addEventListener('click', closeAll);
+  for (const s of Object.values(sheets)) s.el.addEventListener('click', (e) => { if (e.target.closest('.sheet-tile')) closeAll(); });
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('.sheet, .dock')) closeAll();
+  });
+  window.addEventListener('keydown', (e) => { if (e.code === 'Escape') closeAll(); });
+  return { closeAll };
+}
+
 function setupJoin() {
+  setupDock();
   avatarEditor = createAvatarEditor({
     canvas: $('#avatar-preview'),
     tabsEl: $('#editor-tabs'),
