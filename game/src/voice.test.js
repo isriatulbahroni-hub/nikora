@@ -211,3 +211,20 @@ test('mic pulih sendiri setelah koneksi tersambung ulang atau track berhenti; ga
   assert.match(notices.at(-1), /Mikrofon terputus/);
   chat.dispose();
 });
+
+test('panggung berbicara: obrolan jamaah mengecil (bukan mati), panggung tetap penuh, pulih setelah panggung diam', () => {
+  const v = new VoiceChat({ LiveKit: {} });
+  for (const id of ['ustaz', 'teman']) { v.audio.set(id, { volume: 0 }); v.vol.set(id, 0); }
+  const players = [{ id: 'ustaz', x: 40, z: 0 }, { id: 'teman', x: 1, z: 0 }];
+  const run = (t0, n, speaking) => { v.speaking = () => new Set(speaking); for (let i = 0; i < n; i++) v.update({ id: 'saya', x: 0, z: 0 }, players, new Set(['ustaz']), VOICE_CROWD, t0 + i * 100); };
+  run(1000, 12, []); // sebelum ustaz datang: jamaah bebas ngobrol
+  assert.equal(v.audio.get('teman').volume, 1, 'obrolan penuh saat panggung diam');
+  run(2200, 12, ['ustaz']); // ustaz bicara
+  const ducked = v.audio.get('teman').volume;
+  assert.ok(ducked > 0.25 && ducked < 0.35, `mengecil ke ~30%, tidak mati: ${ducked}`);
+  assert.equal(v.audio.get('ustaz').volume, 1, 'ustaz terdengar penuh dari jauh');
+  run(3500, 3, []); // baru saja diam: masih dianggap bicara (jeda kecil antar kalimat)
+  assert.ok(v.audio.get('teman').volume < 0.5, 'tidak langsung naik di sela kalimat');
+  run(6000, 14, []); // diam cukup lama
+  assert.equal(v.audio.get('teman').volume, 1, 'obrolan pulih');
+});

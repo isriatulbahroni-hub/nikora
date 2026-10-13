@@ -24,6 +24,10 @@ export function voiceGain(distance, { fullRange, maxRange } = VOICE) {
  *     pembicara baru harus jauh lebih dekat untuk menggeser, jadi suara tidak putus hanya karena urutan jarak bergeser;
  *  3. batas `max` tetap dijaga agar tidak ramai.
  */
+/** Pengali volume obrolan jamaah saat panggung berbicara, dan lama "masih dianggap berbicara" setelah panggung diam. */
+export const DUCK_GAIN = 0.3;
+export const STAGE_HANGOVER_MS = 1500;
+
 export function selectAudible({ candidates, max, previous = new Set(), lastSpoke = new Map(), now = 0, hangoverMs = 3000, stickiness = 0.75 }) {
   if (!Number.isFinite(max) || candidates.length <= max) return new Set(candidates.map((c) => c.id));
   const ranked = candidates.map((c) => ({
@@ -212,7 +216,7 @@ export class VoiceChat {
   }
 
   /** Panggil tiap beberapa frame: self {x,z}, players [{id,x,z,sit}]. Volume berubah halus; empat pembicara paling relevan terdengar. */
-  update(self, players, stage = new Set(), { ranges = VOICE, maxListeners = Infinity, canHear = () => true } = {}, nowMs = Date.now()) {
+  update(self, players, stage = new Set(), { ranges = VOICE, maxListeners = Infinity, canHear = () => true, duck = DUCK_GAIN } = {}, nowMs = Date.now()) {
     for (const id of this.speaking()) this.lastSpoke.set(id, nowMs);
     const targets = new Map();
     const candidates = [];
@@ -226,7 +230,11 @@ export class VoiceChat {
       else targets.set(p.id, 0);
     }
     const audible = selectAudible({ candidates, max: maxListeners, previous: this.audible, lastSpoke: this.lastSpoke, now: nowMs });
-    for (const c of candidates) targets.set(c.id, audible.has(c.id) ? c.gain : 0);
+    // Saat pembicara panggung (ustaz/MC) berbicara, obrolan jamaah mengecil (tidak dimatikan) supaya panggung tetap jelas
+    // sambil jamaah masih bisa berbincang pelan dengan yang di sebelahnya. Pulih setelah panggung diam sebentar.
+    const stageTalking = [...stage].some((id) => id !== self.id && nowMs - (this.lastSpoke.get(id) ?? -Infinity) <= STAGE_HANGOVER_MS);
+    const chatterGain = stageTalking ? duck : 1;
+    for (const c of candidates) targets.set(c.id, audible.has(c.id) ? c.gain * chatterGain : 0);
     this.audible = audible;
     for (const [id, target] of targets) {
       const el = this.audio.get(id);
