@@ -19,7 +19,13 @@ export function mountCover(container, ctx) {
     return h('div', { class: `cv-hero n${roles.length}`, 'aria-hidden': 'true' },
       roles.map((role, i) => h('div', { class: `cv-fig f${i}` }, createAvatar({ role, top: i ? tk.accent : tk.sealFill, accent: tk.accent2, seed: view.title.length + i * 2 }))));
   };
-  const s = createShell(container, ctx, 'cover', { scenery: sceneryOf(view.theme), sceneryId: view.title.length * 7 + 3, hero });
+  const photo = view.style && view.style.cover;
+  // Foto sampul pelanggan menggantikan pemandangan dan tokoh; teks tetap terbaca lewat lapisan gelap warna latar.
+  const s = createShell(container, ctx, 'cover', photo ? { walkers: false } : { scenery: sceneryOf(view.theme), sceneryId: view.title.length * 7 + 3, hero });
+  if (photo) {
+    s.stage.style.setProperty('--dim', String(photo.dim));
+    s.stage.prepend(h('div', { class: 'cv-photo', 'aria-hidden': 'true' }, h('img', { src: photo.image, alt: '', decoding: 'async', referrerpolicy: 'no-referrer' })));
+  }
   const c = coverContent(view);
 
   const names = h('h1', { class: 'cv-names' },

@@ -1,4 +1,5 @@
 import { cleanText, defaultScenes, SCENE_KINDS } from '../engine/config.js';
+import { sanitizeStyle } from '../engine/style.js';
 import { EVENT_TYPES, getTheme } from '../themes/index.js';
 import { WORLDS, DEFAULT_WORLD_URL } from '../engine/world-link.js';
 
@@ -180,6 +181,16 @@ export function createClient({ url, key, fetchImpl = globalThis.fetch, store }) 
     invitationOf: async (slug) => (await rest(`invitations?slug=eq.${encodeURIComponent(slug)}&select=slug,event_type,theme,event_date,extra&limit=1`) || [])[0] || null,
     scenesOf: (slug) => rest(`invitation_scenes?slug=eq.${encodeURIComponent(slug)}&select=kind,position,active,config&order=position.asc`),
     /** Simpan isi satu adegan. Hanya jenis adegan yang dikenal dan config JSON <= 24 KB. */
+    /** Simpan tampilan sendiri ke extra.style tanpa menimpa isi extra lainnya (zona waktu, dunia, tuan rumah, dst.). */
+    async saveStyle(slug, style) {
+      const clean = sanitizeStyle(style);
+      const cur = await this.invitationOf(slug);
+      if (!cur) throw new Error('Undangan tidak ditemukan.');
+      const extra = { ...(cur.extra && typeof cur.extra === 'object' ? cur.extra : {}) };
+      if (clean) extra.style = clean; else delete extra.style;
+      await rest(`invitations?slug=eq.${encodeURIComponent(slug)}`, { method: 'PATCH', body: { extra }, prefer: 'return=minimal' });
+      return clean;
+    },
     /** Hapus undangan milik sendiri beserta tamu, RSVP, adegan, dll. (CASCADE di database). RLS membatasi ke pemilik. */
     async deleteInvitations(slugs) {
       const list = [...new Set((slugs || []).map((s) => String(s).trim().toLowerCase()))];

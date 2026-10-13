@@ -267,3 +267,8 @@ a.pg-cta { display: inline-block; text-decoration: none; text-align: center; }
 
 /* pratinjau Studio: adegan yang diedit masih kosong */
 .pv-empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 28px; text-align: center; background: #101a1d; color: #fff; font-family: system-ui, sans-serif; line-height: 1.6; }
+
+/* ===== foto sampul pelanggan ===== */
+.cv-photo { position: absolute; inset: -4%; z-index: 0; overflow: hidden; pointer-events: none; transform: translate3d(calc(var(--px, 0) * -10px), calc(var(--py, 0) * -8px), 0); transition: transform .25s ease-out; }
+.cv-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cv-photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, color-mix(in srgb, var(--bg1) calc(var(--dim, .5) * 70%), transparent), color-mix(in srgb, var(--bg1) calc(var(--dim, .5) * 100%), transparent) 55%, color-mix(in srgb, var(--bg1) calc(var(--dim, .5) * 100% + 25%), transparent)); }

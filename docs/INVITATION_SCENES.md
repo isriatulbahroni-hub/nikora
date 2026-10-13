@@ -63,3 +63,11 @@ Menutup tab atau pindah situs saat ada isian belum tersimpan memunculkan peringa
 - Formulir buat undangan menyesuaikan jenis acara (`IDENTITY` di `studio/views.js`): pernikahan = dua nama mempelai; khitanan = nama anak; ulang tahun = nama yang berulang tahun; tazkirah/tarannum/karaoke/komunitas = nama acara. Nama kedua hanya untuk pernikahan (validasi membuangnya untuk jenis lain).
 - Hapus undangan: di daftar ada mode **Pilih** (hapus banyak, ketik `HAPUS`), di detail ada "Hapus undangan" (ketik alamatnya). Memakai kebijakan RLS "pemilik hapus undangan"; tamu, RSVP, hadiah, adegan, dll. ikut terhapus (CASCADE). Foto galeri di bucket `media` tidak ikut terhapus.
 - Kode QR (`studio/qr.js`, pustaka `qrcode-generator`, dibuat di peramban): QR link undangan dan QR per tamu (link dengan `?to=<nama>`), unduh PNG 1000 px untuk dicetak, atau bagikan lewat menu bagikan ponsel.
+
+## Tampilan sendiri (warna, font, sampul)
+Tab **Tampilan** di editor. Disimpan di `invitations.extra.style` = `{ colors: {bg1,bg2,accent,accent2}, fonts: {display,body}, cover: {image,dim} }`, disaring `engine/style.js` (`sanitizeStyle`: hex saja, font dari daftar kurasi 16 font Google, foto https, `dim` 0.3-0.8).
+- **Kontras otomatis** (`deriveTokens`): dari 4 warna dihitung seluruh token tema (kertas, tinta, cahaya, segel). Tulisan di layar dijaga >= 4.5:1 (latar digelapkan/diterangkan bila perlu), tinta surat >= 7:1, segel >= 3:1; hasil penyesuaian dijelaskan di studio. Diuji dengan 300 kombinasi acak plus kasus ekstrem.
+- **3D ikut warna**: ketebalan huruf, pemandangan, dan partikel membaca token yang sama, jadi otomatis berwarna sesuai pilihan.
+- **Ambil warna dari foto** (`studio/palette.js`): palet 4 warna dihitung di peramban dari foto yang dipilih.
+- **Foto sampul**: unggah (dikecilkan, ke bucket `media`) atau link https; menggantikan pemandangan dan tokoh di cover, dengan lapisan warna latar yang bisa diatur.
+- Pratinjau langsung ikut (pesan `orbit-preview:style`). Font dimuat lewat satu `<link>` Google Fonts (`loadFonts`).

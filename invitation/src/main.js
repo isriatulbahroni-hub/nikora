@@ -17,6 +17,7 @@ import { mountPenutup } from './scenes/penutup.js';
 import { mountHariAcara } from './scenes/hari.js';
 import { mountArsip } from './scenes/arsip.js';
 import { acceptPreviewMessage, applyDraft } from './preview-frame.js';
+import { loadFonts } from './engine/style.js';
 import { worldUrl } from './engine/world-link.js';
 
 registerScene('amplop', mountEnvelopeAuto);   // 3D interaktif bila perangkat mampu, jika tidak 2D
@@ -45,6 +46,7 @@ const withWorld = (view) => ({ ...view, worldUrl: worldUrl(view, { base: import.
 
 function play(rawView, opts = {}) {
   const view = withWorld(rawView);
+  loadFonts(view.style);
   if (engine) engine.stop();
   engine = createEngine({ root: app, view, env, api, onRestart: () => play(view), ...opts });
   engine.start();
@@ -54,16 +56,20 @@ function play(rawView, opts = {}) {
 function frameMode(data) {
   const parent = window.parent;
   let scenes = data.scenes;
+  let style = data.invitation && data.invitation.extra ? data.invitation.extra.style : null;
   let timer = null;
   const tell = (msg) => parent.postMessage(msg, location.origin);
   window.addEventListener('message', (e) => {
     const draft = acceptPreviewMessage(e, { origin: location.origin, parent });
     if (!draft) return;
-    scenes = applyDraft(scenes, draft);
+    if (draft.type === 'style') style = draft.style;
+    else scenes = applyDraft(scenes, draft);
+    const startAt = draft.type === 'style' ? 'cover' : draft.kind;
     clearTimeout(timer);
     timer = setTimeout(() => {
-      play(buildView({ ...data, scenes, query: { to: query.to, tema: query.tema } }), {
-        startAt: draft.kind,
+      const inv = data.invitation || {};
+      play(buildView({ ...data, invitation: { ...inv, extra: { ...(inv.extra || {}), style } }, scenes, query: { to: query.to, tema: query.tema } }), {
+        startAt,
         onScene: (s) => tell({ type: 'orbit-preview:scene', kind: s.kind, skipped: s.skipped }),
       });
     }, 250);
