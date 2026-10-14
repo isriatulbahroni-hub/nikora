@@ -7,7 +7,7 @@ import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
 import { modeFor } from './event-mode.js';
-import { applyPose, createAvatar, makeBubble, setAvatarConfig, setStageRing } from './avatar.js';
+import { applyPose, auraSpecFor, createAvatar, makeBubble, setAurasVisible, setAvatarAura, setAvatarConfig, setStageRing } from './avatar.js';
 import { createPartyController, stageIds } from './party.js';
 import { takeRoleKey } from './role-key.js';
 import { loadConfig, saveConfig, toWire } from './avatar-config.js';
@@ -15,6 +15,8 @@ import { createAvatarEditor } from './avatar-editor.js';
 import { GAME_RULES, cameraRelativeMovement, normalizeMovement } from './game-rules.js';
 import { HALL, SEATS, TABLES, facingAngle, findNearestSeat, resolveCollisions } from './hall-layout.js';
 import { resolveServerUrl, startMultiplayer } from './multiplayer-view.js';
+import { dayPartIndex } from './avatar-aura.js';
+import { requestSensorPermission, sensorAvailable, startMirror } from './motion-mirror.js';
 import './style.css';
 
 const $ = (selector) => document.querySelector(selector);
@@ -56,6 +58,54 @@ const JOY_DEADZONE = 0.14;
 const me = { x: START.x, z: START.z, rot: Math.PI, sit: null };
 let joined = false;
 let playerName = 'Tamu';
+let gestureAct = null; // gestur solo dari Cermin Gerak (melambai/membungkuk/berputar)
+let gestureUntil = 0;
+let mirrorStop = null;
+let noticeTimer = 0;
+
+function notify(text) {
+  const el = $('#notice');
+  el.textContent = text;
+  el.hidden = false;
+  window.clearTimeout(noticeTimer);
+  noticeTimer = window.setTimeout(() => { el.hidden = true; }, 4200);
+}
+
+/** Aura diri sendiri: nama + bagian hari di perangkat ini. Bagian harinya dikirim agar semua klien memakai warna yang sama. */
+function applySelfAura() {
+  const part = dayPartIndex(new Date().getHours());
+  setAvatarAura(playerAvatar, auraSpecFor(playerName, part));
+  multiplayer?.net.setAura?.(part);
+}
+
+function onMirrorGesture(kind) {
+  const now = performance.now() * 0.001; // sama dengan basis waktu loop render
+  if (!joined || me.sit !== null || isDancing(now) || now < gestureUntil) return;
+  if (multiplayer && !multiplayer.net.setGesture?.(kind)) return; // ditolak (mis. sedang ada aksi lain)
+  gestureAct = kind;
+  gestureUntil = now + 1.8;
+}
+
+async function toggleMirror() {
+  if (mirrorStop) {
+    mirrorStop();
+    mirrorStop = null;
+    $('#emote-mirror').setAttribute('aria-pressed', 'false');
+    notify('Cermin Gerak dimatikan');
+    return;
+  }
+  if (!sensorAvailable()) {
+    notify('Perangkat ini tidak punya sensor gerak. Cermin Gerak hanya jalan di HP.');
+    return;
+  }
+  if (!(await requestSensorPermission())) {
+    notify('Izin sensor gerak ditolak. Aktifkan di pengaturan browser untuk memakai Cermin Gerak.');
+    return;
+  }
+  mirrorStop = startMirror({ onGesture: onMirrorGesture });
+  $('#emote-mirror').setAttribute('aria-pressed', 'true');
+  notify('Cermin Gerak aktif: miring kiri = hormat, miring kanan = lambai, miring jauh = berputar');
+}
 const eventParams = parseEventParams(window.location.search);
 // kunci pemilik/MC dari tautan privat (?key=): disimpan untuk sesi ini, dihapus dari URL, diperiksa server
 const roleKey = takeRoleKey({
@@ -787,7 +837,8 @@ function renderFrame(time) {
   const walking = joined ? updatePlayer(delta, now) : false;
   if (walking && isDancing(now)) setDancing(false, now); // bergerak menghentikan joget
   const selfAct = selfState()?.act ?? null;
-  const pose = isDancing(now) ? 'dance' : selfAct ?? (now < clapUntil ? 'clap' : walking ? 'walk' : null);
+  if (walking) gestureUntil = 0; // berjalan menghentikan gestur lokal
+  const pose = isDancing(now) ? 'dance' : now < gestureUntil ? gestureAct : selfAct ?? (now < clapUntil ? 'clap' : walking ? 'walk' : null);
   applyPose(playerAvatar, pose, now, delta);
   const bob = walking ? Math.abs(Math.sin(now * 13)) * 0.09 : 0;
   const hop = now < clapUntil ? Math.abs(Math.sin((clapUntil - now) * 14)) * 0.12 : 0;
@@ -984,6 +1035,12 @@ function setupInput() {
     navigator.vibrate?.(12);
     toggleSit(clock());
   });
+  $('#emote-mirror').addEventListener('click', () => { toggleMirror(); });
+  $('#aura-toggle').addEventListener('click', () => {
+    const on = $('#aura-toggle').getAttribute('aria-pressed') !== 'true';
+    $('#aura-toggle').setAttribute('aria-pressed', String(on));
+    setAurasVisible(on);
+  });
   ui.danceButton.addEventListener('pointerdown', (event) => {
     event.preventDefault();
     toggleDance(clock());
@@ -1086,6 +1143,7 @@ function setupJoin() {
     }
     document.body.classList.add('joined');
     $('#avatar-button').hidden = false;
+    applySelfAura();
     window.setTimeout(() => ui.footer.classList.add('is-faded'), 8000);
     joined = true;
     ui.joinOverlay.hidden = true;
@@ -1096,6 +1154,7 @@ function setupJoin() {
         if (session) {
           clearSimulatedGuests();
           session.net.setAvatar?.(toWire(avatarCfg)); // avatar buatan sendiri, dilihat sama oleh semua orang
+          session.net.setAura?.(dayPartIndex(new Date().getHours()));
         }
         session?.net.on('chat', addChatLine);
         session?.net.on('greet-req', (msg) => showGreetRequest(msg));

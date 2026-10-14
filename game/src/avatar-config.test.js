@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ACCESSORIES, HAIR_STYLES, OUTFITS, configFromId, defaultConfig, loadConfig, randomConfig, sameConfig, sanitizeConfig, saveConfig, toWire } from './avatar-config.js';
-import { createAvatar, setAvatarConfig } from './avatar.js';
+import { applyPose, auraSpecFor, createAvatar, setAurasVisible, setAvatarAura, setAvatarConfig } from './avatar.js';
 
 test('sanitizeConfig: nilai ngawur dari jaringan diganti default, array dan objek diterima', () => {
   assert.deepEqual(sanitizeConfig([99, -1, 1.5, 'x', null]), defaultConfig());
@@ -43,7 +43,37 @@ test('createAvatar/setAvatarConfig: semua gaya rambut dan aksesori terbentuk tan
       assert.deepEqual(avatar.userData.config, { o: 1, s: 2, h, k: 3, a, m: 0 });
     }
   }
-  assert.equal(avatar.children.filter((c) => c === avatar.userData.gear).length, 1); // tidak menumpuk
+  assert.equal(avatar.userData.pivot.children.filter((c) => c === avatar.userData.gear).length, 1); // tidak menumpuk
   assert.equal(avatar.userData.skin.color.getHex(), 0xc99468);
   assert.equal(avatar.userData.tint[0].color.getHex(), OUTFITS[1].hex);
+});
+
+test('gestur spin memutar pivot tubuh (bukan grup) dan kembali ke 0 setelah selesai', () => {
+  const avatar = createAvatar({ config: defaultConfig() });
+  applyPose(avatar, 'spin', 0.3, 1 / 60);
+  assert.ok(Math.abs(avatar.userData.pivot.rotation.y) > 0.1);
+  assert.equal(avatar.rotation.y, 0, 'arah hadap grup tidak disentuh');
+  applyPose(avatar, null, 0.4, 1 / 60);
+  assert.equal(avatar.userData.pivot.rotation.y, 0);
+});
+
+test('aura: terpasang, beranimasi, bisa disembunyikan, diganti tanpa menumpuk, dan dilepas', () => {
+  const avatar = createAvatar({ config: defaultConfig() });
+  const before = avatar.children.length;
+  setAvatarAura(avatar, auraSpecFor('Budi', 3));
+  assert.equal(avatar.children.length, before + 1);
+  applyPose(avatar, null, 1.5, 1 / 60);
+  const pos = avatar.userData.aura.points.geometry.attributes.position;
+  assert.ok(Number.isFinite(pos.getX(0)) && pos.getY(0) > 0);
+  setAvatarAura(avatar, auraSpecFor('Budi', 0)); // ganti: tidak menumpuk
+  assert.equal(avatar.children.length, before + 1);
+  setAurasVisible(false);
+  applyPose(avatar, null, 2, 1 / 60);
+  assert.equal(avatar.userData.aura.group.visible, false);
+  setAurasVisible(true);
+  applyPose(avatar, null, 2.1, 1 / 60);
+  assert.equal(avatar.userData.aura.group.visible, true);
+  setAvatarAura(avatar, null);
+  assert.equal(avatar.children.length, before);
+  assert.equal(avatar.userData.aura, null);
 });

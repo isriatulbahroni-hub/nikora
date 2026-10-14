@@ -96,3 +96,12 @@ Catatan: pada acara yang layarnya menyala, siapa pun bisa menjadi operator lebih
 ## Tata letak antarmuka
 Dock bawah: obrolan, mikrofon, gerakan (joget, tepuk), dan menu ≡. Menu ≡ berisi suara, panggung, avatar, pintu masuk,
 dan layar (bila diaktifkan). Titik merah di ≡ muncul bila MC punya tamu yang mengangkat tangan.
+
+## Aura dan Cermin Gerak
+- **Aura:** cincin dan percikan cahaya di sekitar avatar. Warna mengikuti bagian hari di perangkat pemain (fajar, siang, senja, malam)
+  ditambah variasi kecil dari nama. Bagian hari dikirim ke pemain lain supaya semua melihat warna yang sama. Tidak memakai lokasi,
+  cuaca, atau data pribadi. Bisa disembunyikan lewat menu ≡ → Aura (preferensi lokal, juga menghemat tenaga). Lihat `src/avatar-aura.js`.
+- **Cermin Gerak (opsional, hanya HP):** menu 😀 → Cermin gerak. Miring kiri = membungkuk hormat, miring kanan = melambai,
+  miring sangat jauh = berputar. Memakai `deviceorientation` dan meminta izin sensor bila browser mewajibkan. Gestur butuh ditahan
+  sekitar 0,3 detik, ada jeda 2,2 detik, dan miring yang ditahan tidak memicu berulang. Tidak aktif saat duduk atau joget.
+  Pemetaan layar landscape belum diuji di perangkat nyata. Lihat `src/motion-mirror.js`.

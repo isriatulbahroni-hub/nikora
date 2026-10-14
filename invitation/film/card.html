@@ -1,0 +1,20 @@
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--ink:#3a2a12;--letter:#fffaf0;--accent:#b08a2c;--font-display:Georgia,serif;--font-body:system-ui,sans-serif}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(120% 90% at 50% 28%,#6b2e14,#2b140d);font-family:var(--font-body)}
+.card{width:min(92vw,460px);background:#fffaf0;border-radius:22px;padding:22px 18px 26px;color:var(--ink);box-shadow:0 20px 50px rgba(0,0,0,.4)}
+.card h2{margin:0 0 4px;font:700 22px var(--font-display);text-align:center}.card .eb{margin:0;text-align:center;font-size:12px;letter-spacing:.2em;text-transform:uppercase;opacity:.7}
+.g-list{display:none}.g-copy{padding:9px 16px;border-radius:999px;border:0;background:#3a2a12;color:#fff;font:600 14px system-ui;cursor:pointer}
+</style></head><body><div class="card"><p class="eb">Tanda kasih</p><h2>Hadiah untuk mempelai</h2><ul class="g-list" id="list"><li>teks</li></ul></div>
+<script type="module">
+import { enhanceGifts } from '../src/world3d/card-ui.js';
+const q = new URLSearchParams(location.search);
+const gifts = q.get('one') ? [{ kind:'bank', label:'BCA', accountName:'Dimas Pratama', accountNo:'0123456789' }] : [
+  { kind:'bank', label:'BCA', accountName:'Dimas Pratama', accountNo:'0123456789' },
+  { kind:'bank', label:'Bank Mandiri', accountName:'Rani Anjani Putri', accountNo:'1234567890123' },
+  { kind:'ewallet', label:'GoPay', accountName:'Dimas Pratama', accountNo:'081234567890' }];
+window.copied = null;
+const copy = async (t, b) => { window.copied = t; b.textContent = 'Tersalin'; };
+window.api = await enhanceGifts({ list: document.getElementById('list'), gifts, copy, env: { light: q.get('light') === '1', reduced: q.get('reduced') === '1' } });
+window.READY = true;
+</script></body></html>

@@ -9,6 +9,8 @@ export const WALL_THICKNESS = 0.3;
 export const WALL_HEIGHT = 3.0;
 export const LEVEL_HEIGHT = 3.4; // jarak antar lantai (tinggi permukaan lantai)
 export const LEVEL_COUNT = 3;
+export const DOOR_HEIGHT = 2.45; // tinggi bukaan pintu; di atasnya dinding utuh (ambang)
+export const HALL_WALL_HEIGHT = 6.6; // aula setinggi dua lantai (langit-langit tepat di bawah pelat lantai 3)
 export const levelY = (level) => (level ?? 0) * LEVEL_HEIGHT;
 export const PLAYER_RADIUS = 0.4;
 // BOUNDS = kompleks vila (pagar keliling, peta mini). Pemain TIDAK terkurung di sini: boleh keluar lewat gerbang
@@ -118,15 +120,24 @@ export const UPPER_ROOMS = Object.freeze([
   { id: 'rooftop', name: 'Rooftop Lounge', kind: 'terrace', level: 2, rect: [-36, 4, -16, 20] },
 ]);
 
+// Atap bangunan. base = tinggi puncak dinding; 'gable' = pelana dengan bubungan sepanjang x, 'hip' = limasan.
+// Dipakai renderer (bentuk atap) dan kamera (penghalang).
+export const ROOFS = Object.freeze([
+  { id: 'hall', kind: 'gable', rect: [-14, -20, 14, -3], base: HALL_WALL_HEIGHT, rise: 2.6, overhang: 0.7 },
+  { id: 'kitchen', kind: 'hip', rect: [-36, 20, -26, 30], base: WALL_HEIGHT, rise: 1.4, overhang: 0.6 },
+  { id: 'presidential', kind: 'hip', rect: [26, -20, 38, -3], base: levelY(2) + WALL_HEIGHT, rise: 2.2, overhang: 0.6 },
+  ...TOWERS.map((t) => ({ id: `${t.id}_roof`, kind: 'hip', rect: t.rect, base: levelY(2) + WALL_HEIGHT, rise: 1.8, overhang: 0.5 })),
+]);
+
 export const roomsAtLevel = (level) => (level === 0 ? [...ROOMS, ...towerRooms(0)] : [...UPPER_ROOMS.filter((r) => r.level === level), ...towerRooms(level)]);
 
 // orient 'h': pintu pada dinding yang membentang sepanjang x (di koordinat z).
 // orient 'v': pintu pada dinding yang membentang sepanjang z (di koordinat x).
 const guestDoorXs = [0, 1, 2, 3].map((i) => (GUEST_COLS[i] + GUEST_COLS[i + 1]) / 2);
 const GROUND_DOORS = [
-  { x: 0, z: -3, orient: 'h', width: 5 }, // pintu utama aula
-  { x: 14, z: -11, orient: 'v', width: 3 }, // aula <-> lobby
-  { x: -14, z: -11, orient: 'v', width: 3 }, // aula <-> main suite
+  { x: 0, z: -3, orient: 'h', width: 5, tall: true }, // pintu utama aula
+  { x: 14, z: -11, orient: 'v', width: 3, tall: true }, // aula <-> lobby
+  { x: -14, z: -11, orient: 'v', width: 3, tall: true }, // aula <-> main suite
   { x: 26, z: -11, orient: 'v', width: 3 }, // lobby <-> bridal
   { x: -26, z: -11, orient: 'v', width: 3 }, // main suite <-> spa
   { x: 20, z: -3, orient: 'h', width: 3 }, // lobby ke luar
@@ -500,7 +511,17 @@ export function getVillaWorld() {
     const rooms = roomsAtLevel(level);
     const walled = rooms.filter((r) => r.kind !== 'terrace');
     const doors = level === 0 ? DOORS : UPPER_DOORS.filter((d) => d.level === level);
-    const walls = buildWallSegments(walled, doors);
+    const hallRect = ROOMS.find((r) => r.id === 'wedding_hall').rect;
+    const hallEdge = (w) => {
+      const mid = (w.a + w.b) / 2;
+      if (w.orient === 'h') return (Math.abs(w.coord - hallRect[1]) < 1e-6 || Math.abs(w.coord - hallRect[3]) < 1e-6) && mid > hallRect[0] && mid < hallRect[2];
+      return (Math.abs(w.coord - hallRect[0]) < 1e-6 || Math.abs(w.coord - hallRect[2]) < 1e-6) && mid > hallRect[1] && mid < hallRect[3];
+    };
+    const walls = buildWallSegments(walled, doors).map((w) => {
+      if (!hallEdge(w)) return w;
+      // lantai 0: dinding aula setinggi dua lantai; lantai atas: dinding duplikat disembunyikan (tetap menjadi tabrakan)
+      return level === 0 ? { ...w, h: HALL_WALL_HEIGHT } : { ...w, dup: true };
+    });
     const levelProps = props.filter((p) => p.level === level);
     const colliders = [...walls.map(wallToRect), ...levelProps.map(propToRect)];
     if (level === 0) {

@@ -415,3 +415,23 @@ test('close() sengaja tidak memicu masuk ulang', async () => {
   assert.equal(closed.length, 1);
   a.close();
 });
+
+test('LiveKitNet: aura (bagian hari) dan gestur solo sampai ke pemain lain; data ngawur diabaikan', async () => {
+  const hub = makeHub();
+  const clock = { t: 1000 };
+  const a = makeNet(hub, 'aaaa', 'Ani', clock);
+  const b = makeNet(hub, 'bbbb', 'Budi', clock);
+  await a.connect('', 'Ani');
+  await b.connect('', 'Budi');
+  a.setAura(3);
+  assert.equal(b.players.find((p) => p.id === 'aaaa').au, 3);
+  a.setAura(99); // ngawur: tidak dianggap
+  assert.equal(a.self.au, null);
+  assert.equal(a.setGesture('spin'), true);
+  assert.equal(b.players.find((p) => p.id === 'aaaa').act, 'spin');
+  assert.equal(a.setGesture('wave'), false, 'sedang ada aksi lain');
+  assert.equal(a.setGesture('hack'), false);
+  a.self.act = null;
+  a.self.sit = 2; // duduk: tidak bisa bergestur
+  assert.equal(a.setGesture('bow'), false);
+});

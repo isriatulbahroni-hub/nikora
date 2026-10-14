@@ -28,6 +28,7 @@
 
         <div id="emoji-sheet" class="sheet sheet-pop" hidden role="menu" aria-label="Gerakan">
           <button id="emote-dance" class="sheet-tile" type="button" role="menuitem" aria-label="Joget"><span class="tile-ico">💃</span><span class="tile-label">Joget</span></button>
+          <button id="emote-mirror" class="sheet-tile" type="button" role="menuitem" aria-pressed="false" aria-label="Cermin Gerak (miringkan HP)"><span class="tile-ico">📱</span><span class="tile-label">Cermin gerak</span></button>
           <button id="emote-clap" class="sheet-tile" type="button" role="menuitem" aria-label="Tepuk tangan"><span class="tile-ico">👏</span><span class="tile-label">Tepuk</span></button>
         </div>
 
@@ -35,6 +36,7 @@
           <div class="sheet-head"><strong>Menu</strong><button type="button" id="menu-close" class="sheet-close" aria-label="Tutup menu">✕</button></div>
           <div id="menu-grid" class="sheet-grid">
             <button id="mute-button" class="sheet-tile" type="button" aria-label="Matikan suara" aria-pressed="false" title="Suara (M)"><span class="tile-ico">♪</span><span class="tile-label">Suara</span></button>
+            <button id="aura-toggle" class="sheet-tile" type="button" aria-pressed="true" aria-label="Aura avatar" title="Tampilkan atau sembunyikan aura"><span class="tile-ico">✨</span><span class="tile-label">Aura</span></button>
             <button id="party-button" class="sheet-tile" type="button" aria-label="Panggung Party Room" title="Panggung (P)" hidden><span class="tile-ico">🎤</span><span class="tile-label">Panggung</span></button>
             <button id="avatar-button" class="sheet-tile" type="button" aria-label="Ubah avatar" title="Ubah avatar" hidden><span class="tile-ico">👤</span><span class="tile-label">Avatar</span></button>
             <button id="home-button" class="sheet-tile" type="button" aria-label="Kembali ke pintu masuk" title="Ke pintu masuk (R)"><span class="tile-ico">⌂</span><span class="tile-label">Pintu masuk</span></button>
@@ -74,6 +76,7 @@
           <button type="button" data-greet="wave" aria-label="Melambai" title="Lambai">👋</button>
           <button type="button" data-greet="bow" aria-label="Membungkuk hormat" title="Hormat">🙇</button>
         </div>
+        <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
         <div id="greet-toast" class="greet-toast" hidden role="alertdialog" aria-label="Ajakan interaksi">
           <span id="greet-toast-text"></span>
           <button type="button" id="greet-yes" aria-label="Terima">✓</button>

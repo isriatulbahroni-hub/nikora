@@ -6,6 +6,7 @@ import { loadEventInfo, parseEventParams } from './event-context.js';
 import './gate.css';
 import { mountGate, shouldShowGate } from './gate.js';
 import { LEVEL_HEIGHT, VILLA_SCREEN, findNearestSpot, getVillaWorld, levelY, roomAt, sameVoiceSpace, spotPose } from './villa-layout.js';
+import { buildCameraOccluders, resolveCameraDistance } from './villa-camera.js';
 import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
@@ -65,9 +66,9 @@ function readInput() {
 
 const hooks = { action: () => {}, map: () => {}, mic: () => {}, camera: () => {} };
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-const CAM_LIMITS = Object.freeze({ minPitch: 0.18, maxPitch: 1.5, minDist: 4, maxDist: 70 });
-// Sudut kamera siap pakai: Normal, Dekat (sejajar tanah), Atas (pandangan dari atas)
-const CAM_PRESETS = Object.freeze([{ pitch: 0.95, dist: 21 }, { pitch: 0.42, dist: 9 }, { pitch: 1.5, dist: 44 }]);
+const CAM_LIMITS = Object.freeze({ minPitch: 0.06, maxPitch: 1.5, minDist: 1.5, maxDist: 70 });
+// Sudut kamera siap pakai: Orang ketiga (setinggi manusia), Lebar, Udara, dan Atas
+const CAM_PRESETS = Object.freeze([{ pitch: 0.28, dist: 5.6 }, { pitch: 0.55, dist: 11 }, { pitch: 0.95, dist: 21 }, { pitch: 1.5, dist: 44 }]);
 
 /** Arah gerak relatif kamera: dorong joystick ke atas = menjauhi kamera, di sudut putar mana pun. */
 function cameraRelative(input, yaw) {
@@ -273,20 +274,25 @@ async function start() {
   const root = $('villa-root');
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setClearAlpha(1);
-  const quality = createQualityGovernor({ deviceRatio: window.devicePixelRatio || 1, cap: window.matchMedia?.('(pointer: coarse)').matches ? 1.75 : 2, floor: lowQuality ? 2 : 0 });
-  const coarse = window.matchMedia?.('(pointer: coarse)').matches;
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, coarse ? 1.75 : 2));
+  // batas resolusi dinaikkan (2,25 di layar sentuh) agar tidak buram; governor kualitas tetap menurunkannya bila lambat
+  const quality = createQualityGovernor({ deviceRatio: window.devicePixelRatio || 1, cap: window.matchMedia?.('(pointer: coarse)').matches ? 2.25 : 2, floor: lowQuality ? 2 : 0 });
+  renderer.setPixelRatio(quality.settings().ratio);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.95;
+  renderer.toneMappingExposure = 0.82;
   root.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();
   const built = buildVillaWorld(scene, world, { renderer });
   if (lowQuality) applyQuality(renderer, scene, quality.settings()); // ?q=low: mulai langsung dengan kualitas hemat
-  const camera = new THREE.PerspectiveCamera(48, 1, 0.5, 400);
+  const camera = new THREE.PerspectiveCamera(48, 1, 0.2, 320);
+  const occluders = buildCameraOccluders(world);
+  let camArm = 0; // panjang lengan kamera yang sudah dihaluskan (dipendekkan seketika saat terhalang)
+  const indoorLight = new THREE.PointLight(0xffe2b8, 0, 17, 1.4);
+  scene.add(indoorLight);
+  let indoorK = 0;
   // target kamera (diubah oleh gestur) dan nilai yang dihaluskan untuk tampilan
   const camState = { yaw: 0, pitch: CAM_PRESETS[0].pitch, dist: CAM_PRESETS[0].dist };
   const camNow = { ...camState };
@@ -302,6 +308,7 @@ async function start() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     screen?.resize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
+    camera.fov = clamp(48 + (1.2 - camera.aspect) * 26, 48, 62); // layar potret: lebarkan sudut pandang, bukan menjauhkan kamera
     camera.updateProjectionMatrix();
   };
   resize();
@@ -530,7 +537,8 @@ async function start() {
 
   function frame(time) {
     requestAnimationFrame(frame);
-    const delta = Math.min((time - last) / 1000, 0.05);
+    const rawMs = time - last;
+    const delta = Math.min(rawMs / 1000, 0.05);
     last = time;
 
     const input = readInput();
@@ -562,12 +570,6 @@ async function start() {
       }
       if (mine && seat !== null && time - seatSince > 800 && mine.sit !== seat) standUp(); // server menolak
       multiplayer.view.update(delta, time / 1000);
-      // pemain di lantai yang sedang dilipat tidak digambar (agar tidak melayang di udara)
-      for (const p of multiplayer.net.players) {
-        if (p.id === multiplayer.net.id) continue;
-        const g = multiplayer.view.getAvatar(p.id);
-        if (g) g.visible = !built.isHidden(p.x, p.z, Math.round((p.y ?? 0) / LEVEL_HEIGHT));
-      }
       screen.tick(time);
       if (party && time - partyTick > 500) {
         partyTick = time;
@@ -613,12 +615,26 @@ async function start() {
     camNow.yaw += (camState.yaw - camNow.yaw) * ck;
     camNow.pitch += (camState.pitch - camNow.pitch) * ck;
     camNow.dist += (camState.dist - camNow.dist) * ck;
-    const fit = Math.min(1.9, Math.max(1, 1.45 / camera.aspect)); // layar sempit: jauhkan sedikit
-    const d = camNow.dist * fit;
+    const wide = clamp((camNow.dist - 8) / 6, 0, 1); // jarak jauh (udara/atas) di layar sempit tetap diperlebar sedikit
+    const fit = 1 + (Math.min(1.9, Math.max(1, 1.45 / camera.aspect)) - 1) * wide;
+    const want = camNow.dist * fit;
     const cp = Math.cos(camNow.pitch);
-    camera.position.set(me.x + Math.sin(camNow.yaw) * cp * d, me.y + 0.8 + Math.sin(camNow.pitch) * d, me.z + Math.cos(camNow.yaw) * cp * d);
-    camera.lookAt(me.x, me.y + 0.8, me.z);
-    built.update(me.x, me.z, delta, me.level, { x: Math.sin(camNow.yaw), z: Math.cos(camNow.yaw) }, camNow.pitch, me.y);
+    const dir = { x: Math.sin(camNow.yaw) * cp, y: Math.sin(camNow.pitch), z: Math.cos(camNow.yaw) * cp };
+    const eye = { x: me.x, y: me.y + 1.45, z: me.z };
+    const { dist: freeArm } = resolveCameraDistance(eye, dir, want, occluders);
+    // dinding/atap: kamera mundur ke depan penghalang seketika; saat bebas kembali perlahan (tanpa loncatan)
+    camArm = camArm === 0 || freeArm < camArm ? freeArm : camArm + (freeArm - camArm) * (1 - Math.exp(-4 * delta));
+    camera.position.set(eye.x + dir.x * camArm, eye.y + dir.y * camArm, eye.z + dir.z * camArm);
+    camera.lookAt(me.x, me.y + 1.2, me.z);
+    avatar.visible = camArm > 0.95; // kamera terlalu dekat: avatar tidak menutupi layar
+    // cahaya dalam ruangan menyala halus saat pemain berada di dalam bangunan
+    const inside = !me.stair && roomAt(me.x, me.z, me.level).indoor;
+    indoorK += ((inside ? 1 : 0) - indoorK) * (1 - Math.exp(-3 * delta));
+    indoorLight.intensity = 26 * indoorK;
+    indoorLight.position.set(me.x, me.y + 2.3, me.z);
+    const actors = [{ x: me.x, z: me.z, y: me.y }];
+    if (multiplayer) for (const p of multiplayer.net.players) if (p.id !== multiplayer.net.id) actors.push({ x: p.x, z: p.z, y: p.y ?? 0 });
+    built.update(me.x, me.z, delta, actors, camera.position);
     const qChange = quality.setFloor(lowQuality ? 2 : screen?.controller?.state?.src ? 1 : 0) ?? quality.tick(performance.now());
     if (qChange) applyQuality(renderer, scene, qChange);
     renderer.render(scene, camera);
@@ -644,6 +660,7 @@ async function start() {
       x: me.x, z: me.z, y: me.y, level: me.level, stair: me.stair, place: roomAt(me.x, me.z, me.level), online: !!multiplayer, others: multiplayer ? multiplayer.view.count : 0,
       seat, action: actBtn.hidden ? '' : actBtn.textContent, mapVisible: !mapCanvas.hidden,
     }),
+    renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio(), canvas: [renderer.domElement.width, renderer.domElement.height] }),
     cam: () => ({ yaw: camState.yaw, pitch: camState.pitch, dist: camState.dist, nowYaw: camNow.yaw }),
     remotes: () => (multiplayer ? multiplayer.view.avatarGroups().map((g) => ({ y: g.position.y, rx: g.rotation.x, ry: g.rotation.y })) : []),
     // hanya untuk pengujian; dalam mode multiplayer server tetap otoritatif dan akan mengoreksi posisi

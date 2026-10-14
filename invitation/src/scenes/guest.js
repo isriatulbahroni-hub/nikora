@@ -132,16 +132,25 @@ export function mountGifts(container, ctx) {
     if (!alive) return;
     if (!gifts.length) { f.finish(); return; }
     f.stage.hidden = false;
+    upgrade(gifts);
     list.replaceChildren(...gifts.map((g) => h('li', {},
       h('strong', { text: g.label }),
       g.accountName ? h('span', { text: g.accountName }) : null,
       g.accountNo ? h('code', { text: g.accountNo }) : null,
       g.accountNo ? h('button', { type: 'button', class: 'g-copy', text: 'Salin nomor', onclick: (e) => copy(g.accountNo, e.currentTarget) }) : null)));
   };
+  // Peningkatan bertahap: daftar teks tampil dulu; kartu emas 3D menggantikannya bila modul berhasil dimuat.
+  let enhanced = null;
+  const upgrade = (gifts) => {
+    import('../world3d/card-entry.js')
+      .then((m) => m.enhanceGifts({ list, gifts, copy, env: ctx.env || {} }))
+      .then((c) => { if (!alive) c.destroy(); else enhanced = c; })
+      .catch(() => { /* tetap memakai daftar teks */ });
+  };
   const load = isDemo(view) ? Promise.resolve(DEMO_GIFTS) : loadGifts(view.slug, ctx.api || {});
   load.then(render).catch(() => { if (alive) f.finish(); });
 
-  return { done: f.done, destroy: () => { alive = false; f.destroy(); } };
+  return { done: f.done, destroy: () => { alive = false; if (enhanced) enhanced.destroy(); f.destroy(); } };
 }
 
 export { enterLabel };
