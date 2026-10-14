@@ -562,3 +562,6 @@ body[data-input=touch] .chat-box{bottom:calc(var(--dock) + 180px + env(safe-area
 
 .online-pill i.is-wait { background: #f0a030; animation: pill-wait 1s ease-in-out infinite; }
 @keyframes pill-wait { 50% { opacity: .35; } }
+
+.notice{position:absolute;z-index:9;left:50%;transform:translateX(-50%);bottom:calc(var(--dock) + 140px + env(safe-area-inset-bottom));max-width:min(360px,calc(100% - 28px));padding:10px 14px;border-radius:14px;background:rgba(29,23,34,.92);border:1px solid var(--line);color:var(--ink);font:500 .85rem/1.35 system-ui,sans-serif;text-align:center;pointer-events:none}
+.notice[hidden]{display:none}

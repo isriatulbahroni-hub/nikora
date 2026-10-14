@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { applyPose, createAvatar, setAvatarConfig } from './avatar.js';
+import { applyPose, auraSpecFor, createAvatar, setAvatarAura, setAvatarConfig } from './avatar.js';
 import { configFromId, sameConfig } from './avatar-config.js';
 import { HALL } from './hall-layout.js';
 import { NetClient } from './net-client.js';
@@ -35,11 +35,12 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
   function build(p) {
     const config = p.av ?? configFromId(p.id); // tampilan sementara sampai avatar asli diterima
     const group = createAvatar({ config, name: p.name });
+    if (p.au != null) setAvatarAura(group, auraSpecFor(p.name, p.au));
     group.rotation.order = 'YXZ'; // miring (tidur) dulu, lalu arah hadap
     group.position.set(p.x, (p.y ?? 0) + (p.sit == null ? 0 : HALL.seatedDrop), p.z);
     group.rotation.y = p.rot;
     scene.add(group);
-    return { group, config, act: p.act ?? null, target: { x: p.x, z: p.z, y: p.y ?? 0, rot: p.rot, sit: p.sit ?? null } };
+    return { group, config, aura: p.au ?? null, act: p.act ?? null, target: { x: p.x, z: p.z, y: p.y ?? 0, rot: p.rot, sit: p.sit ?? null } };
   }
 
   return {
@@ -55,6 +56,10 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
         if (existing) {
           existing.target = { x: p.x, z: p.z, y: p.y ?? 0, rot: p.rot, sit: p.sit ?? null };
           existing.act = p.act ?? null;
+          if (p.au != null && p.au !== existing.aura) {
+            existing.aura = p.au;
+            setAvatarAura(existing.group, auraSpecFor(p.name, p.au));
+          }
           if (p.av && !sameConfig(p.av, existing.config)) {
             existing.config = p.av;
             setAvatarConfig(existing.group, p.av);

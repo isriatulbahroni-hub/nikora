@@ -96,6 +96,9 @@ export function proceduralPose(act, t, seated) {
       d.LeftForeArm = ry((55 - c * 25) * D);
       break;
     }
+    case 'spin':
+      d.RightArm = rz(20 * D); d.LeftArm = rz(-20 * D); // lengan terentang sedikit turun saat berputar
+      break;
     case 'bow':
       d.Spine = rx(18 * D); d.Spine1 = rx(22 * D); d.Spine2 = rx(15 * D);
       break;
@@ -171,7 +174,7 @@ export class HumanRig {
   }
 
   update(act, t, delta, seated = false) {
-    const wantsPose = seated || ['wave', 'highfive', 'handshake', 'clap', 'bow'].includes(act);
+    const wantsPose = seated || ['wave', 'highfive', 'handshake', 'clap', 'bow', 'spin'].includes(act);
     this.play(CLIP_FOR_ACT[act] ?? 'idle');
     this.mixer.update(delta);
     if (!wantsPose) return;

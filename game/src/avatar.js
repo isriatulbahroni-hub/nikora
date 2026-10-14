@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CHARACTERS, HAIR_COLORS, OUTFITS, SKINS, sanitizeConfig } from './avatar-config.js';
 import { HumanRig, loadHumanModel } from './avatar-human.js';
+import { auraFor } from './avatar-aura.js';
 
 export function makeLabel(text) {
   if (typeof document === 'undefined') return null;
@@ -63,7 +64,12 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
   group.userData.tint = [bodyMaterial, markerMaterial, armMaterial];
   group.userData.skin = skinMaterial;
   group.userData.body = body;
-  group.userData.parts = [...group.children]; // bagian avatar sederhana (disembunyikan saat memakai model manusia)
+  // Semua bagian tubuh masuk ke satu pivot supaya bisa berputar (gestur 'spin') tanpa mengganggu arah hadap grup.
+  const spinPivot = new THREE.Group();
+  for (const child of [...group.children]) spinPivot.add(child);
+  group.add(spinPivot);
+  group.userData.pivot = spinPivot;
+  group.userData.parts = [...spinPivot.children]; // bagian avatar sederhana (disembunyikan saat memakai model manusia)
   if (cfg) setAvatarConfig(group, cfg);
   if (name) {
     const label = makeLabel(name);
@@ -138,6 +144,9 @@ const lerp = (a, b, k) => a + (b - a) * k;
  * t: waktu (detik). Dipanggil tiap frame; halus karena memakai peluruhan eksponensial menuju target.
  */
 export function applyPose(group, act, t, delta = 1 / 60) {
+  const spinPivot = group.userData?.pivot;
+  if (spinPivot) spinPivot.rotation.y = act === 'spin' ? (t * Math.PI * 2 * 1.25) % (Math.PI * 2) : 0; // putar satu kali tiap ~0,8 detik
+  animateAura(group, t);
   const human = group.userData?.human;
   if (human) {
     human.update(act, t, delta, group.position.y < -0.1); // y turun = duduk di kursi
@@ -156,6 +165,9 @@ export function applyPose(group, act, t, delta = 1 / 60) {
     r = { x: 2.7, z: -0.1 };
   } else if (act === 'wave') {
     r = { x: 2.9, z: -0.45 + Math.sin(t * 12) * 0.35 };
+  } else if (act === 'spin') {
+    r = { x: 1.5, z: -0.7 };
+    l = { x: 1.5, z: 0.7 };
   } else if (act === 'bow') {
     lean = 0.55;
   } else if (act === 'clap') {
@@ -255,12 +267,12 @@ export function setAvatarConfig(group, rawConfig) {
   setAvatarColor(group, OUTFITS[cfg.o].hex);
   group.userData.skin?.color.set(SKINS[cfg.s].hex);
   if (group.userData.gear) {
-    group.remove(group.userData.gear);
+    group.userData.gear.parent?.remove(group.userData.gear);
     disposeGear(group.userData.gear);
   }
   group.userData.gear = buildGear(cfg);
   group.userData.gear.visible = !CHARACTERS[cfg.m]?.id;
-  group.add(group.userData.gear);
+  (group.userData.pivot ?? group).add(group.userData.gear);
   group.userData.config = cfg;
   applyHuman(group, cfg);
 }
@@ -272,7 +284,7 @@ function applyHuman(group, cfg) {
   group.userData.humanId = id;
   const old = group.userData.human;
   if (old) {
-    group.remove(old.root);
+    old.root.parent?.remove(old.root);
     old.dispose();
     group.userData.human = null;
   }
@@ -288,9 +300,64 @@ function applyHuman(group, cfg) {
     .then((model) => {
       if (group.userData.humanId !== id) return; // sudah ganti pilihan
       const rig = new HumanRig(model);
-      group.add(rig.root);
+      (group.userData.pivot ?? group).add(rig.root);
       group.userData.human = rig;
       showSimple(false);
     })
     .catch((error) => console.warn('[avatar] model manusia gagal dimuat, memakai avatar sederhana', error));
+}
+
+// ---- Aura: cincin + percikan yang mengorbit; warna dari bagian hari dan nama (lihat avatar-aura.js) ----
+let aurasVisible = true;
+/** Tampilkan/sembunyikan semua aura (preferensi lokal, juga menghemat tenaga di HP lemah). */
+export function setAurasVisible(on) {
+  aurasVisible = Boolean(on);
+}
+
+/** Pasang aura ke avatar. `spec` dari auraFor(); null melepas aura. */
+export function setAvatarAura(group, spec) {
+  const old = group.userData.aura;
+  if (old) {
+    group.remove(old.group);
+    old.ring.geometry.dispose(); old.ring.material.dispose();
+    old.points.geometry.dispose(); old.points.material.dispose();
+    group.userData.aura = null;
+  }
+  if (!spec) return;
+  const color = new THREE.Color().setHSL(spec.hue / 360, spec.sat, spec.light);
+  const holder = new THREE.Group();
+  holder.position.y = 0.03;
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.62, 0.74, 48),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+  );
+  ring.rotation.x = -Math.PI / 2;
+  const count = Math.max(1, Math.min(24, spec.sparks));
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+  const points = new THREE.Points(geometry, new THREE.PointsMaterial({ color, size: 0.15, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }));
+  points.frustumCulled = false;
+  holder.add(ring, points);
+  group.add(holder);
+  group.userData.aura = { group: holder, ring, points, count, speed: spec.speed, phase: spec.phase };
+}
+
+export function auraSpecFor(name, part) {
+  return auraFor({ name, part });
+}
+
+function animateAura(group, t) {
+  const aura = group.userData?.aura;
+  if (!aura) return;
+  aura.group.visible = aurasVisible;
+  if (!aurasVisible) return;
+  const pos = aura.points.geometry.attributes.position;
+  for (let i = 0; i < aura.count; i += 1) {
+    const angle = aura.phase + t * aura.speed * 1.2 + (i * Math.PI * 2) / aura.count;
+    const radius = 0.66 + 0.08 * Math.sin(t * 1.7 + i);
+    const rise = (t * aura.speed * 0.35 + i / aura.count) % 1; // naik pelan lalu muncul lagi di bawah
+    pos.setXYZ(i, Math.cos(angle) * radius, 0.1 + rise * 1.75, Math.sin(angle) * radius);
+  }
+  pos.needsUpdate = true;
+  aura.ring.material.opacity = 0.38 + 0.18 * Math.sin(t * 2 + aura.phase);
 }

@@ -15,7 +15,9 @@ const GREET_TTL_MS = 8000;
 const GREET_DURATION_MS = 2600;
 const KINDS = ['handshake', 'highfive', 'wave', 'bow'];
 const DANCE_MS = 45_000;
-const REMOTE_ACTS = [...KINDS, 'dance'];
+const GESTURE_MS = 1800;
+const GESTURES = ['wave', 'bow', 'spin']; // gestur solo dari Cermin Gerak
+const REMOTE_ACTS = [...KINDS, 'dance', 'spin'];
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -64,7 +66,7 @@ export class LiveKitNet {
     this.room = null;
     this.id = null;
     this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [], party: [], screen: [], 'screen-track': [], status: [], rejoined: [] };
-    this.self = { id: null, name: 'Tamu', x: 0, z: 9.4, y: 0, rot: 0, sit: null, act: null, with: null, until: 0, av: null };
+    this.self = { id: null, name: 'Tamu', x: 0, z: 9.4, y: 0, rot: 0, sit: null, act: null, with: null, until: 0, av: null, au: null };
     this.remotes = new Map();
     this.screenTracks = new Map(); // id peserta -> { video, audio } untuk Layar Tancap
     this.pending = new Map(); // id pengirim -> { kind, expires, pos }
@@ -246,6 +248,7 @@ export class LiveKitNet {
         act: kind,
         with: typeof m.w === 'string' ? m.w : null,
         av: Array.isArray(m.v) ? sanitizeConfig(m.v) : prev.av,
+        au: Number.isInteger(m.u) && m.u >= 0 && m.u < 4 ? m.u : prev.au, // bagian hari pengirim untuk aura
         role: roleOf(participant), // dari metadata token (ditandatangani server), bukan dari isi pesan
       });
       // Dua orang di kursi yang sama: id lebih besar mengalah.
@@ -327,12 +330,12 @@ export class LiveKitNet {
   /** Isi pesan state kita (sama untuk heartbeat, gerak dekat, dan gerak jauh). */
   #statePayload() {
     const s = this.self;
-    return { t: 's', x: +s.x.toFixed(2), z: +s.z.toFixed(2), y: +(s.y ?? 0).toFixed(2), r: +s.rot.toFixed(2), i: s.sit, a: s.act, w: s.with, v: s.av };
+    return { t: 's', x: +s.x.toFixed(2), z: +s.z.toFixed(2), y: +(s.y ?? 0).toFixed(2), r: +s.rot.toFixed(2), i: s.sit, a: s.act, w: s.with, v: s.av, u: s.au };
   }
 
   #remember() {
     const s = this.self;
-    this.snapshot = { x: s.x, z: s.z, y: s.y ?? 0, r: s.rot, i: s.sit, a: s.act, w: s.with, v: s.av };
+    this.snapshot = { x: s.x, z: s.z, y: s.y ?? 0, r: s.rot, i: s.sit, a: s.act, w: s.with, v: s.av, u: s.au };
   }
 
   #publishState(opts) {
@@ -430,6 +433,22 @@ export class LiveKitNet {
     this.lastChatAt = t;
     this.#send({ t: 'c', x: clean }, { reliable: true });
     this.#emit('chat', { t: 'chat', id: this.id, name: this.self.name, text: clean, ts: t }); // gema lokal
+  }
+
+  /** Bagian hari (0-3) di perangkat pengirim; dipakai semua klien untuk warna aura yang sama. */
+  setAura(part) {
+    this.self.au = Number.isInteger(part) && part >= 0 && part < 4 ? part : null;
+    this.#publishState({ reliable: true });
+  }
+
+  /** Gestur solo singkat (melambai, membungkuk, berputar) dari Cermin Gerak. Mengembalikan true bila diterima. */
+  setGesture(kind) {
+    if (!GESTURES.includes(kind) || this.self.sit !== null || this.self.act) return false;
+    this.self.act = kind;
+    this.self.with = null;
+    this.self.until = this.now() + GESTURE_MS;
+    this.#publishState({ reliable: true });
+    return true;
   }
 
   /** Joget solo: terlihat semua orang, berhenti sendiri setelah 45 detik atau saat pemain bergerak/duduk. */
