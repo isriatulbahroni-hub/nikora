@@ -97,3 +97,31 @@ export function resolveCameraDistance(origin, dir, desired, boxes, { margin = 0.
   }
   return { dist: Math.max(minDist, Math.min(desired, hit - margin)), blocked: hit - margin < desired };
 }
+
+/**
+ * Pilih sudut (pitch) dan jarak kamera. Bila lengan kamera terhalang (dinding di belakang), kamera dinaikkan bertahap
+ * (tetap di bawah langit-langit), tetapi hanya bila hasilnya benar-benar memberi jarak orang ketiga yang layak.
+ * Di ruang terbuka hasilnya sama dengan pitch yang diminta.
+ */
+export function chooseCameraPose(eye, yaw, pitch, want, boxes, { maxPitch = 1.25, goodDist = Math.max(2.2, want * 0.45) } = {}) {
+  const at = (p) => {
+    const cp = Math.cos(p);
+    return resolveCameraDistance(eye, { x: Math.sin(yaw) * cp, y: Math.sin(p), z: Math.cos(yaw) * cp }, want, boxes);
+  };
+  const flat = at(pitch);
+  if (!flat.blocked) return { pitch, dist: flat.dist, raised: false };
+  for (const dp of [0.1, 0.2, 0.32, 0.46, 0.62, 0.8]) {
+    const p = Math.min(maxPitch, pitch + dp);
+    const r = at(p);
+    if (r.dist >= goodDist) return { pitch: p, dist: r.dist, raised: true };
+  }
+  return { pitch, dist: flat.dist, raised: false };
+}
+
+/**
+ * Seberapa jauh pandangan kamera dialihkan dari avatar ke arah depan (0 = lihat avatar, 1 = pandangan orang pertama).
+ * Dipakai saat lengan kamera sangat pendek agar layar menampilkan ruangan, bukan lantai atau dinding di belakang.
+ */
+export function forwardLookBlend(arm) {
+  return Math.min(1, Math.max(0, (1.7 - arm) / 1.0));
+}

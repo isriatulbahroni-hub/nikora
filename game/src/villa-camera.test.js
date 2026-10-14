@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildCameraOccluders, rayBoxDistance, resolveCameraDistance } from './villa-camera.js';
+import { buildCameraOccluders, chooseCameraPose, forwardLookBlend, rayBoxDistance, resolveCameraDistance } from './villa-camera.js';
 import { LEVEL_HEIGHT, ROOFS, ROOMS, WALL_HEIGHT, getVillaWorld, levelY } from './villa-layout.js';
 
 const world = getVillaWorld();
@@ -135,4 +135,64 @@ test('ambang pintu menghalangi kamera: dari dalam aula kamera tidak keluar lewat
   assert.ok(c.pos.z < -3.1, `kamera keluar dari aula: z=${c.pos.z}`);
   const east = cameraAt(8, -11, 0, Math.PI / 2, 0.28, 8); // ke arah pintu lobi (x=14, setinggi bukaan)
   assert.ok(east.pos.x < 14 || east.pos.y < 2.4, `kamera menembus ambang pintu aula-lobi: ${JSON.stringify(east.pos)}`);
+});
+
+test('chooseCameraPose: di ruang terbuka sudut tidak berubah', () => {
+  const p = chooseCameraPose({ x: 0, y: 1.45, z: 12 }, 0, 0.28, 5.6, boxes);
+  assert.equal(p.pitch, 0.28);
+  assert.equal(p.dist, 5.6);
+  assert.equal(p.raised, false);
+});
+
+test('chooseCameraPose: dinaikkan hanya bila hasilnya memberi jarak orang ketiga yang layak', () => {
+  // kamar tamu 1, avatar dekat dinding timur-selatan; kamera di belakang terhalang tetapi ada ruang ke atas bila jarak lengan cukup
+  const eye = { x: 17.5, y: 1.45, z: 8.2 };
+  const pose = chooseCameraPose(eye, 0, 0.28, 5.6, boxes);
+  const cp = Math.cos(pose.pitch);
+  const pos = { x: eye.x, y: eye.y + Math.sin(pose.pitch) * pose.dist, z: eye.z + cp * pose.dist };
+  assert.ok(!insideSolid(pos), 'kamera di dalam benda padat');
+  assert.ok(pos.y < WALL_HEIGHT, 'kamera menembus langit-langit');
+  if (pose.raised) assert.ok(pose.dist >= 2.2, `dinaikkan tetapi lengan masih pendek: ${pose.dist}`);
+});
+
+test('chooseCameraPose: menempel dinding belakang tidak dipaksa menjadi pandangan dari atas', () => {
+  const eye = { x: 20.6, y: 1.45, z: 11.2 }; // 0,55 m dari dinding selatan
+  const pose = chooseCameraPose(eye, 0, 0.28, 5.6, boxes);
+  assert.equal(pose.pitch, 0.28);
+  assert.equal(pose.raised, false);
+  assert.ok(pose.dist < 1.3);
+});
+
+test('forwardLookBlend: 0 saat lengan panjang, 1 saat sangat pendek, monoton', () => {
+  assert.equal(forwardLookBlend(5), 0);
+  assert.equal(forwardLookBlend(1.7), 0);
+  assert.equal(forwardLookBlend(0.7), 1);
+  assert.equal(forwardLookBlend(0.5), 1);
+  let last = 0;
+  for (let a = 1.8; a >= 0.4; a -= 0.1) {
+    const b = forwardLookBlend(a);
+    assert.ok(b >= last - 1e-9, 'tidak monoton');
+    last = b;
+  }
+  assert.ok(Math.abs(forwardLookBlend(1.2) - 0.5) < 1e-9);
+});
+
+test('chooseCameraPose: di semua ruangan hasilnya tidak di dalam benda padat dan tidak menembus langit-langit', () => {
+  const ids = ['guest_1', 'guest_4', 'guest_5', 'main_suite', 'bridal_room', 'spa', 'lobby'];
+  for (const id of ids) {
+    const r = ROOMS.find((q) => q.id === id).rect;
+    for (const [fx, fz] of [[0.2, 0.2], [0.5, 0.5], [0.8, 0.85], [0.15, 0.9]]) {
+      const x = r[0] + (r[2] - r[0]) * fx;
+      const z = r[1] + (r[3] - r[1]) * fz;
+      for (let k = 0; k < 16; k++) {
+        const yaw = (k / 16) * Math.PI * 2;
+        const eye = { x, y: 1.45, z };
+        const pose = chooseCameraPose(eye, yaw, 0.28, 5.6, boxes);
+        const cp = Math.cos(pose.pitch);
+        const pos = { x: x + Math.sin(yaw) * cp * pose.dist, y: eye.y + Math.sin(pose.pitch) * pose.dist, z: z + Math.cos(yaw) * cp * pose.dist };
+        assert.ok(!insideSolid(pos), `kamera di dalam benda padat di ${id} (${fx},${fz}) yaw ${k}`);
+        assert.ok(pos.y < WALL_HEIGHT, `menembus langit-langit di ${id}`);
+      }
+    }
+  }
 });
