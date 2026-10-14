@@ -1,4 +1,5 @@
 import { SCENE_KINDS } from './engine/config.js';
+import { sanitizeStyle } from './engine/style.js';
 
 /**
  * Sisi undangan dari pratinjau langsung di Studio. Halaman undangan yang dibuka di dalam bingkai
@@ -7,10 +8,15 @@ import { SCENE_KINDS } from './engine/config.js';
  */
 export const MAX_DRAFT = 24000;
 export const MSG_DRAFT = 'orbit-preview:draft';
+export const MSG_STYLE = 'orbit-preview:style';
 
 export function acceptPreviewMessage(e, { origin, parent }) {
   if (!e || e.origin !== origin || e.source !== parent) return null;
   const d = e.data;
+  if (d && typeof d === 'object' && d.type === MSG_STYLE) {
+    // tampilan sendiri: disaring sanitizeStyle (warna hex, font daftar, foto https); null = kembali ke tema
+    return { type: 'style', style: sanitizeStyle(d.style) };
+  }
   if (!d || typeof d !== 'object' || d.type !== MSG_DRAFT) return null;
   if (!SCENE_KINDS.includes(d.kind)) return null;
   let config = null;
@@ -21,7 +27,7 @@ export function acceptPreviewMessage(e, { origin, parent }) {
     if (size > MAX_DRAFT) return null;
     config = d.config;
   }
-  return { kind: d.kind, config, active: d.active !== false };
+  return { type: 'draft', kind: d.kind, config, active: d.active !== false };
 }
 
 /** Terapkan draf ke daftar adegan; hari_acara dan arsip dipaksa tampil agar bisa dilihat di pratinjau. */

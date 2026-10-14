@@ -1,6 +1,7 @@
 import { contrast, isHex } from './color.js';
 import { EVENT_LABELS, EVENT_TYPES, resolveTheme } from '../themes/index.js';
 import { WORLDS, defaultWorld } from './world-link.js';
+import { sanitizeStyle, applyStyle } from './style.js';
 
 /** Urutan adegan bawaan; nama harus sama dengan check constraint invitation_scenes.kind. */
 export const SCENE_KINDS = [
@@ -77,8 +78,10 @@ export function formatDate(value, tz) {
 export function buildView({ invitation, scenes = [], query = {} }) {
   const inv = invitation || {};
   const eventType = EVENT_TYPES.includes(inv.event_type) ? inv.event_type : 'pernikahan';
-  const theme = resolveTheme(query.tema || inv.theme, eventType);
   const extra = inv.extra && typeof inv.extra === 'object' ? inv.extra : {};
+  // Tampilan sendiri pelanggan (warna, font, sampul) menimpa tema; pratinjau ?tema= tetap bisa mencoba tema lain.
+  const style = sanitizeStyle(extra.style);
+  const theme = applyStyle(resolveTheme(query.tema || inv.theme, eventType), style);
   const list = (scenes.length ? scenes : defaultScenes())
     .filter((s) => s && s.active !== false)
     .sort((a, b) => a.position - b.position);
@@ -88,6 +91,7 @@ export function buildView({ invitation, scenes = [], query = {} }) {
     world: WORLDS.includes(extra.world) ? extra.world : defaultWorld(eventType),
     eventLabel: EVENT_LABELS[eventType],
     theme,
+    style,
     title: titleOf(inv),
     dateText: formatDate(inv.event_date, extra.tz),
     eventDate: inv.event_date || null,

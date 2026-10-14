@@ -54,6 +54,23 @@ Masih terbuka (tidak diklaim selesai):
 - Gandengan tangan, lebih banyak karakter manusia, kustomisasi pakaian model manusia, foto menjadi avatar, Voice Match, dan terjemahan langsung belum dikerjakan.
 - Lisensi aset Mixamo perlu ditinjau sebelum rilis komersial.
 
+### Pembaruan status Fase 9 — Creator Studio (2026-10-13, awal)
+
+Dikerjakan dan diperiksa dengan menjalankan perintahnya:
+
+- **9.1 Format + editor.** `game/src/world-project.js`: format `orbit.world` v1 (data, bukan kode), katalog 12 objek yang ukuran tabraknya sama dengan mesin vila, batas keras (400 objek, 200 KB, area 10-120 m, anggaran beban 1500), 3 template, dan `toWorld()` yang menghasilkan dunia dengan antarmuka yang dipakai server (`Room` dites memakainya). Validasi memperlakukan masukan sebagai tidak tepercaya (jenis di luar katalog, `__proto__`, angka non-finit, ID ganda, objek di luar area, titik mulai tertutup/terkurung). `game/src/world-editor.js`: tempatkan, pindah, putar, duplikat, hapus, ubah ukuran area, template, undo/redo (satu seretan = satu langkah), dan penolakan eksplisit saat melewati batas. UI: `game/editor.html` (sentuh dan mouse, simpan/buka berkas JSON, draf otomatis, panel masalah, mode "Uji jalan" dengan tabrakan yang sama).
+- **9.2/9.3 Kebijakan.** `game/src/world-lifecycle.js`: matriks izin (pemilik/editor/pembaca/moderator), versi, ajukan, setujui, tolak, tarik (oleh pemilik dan paksa oleh moderator, alasan wajib), jejak audit hanya-tambah, dan aturan moderator tidak boleh meninjau dunianya sendiri.
+- **Database.** `supabase/migrations/20261013000000_creator_studio_worlds.sql` (tabel proyek, versi, anggota, audit, RLS, fungsi `dunia_*`, memakai `staff`/`is_staff` yang ada). **Belum diterapkan.** Diuji pada database nyata dalam transaksi yang dibatalkan: 49 pemeriksaan lulus untuk pemilik, editor, pembaca, orang luar, moderator, dan anonim. Pengujian itu menemukan dan memperbaiki dua cacat di rancangan awal (pemeriksaan izin bisa lolos untuk orang luar karena `NULL NOT IN (...)`, dan urutan pemeriksaan yang membocorkan status proyek).
+- **Tes.** `game/` 28 tes unit baru (format, editor, siklus hidup) dan 3 skenario E2E ponsel (`game/e2e/editor.spec.js`) lulus di Chromium headless; `server/` 28 lulus. Hasil E2E diperoleh dengan konfigurasi Playwright sementara di sandbox; belum pernah dijalankan di CI GitHub.
+
+Belum ada, tidak diklaim selesai (Gate Fase 9 **belum lulus**):
+
+- Simpan ke akun, ajukan, tinjau, dan terbit dari UI; layar moderator. Migrasi belum diterapkan dan belum ada klien yang memanggil fungsi `dunia_*`.
+- Memuat dunia terbit untuk tamu: server masih memilih dunia lewat `WORLD` (vila/aula). Perlu jalur yang mengambil versi terbit, memvalidasi ulang dengan `validateProject`, lalu `toWorld`, serta renderer dunia proyek di klien tamu.
+- Aset kreator: hanya katalog prosedural; belum ada unggah aset, lisensi, atau validasi performa pada perangkat nyata (anggaran beban adalah bobot perkiraan, belum diukur).
+- Kolaborasi: baru model izin di database, belum UI. Belum ada bangunan bertingkat, pencahayaan kustom, titik interaksi, misi, atau analitik.
+- `game/src/villa-layout.test.js` tidak selesai dalam 150 detik di sandbox ini (kode vila tidak diubah); perlu diperiksa pemilik.
+
 ### Aturan gate
 
 1. Fase berjalan berurutan. Pekerjaan dokumentasi yang tidak mengubah sistem boleh disiapkan lebih awal, tetapi tidak menggantikan gate.

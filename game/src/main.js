@@ -6,6 +6,7 @@ import { mountGate, shouldShowGate } from './gate.js';
 import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
+import { modeFor } from './event-mode.js';
 import { applyPose, createAvatar, makeBubble, setAvatarConfig, setStageRing } from './avatar.js';
 import { createPartyController, stageIds } from './party.js';
 import { takeRoleKey } from './role-key.js';
@@ -74,6 +75,7 @@ if (shouldShowGate(window.location.search)) {
 // Judul acara dari undangan ditampilkan sebagai sapaan di kartu masuk (tanpa menambah HUD saat bermain).
 if (eventParams.slug) {
   loadEventInfo(eventParams.slug, { url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_ANON_KEY }).then((info) => {
+    eventMode = modeFor(info?.eventType, info?.mode);
     if (!info?.title) return;
     document.title = `${info.title} · ORBIT`;
     const eyebrow = document.querySelector('#join-form .eyebrow');
@@ -92,6 +94,7 @@ let npcs = [];
 let netError = '';
 let hallScreen = null;
 let quality = null;
+let eventMode = modeFor();
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
 function applyQuality(renderer, scene, q) {
@@ -659,8 +662,10 @@ function updateHud() {
   ui.sitButton.classList.toggle('is-ready', canAct);
   ui.sitLabel.textContent = me.sit !== null ? 'BERDIRI' : 'DUDUK';
   const remote = multiplayer?.view.count ?? 0;
-  ui.guests.textContent = multiplayer ? `${remote + 1}` : netError ? `offline · ${netError}` : joined ? '…' : 'offline';
-  $('#online-dot').classList.toggle('is-online', Boolean(multiplayer));
+  ui.guests.textContent = multiplayer ? (multiplayer.net.status === 'reconnecting' ? 'menyambung ulang…' : `${remote + 1}`) : netError ? `offline · ${netError}` : joined ? '…' : 'offline';
+  const reconnecting = multiplayer?.net.status === 'reconnecting';
+  $('#online-dot').classList.toggle('is-online', Boolean(multiplayer) && !reconnecting);
+  $('#online-dot').classList.toggle('is-wait', reconnecting);
 }
 
 // ---- Obrolan ----
@@ -800,7 +805,7 @@ function renderFrame(time) {
   hallScreen?.tick(now * 1000);
   if (voice && multiplayer && Math.floor(now * 10) !== lastVoiceTick) {
     lastVoiceTick = Math.floor(now * 10);
-    voice.update(me, multiplayer.net.players, stageIds(party?.state, multiplayer.net.players), VOICE_CROWD);
+    voice.update(me, multiplayer.net.players, stageIds(party?.state, multiplayer.net.players), { ...VOICE_CROWD, duck: eventMode.duck, selfId: multiplayer.net.id });
     $('#mic-button').classList.toggle('is-speaking', voice.micOn && voice.speaking().has(multiplayer.net.id));
   }
   if (party && Math.floor(now * 2) !== lastPartyTick) {

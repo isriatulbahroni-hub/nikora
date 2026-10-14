@@ -3,6 +3,7 @@ import { KIND_LABELS } from '../engine/config.js';
 import { safeUrl } from '../engine/content.js';
 import { zonedIso, isoToLocal } from './api.js';
 import { resizeToJpeg } from './images.js';
+import { appearanceView } from './appearance.js';
 
 /**
  * Editor "Isi undangan": satu tab per adegan. Setiap tab dibangun dari skema kecil, lalu
@@ -235,14 +236,32 @@ export function editorView({ client, slug, inviteBase, onBack }) {
   window.addEventListener('message', onFrame);
 
   (async () => {
-    const [inv, scenes] = await Promise.all([client.invitationOf(slug), client.scenesOf(slug)]);
-    if (!inv) throw new Error('Undangan tidak ditemukan.');
+    const [inv0, scenes] = await Promise.all([client.invitationOf(slug), client.scenesOf(slug)]);
+    if (!inv0) throw new Error('Undangan tidak ditemukan.');
+    let inv = inv0;
     const tz = (inv.extra && inv.extra.tz) || 'Asia/Jakarta';
     const byKind = new Map((scenes || []).map((s) => [s.kind, s]));
     const ctx = { client, slug, tz };
     const buttons = new Map();
 
+    function openAppearance() {
+      for (const [k, b] of buttons) b.setAttribute('aria-selected', String(k === 'tampilan'));
+      const ap = appearanceView({
+        client, slug, inv,
+        send: () => { clearTimeout(timer); timer = setTimeout(sendDraft, 300); },
+        onChange: () => { root.dataset.dirty = '1'; },
+        onSaved: (s) => { delete root.dataset.dirty; inv = { ...inv, extra: { ...(inv.extra || {}), style: s || undefined } }; },
+        setMsg: (m) => { msg.textContent = m; },
+      });
+      draft = () => ({ type: 'orbit-preview:style', style: ap.current() });
+      body.replaceChildren(ap.node);
+      msg.textContent = '';
+      note.textContent = '';
+      sendDraft();
+    }
+
     function open(kind) {
+      if (kind === 'tampilan') return openAppearance();
       for (const [k, b] of buttons) b.setAttribute('aria-selected', String(k === kind));
       const existing = byKind.get(kind) || { kind, active: true, config: {} };
       const config = existing.config && typeof existing.config === 'object' ? existing.config : {};
@@ -280,8 +299,8 @@ export function editorView({ client, slug, inviteBase, onBack }) {
       sendDraft();
     }
 
-    for (const kind of EDITABLE) {
-      const b = h('button', { class: 's-tab', type: 'button', role: 'tab', 'aria-selected': 'false', text: KIND_LABELS[kind] || kind, onclick: () => {
+    for (const kind of ['tampilan', ...EDITABLE]) {
+      const b = h('button', { class: 's-tab', type: 'button', role: 'tab', 'aria-selected': 'false', text: kind === 'tampilan' ? 'Tampilan' : (KIND_LABELS[kind] || kind), onclick: () => {
         if (root.dataset.dirty === '1' && !byKind.__warned) { /* pindah tab tidak menghapus isian: dibiarkan */ }
         open(kind);
       } });

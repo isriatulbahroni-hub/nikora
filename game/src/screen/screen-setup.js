@@ -13,8 +13,14 @@ const safeStorage = () => {
  * (memasang pengendali + tombol 🎬) dan `tick(ms)` dari loop render.
  */
 export function createScreen({ scene, spec, renderer = null, host = null, enabled = isScreenEnabled() }) {
-  // Mati secara bawaan: tidak ada papan layar, tidak ada tombol 🎬, tidak ada pengendali. Lihat screen-config.js.
-  if (!enabled) return disabledScreen();
+  // Mati secara bawaan (lihat screen-config.js): papan layar tancap tetap ada di dinding sebagai bagian aula,
+  // tetapi tanpa video, tombol 🎬, operator, jaringan, atau lapisan CSS3D yang bisa mengganggu penonton.
+  if (!enabled) {
+    const decor = createScreenMesh(spec);
+    decor.showIdle({ title: 'LAYAR ACARA', sub: '' });
+    scene.add(decor.group);
+    return { ...disabledScreen(), mesh: decor };
+  }
   const mesh = createScreenMesh(spec);
   mesh.showIdle({ title: 'LAYAR ACARA', sub: 'Belum ada yang memutar' });
   scene.add(mesh.group);

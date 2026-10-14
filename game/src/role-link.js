@@ -34,6 +34,33 @@ export function checkInputs({ secret, slug }) {
   return { ok: true, secret: clean, event };
 }
 
+const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'; // tanpa huruf mirip (I l 1 O 0)
+
+/** Rahasia induk acak 32 karakter (sampling tanpa bias dari WebCrypto). Hanya untuk disalin ke Vercel dan dipakai di halaman ini. */
+export function generateSecret(length = 32, rng = globalThis.crypto) {
+  if (!rng?.getRandomValues) throw new Error('browser tidak mendukung WebCrypto (butuh HTTPS)');
+  const limit = 256 - (256 % ALPHABET.length);
+  let out = '';
+  while (out.length < length) {
+    for (const b of rng.getRandomValues(new Uint8Array(length * 2))) {
+      if (b < limit && out.length < length) out += ALPHABET[b % ALPHABET.length];
+    }
+  }
+  return out;
+}
+
+/** Menafsirkan jawaban /api/token untuk kunci yang kita buat. expected = 'owner' | 'mc'. */
+export function interpretServerCheck(result, expected) {
+  if (!result || result.enabled === false) {
+    return { ok: false, message: 'Server belum siap (suara/LiveKit belum aktif di deploy ini). Cek variabel LIVEKIT_* dan Redeploy.' };
+  }
+  if (!result.restricted) {
+    return { ok: false, message: 'Server belum membaca EVENT_ROLE_SECRET (belum dipasang di project ini, atau belum di-Redeploy, atau kurang dari 16 karakter).' };
+  }
+  if (result.role === expected) return { ok: true, message: `Server menerima kunci ini sebagai ${ROLE_LABELS[expected]}.` };
+  return { ok: false, message: 'Server menolak kunci ini: rahasia yang dipakai di halaman ini berbeda dengan EVENT_ROLE_SECRET di Vercel. Buat ulang rahasia, simpan di Vercel, Redeploy, lalu buat tautan lagi dengan rahasia yang sama.' };
+}
+
 export async function buildLink({ origin, page = 'villa', event, role, secret, subtle }) {
   const key = await deriveRoleKeyWeb(secret, event, role, subtle);
   const query = event ? `?e=${event}&key=${key}` : `?key=${key}`;

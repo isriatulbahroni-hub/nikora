@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex, nofollow" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'none'; form-action 'none'" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'none'" />
     <title>Tautan Pemilik &amp; MC | ORBIT</title>
     <style>
       :root { font-family: ui-sans-serif, 'Segoe UI', sans-serif; color: #f3efe6; background: #17120f; }
@@ -41,7 +41,16 @@
       <option value="hall">Aula (/)</option>
     </select>
 
-    <div class="row"><button id="make" type="button">Buat tautan</button></div>
+    <div class="row">
+      <button id="make" type="button">Buat tautan</button>
+      <button id="gen" type="button" class="ghost">Buat rahasia acak</button>
+    </div>
+    <div class="card" id="gen-card" style="display:none">
+      <h2>Rahasia baru (salin sekarang)</h2>
+      <div class="link" id="gen-value"></div>
+      <div class="row"><button id="gen-copy" type="button">Salin</button></div>
+      <p class="sub" style="margin-top:10px">Tempel nilai ini sebagai <strong>EVENT_ROLE_SECRET</strong> di Vercel (edit variabel lama, ganti nilainya), lalu <strong>Redeploy</strong>. Kolom di atas sudah terisi nilai yang sama; ketuk Buat tautan, lalu Periksa di server.</p>
+    </div>
     <div class="error" id="error" role="alert"></div>
 
     <div id="results"></div>

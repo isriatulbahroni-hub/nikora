@@ -1,7 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { disabledScreen, isScreenEnabled } from './screen-config.js';
-import { createScreen } from './screen-setup.js';
+import { JSDOM } from 'jsdom';
+
+const dom = new JSDOM('<!doctype html><body></body>', { url: 'https://nikora.test/' });
+globalThis.document = dom.window.document;
+globalThis.window = dom.window;
+// jsdom tanpa paket canvas: getContext('2d') kosong. Beri konteks palsu agar kartu diam bisa digambar.
+dom.window.HTMLCanvasElement.prototype.getContext = () => new Proxy({}, {
+  get: (_, key) => (key === 'measureText' ? () => ({ width: 10 }) : String(key).startsWith('create') ? () => ({ addColorStop() {} }) : () => {}),
+  set: () => true,
+});
+
+const { disabledScreen, isScreenEnabled } = await import('./screen-config.js');
+const { createScreen } = await import('./screen-setup.js');
 
 test('layar mati secara bawaan dan hanya menyala dengan ?layar=1 (atau true/ya/on)', () => {
   for (const search of ['', '?', '?acara=abc&tamu=x', '?layar=0', '?layar=', '?layar=tidak', '?Layar=1']) {
@@ -20,9 +31,16 @@ test('disabledScreen: tidak melakukan apa pun dan tidak melempar error', () => {
   assert.doesNotThrow(() => { s.attach({}); s.attach(null); s.render({}, {}); s.resize(1, 1); s.tick(1000); });
 });
 
-test('createScreen dengan enabled=false tidak menyentuh scene, renderer, atau host', () => {
-  const scene = { add() { throw new Error('scene tidak boleh disentuh'); } };
-  const screen = createScreen({ scene, spec: { x: 0, y: 0, z: 0, width: 1, height: 1 }, enabled: false });
+test('createScreen mati: papan layar tancap tetap ada di dinding, tanpa video, tombol, pengendali, atau CSS3D', () => {
+  const added = [];
+  const scene = { add: (o) => added.push(o) };
+  const renderer = { get domElement() { throw new Error('renderer tidak boleh disentuh'); } };
+  const screen = createScreen({ scene, renderer, host: document.body, spec: { x: 0, y: 4.3, z: -11.45, width: 8, height: 4.5 }, enabled: false });
   assert.equal(screen.enabled, false);
-  assert.equal(screen.mesh, null);
+  assert.equal(added.length, 1, 'papan layar ditambahkan ke scene');
+  assert.equal(added[0], screen.mesh.group);
+  assert.equal(screen.controller, null);
+  assert.doesNotThrow(() => { screen.attach({ net: { sendScreen() {} } }); screen.tick(5000); screen.render({}, {}); });
+  assert.equal(screen.controller, null, 'attach tidak membuat pengendali saat mati');
+  assert.equal(document.querySelector('.sheet-tile, .sc-toggle, .sc-panel'), null, 'tidak ada tombol/panel layar');
 });

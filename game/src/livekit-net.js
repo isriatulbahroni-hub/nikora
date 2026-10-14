@@ -5,6 +5,10 @@ import { sanitizeConfig } from './avatar-config.js';
 
 const TOPIC = 'orbit';
 const STATE_INTERVAL_MS = 100;
+const NEAR_RANGE = 20; // m: yang dalam jarak ini menerima posisi kita 10x/dtk, yang lebih jauh 2x/dtk (hemat data untuk ruang ramai)
+const FAR_INTERVAL_MS = 500;
+const MOVE_EPS = 0.02; // perubahan posisi/arah di bawah ini dianggap diam (cukup heartbeat 1x/dtk)
+const REJOIN_DELAYS_MS = [500, 1500, 3000, 6000, 10000, 15000, 15000];
 const HEARTBEAT_MS = 1000;
 const GREET_RANGE = 2.6; // sedikit longgar dari 2,2 m di UI karena latensi
 const GREET_TTL_MS = 8000;
@@ -40,10 +44,16 @@ export function roleOf(participant) {
 }
 
 export class LiveKitNet {
-  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl, world, event, key } = {}) {
+  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl, world, event, key, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
     this.key = key || undefined; // kunci pemilik/MC (diperiksa server); tamu biasa tidak punya
     this.role = 'guest';
     this.restricted = false; // true bila server mewajibkan peran untuk membuka panggung
+    this.sleep = sleep;
+    this.status = 'idle'; // idle | online | reconnecting | offline
+    this.closing = false;
+    this.rejoining = false;
+    this.snapshot = null;
+    this.lastFarSent = 0;
     this.event = event ?? null; // slug acara dari undangan
     this.world = world; // 'villa' memakai kanal terpisah dari aula
     this.LiveKit = LiveKit;
@@ -53,7 +63,7 @@ export class LiveKitNet {
     this.fetch = fetchImpl ?? ((...args) => globalThis.fetch(...args));
     this.room = null;
     this.id = null;
-    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [], party: [], screen: [], 'screen-track': [] };
+    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [], party: [], screen: [], 'screen-track': [], status: [], rejoined: [] };
     this.self = { id: null, name: 'Tamu', x: 0, z: 9.4, y: 0, rot: 0, sit: null, act: null, with: null, until: 0, av: null };
     this.remotes = new Map();
     this.screenTracks = new Map(); // id peserta -> { video, audio } untuk Layar Tancap
@@ -84,11 +94,22 @@ export class LiveKitNet {
     for (const fn of this.handlers[event]) fn(payload);
   }
 
-  async connect(_url, name = 'Tamu') {
+  async #fetchCred(name) {
     const res = await this.fetch(this.tokenUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, world: this.world, event: this.event, key: this.key }) });
     if (!res.ok) throw new Error(`api/token HTTP ${res.status}`);
     const cred = await res.json();
     if (!cred.enabled) throw new Error(describeCredFailure(cred));
+    return cred;
+  }
+
+  #setStatus(status) {
+    if (this.status === status) return;
+    this.status = status;
+    this.#emit('status', { status });
+  }
+
+  async connect(_url, name = 'Tamu') {
+    const cred = await this.#fetchCred(name);
     const LiveKit = this.LiveKit ?? (await import('livekit-client'));
     const { Room, RoomEvent } = LiveKit;
     const room = new Room({ adaptiveStream: true, dynacast: true, audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
@@ -129,8 +150,21 @@ export class LiveKitNet {
       if (this.screenTracks.delete(p.identity)) this.#emit('screen-track', { id: p.identity });
       if (this.remotes.delete(p.identity)) this.#emit('left', { id: p.identity });
     });
-    room.on(RoomEvent.Disconnected, () => this.#emit('close', {}));
+    // Putus sesaat: LiveKit memulihkan sendiri. Putus total: kita masuk lagi dengan token baru (lihat #rejoin).
+    room.on(RoomEvent.Reconnecting, () => this.#setStatus('reconnecting'));
+    room.on(RoomEvent.Reconnected, () => { this.#setStatus('online'); this.#publishState({ reliable: true }); });
+    room.on(RoomEvent.Disconnected, () => {
+      if (this.closing) this.#emit('close', {});
+      else this.#rejoin();
+    });
+    // Tab kembali aktif atau internet kembali: pastikan tersambung dan posisi kita terkirim.
+    if (typeof document !== 'undefined') {
+      this._onVisible = () => this.#resume();
+      document.addEventListener('visibilitychange', this._onVisible);
+      globalThis.addEventListener?.('online', this._onVisible);
+    }
     await room.connect(cred.url, cred.token);
+    this.#setStatus('online');
     for (const p of room.remoteParticipants.values()) this.remotes.set(p.identity, this.#blank(p));
     this.timer = setInterval(() => this.#tick(), 100);
     this.timer.unref?.();
@@ -138,6 +172,51 @@ export class LiveKitNet {
     const welcome = { t: 'welcome', id: this.id, players: this.players };
     this.#emit('welcome', welcome);
     return welcome;
+  }
+
+  #resume() {
+    if (this.closing || (typeof document !== 'undefined' && document.visibilityState === 'hidden')) return;
+    if (this.room?.state === 'disconnected') this.#rejoin();
+    else this.#publishState({ reliable: true });
+  }
+
+  /** Masuk lagi ke ruang yang sama setelah putus total, dengan jeda yang makin panjang. Identitas baru; peserta lain dimuat ulang. */
+  async #rejoin() {
+    if (this.rejoining || this.closing) return;
+    this.rejoining = true;
+    this.#setStatus('reconnecting');
+    for (const delay of REJOIN_DELAYS_MS) {
+      await this.sleep(delay);
+      if (this.closing) break;
+      try {
+        const cred = await this.#fetchCred(this.self.name);
+        await this.room.connect(cred.url, cred.token);
+        this.id = cred.id;
+        this.self.id = cred.id;
+        this.role = ROLES.includes(cred.role) ? cred.role : 'guest'; // kunci pemilik/MC tetap dipakai saat masuk ulang
+        this.restricted = Boolean(cred.restricted);
+        this.self.role = this.role;
+        this.self.act = null; // interaksi berpasangan sebelum putus dibatalkan
+        this.self.with = null;
+        this.remotes.clear();
+        this.screenTracks.clear();
+        this.pending.clear();
+        this.outgoing.clear();
+        for (const p of this.room.remoteParticipants.values()) this.remotes.set(p.identity, this.#blank(p));
+        this.snapshot = null;
+        this.#publishState({ reliable: true });
+        this.rejoining = false;
+        this.#setStatus('online');
+        this.#emit('rejoined', { id: this.id });
+        this.#emit('state', { t: 'state', players: this.players });
+        return;
+      } catch (error) {
+        if (/belum dikonfigurasi|tidak ditemukan/.test(String(error?.message))) break; // tidak akan berhasil dengan mengulang
+      }
+    }
+    this.rejoining = false;
+    this.#setStatus('offline');
+    this.#emit('close', {});
   }
 
   #blank(p) {
@@ -245,10 +324,44 @@ export class LiveKitNet {
     this.room.localParticipant.publishData(enc.encode(JSON.stringify(obj)), opts).catch(() => {});
   }
 
-  #publishState(opts) {
+  /** Isi pesan state kita (sama untuk heartbeat, gerak dekat, dan gerak jauh). */
+  #statePayload() {
     const s = this.self;
+    return { t: 's', x: +s.x.toFixed(2), z: +s.z.toFixed(2), y: +(s.y ?? 0).toFixed(2), r: +s.rot.toFixed(2), i: s.sit, a: s.act, w: s.with, v: s.av };
+  }
+
+  #remember() {
+    const s = this.self;
+    this.snapshot = { x: s.x, z: s.z, y: s.y ?? 0, r: s.rot, i: s.sit, a: s.act, w: s.with, v: s.av };
+  }
+
+  #publishState(opts) {
     this.lastSent = this.now();
-    this.#send({ t: 's', x: +s.x.toFixed(2), z: +s.z.toFixed(2), y: +(s.y ?? 0).toFixed(2), r: +s.rot.toFixed(2), i: s.sit, a: s.act, w: s.with, v: s.av }, opts);
+    this.#remember();
+    this.#send(this.#statePayload(), opts);
+  }
+
+  #moved() {
+    const s = this.self;
+    const n = this.snapshot;
+    return !n || Math.abs(s.x - n.x) > MOVE_EPS || Math.abs(s.z - n.z) > MOVE_EPS || Math.abs((s.y ?? 0) - n.y) > MOVE_EPS || Math.abs(s.rot - n.r) > MOVE_EPS || s.sit !== n.i || s.act !== n.a || s.with !== n.w || s.av !== n.v;
+  }
+
+  /** Gerak: yang dekat menerima 10x/dtk, yang jauh 2x/dtk. Diam (tidak berubah) tidak mengirim apa pun selain heartbeat. */
+  #publishMove() {
+    const s = this.self;
+    const t = this.now();
+    const near = [];
+    const far = [];
+    for (const r of this.remotes.values()) (Math.hypot(r.x - s.x, r.z - s.z) <= NEAR_RANGE ? near : far).push(r.id);
+    const payload = this.#statePayload();
+    if (near.length) this.#send(payload, { to: near });
+    if (far.length && t - this.lastFarSent >= FAR_INTERVAL_MS) {
+      this.lastFarSent = t;
+      this.#send(payload, { to: far });
+    }
+    this.lastSent = t;
+    this.#remember();
   }
 
   /** Dipanggil main.js tiap frame (dibatasi view). pos = posisi lokal; arah (x,z) tidak dipakai karena tiap klien menghitung geraknya sendiri. */
@@ -261,7 +374,9 @@ export class LiveKitNet {
       s.rot = num(rot, s.rot);
     }
     if (sit !== undefined) s.sit = sit;
-    if (this.now() - this.lastSent >= STATE_INTERVAL_MS) this.#publishState();
+    const idle = this.now() - this.lastSent;
+    if (idle >= STATE_INTERVAL_MS && this.#moved()) this.#publishMove();
+    else if (idle >= HEARTBEAT_MS) this.#publishState(); // diam: cukup 1x/dtk (sekaligus menyelesaikan tabrakan kursi)
   }
 
   /** Avatar buatan pemain (array wire). Disiarkan segera lalu ikut tiap heartbeat untuk tamu yang baru masuk. */
@@ -362,6 +477,11 @@ export class LiveKitNet {
   }
 
   close() {
+    this.closing = true;
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this._onVisible);
+      globalThis.removeEventListener?.('online', this._onVisible);
+    }
     clearInterval(this.timer);
     this.room?.disconnect();
   }

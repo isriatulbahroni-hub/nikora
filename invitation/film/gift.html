@@ -1,0 +1,20 @@
+<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#000}#app{position:fixed;inset:0}</style></head><body><div id="app"></div>
+<script type="module">
+import '../src/style.css';
+import '../src/scenes.css';
+import { mountGifts } from '../src/scenes/guest.js';
+import { buildView } from '../src/engine/config.js';
+import { demoInvitation } from '../src/engine/demo.js';
+const q = new URLSearchParams(location.search);
+const view = buildView({ invitation: { ...demoInvitation(q.get('tema') || 'pernikahan-adat-sasak'), slug: 'rani-dimas' } });
+const rows = [
+  { kind: 'bank', label: 'BCA', account_name: 'Dimas Pratama', account_no: '0123456789' },
+  { kind: 'bank', label: 'Bank Mandiri', account_name: 'Rani Anjani Putri', account_no: '1234567890123' },
+  { kind: 'ewallet', label: 'GoPay', account_name: 'Dimas Pratama', account_no: '081234567890' }];
+const fetchImpl = async () => ({ ok: true, status: 200, json: async () => rows });
+window.copied = null; Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (t) => { window.copied = t; } }, configurable: true });
+const layer = document.createElement('div'); layer.className = 'layer'; document.getElementById('app').append(layer);
+window.scene = mountGifts(layer, { view, env: { light: q.get('light') === '1', reduced: q.get('reduced') === '1' }, api: { url: 'https://x.supabase.co', key: 'k', fetchImpl } });
+window.READY = true;
+</script></body></html>

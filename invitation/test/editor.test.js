@@ -79,7 +79,7 @@ test('editor: kisah dimuat, baris ditambah, disimpan dengan kunci lain (warna) d
   const root = editorView({ client, slug: 'rani-dimas', inviteBase: 'https://undangan.example/', onBack() {} });
   document.body.append(root);
   await tick(); await tick();
-  assert.equal(root.querySelectorAll('.s-tab').length, 8);
+  assert.equal(root.querySelectorAll('.s-tab').length, 9);
   openTab(root, 'Kisah');
   assert.equal(root.querySelectorAll('.s-row-card').length, 1);
   root.querySelector('.s-group > button').click();

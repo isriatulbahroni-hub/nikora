@@ -4,11 +4,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import '@fontsource/great-vibes/latin-400.css';
-import '@fontsource/cinzel/latin-400.css';
-import '@fontsource/cinzel/latin-600.css';
-import '@fontsource/cormorant-garamond/latin-500.css';
-import '@fontsource/cormorant-garamond/latin-500-italic.css';
+import './fonts.css';
 import './runtime3d.css';
 import { h } from '../engine/dom.js';
 import { envelopeSettings } from '../engine/config.js';
@@ -69,7 +65,7 @@ function makeSparks(tex, cap = 260) {
 export async function mount3D(container, ctx) {
   const { view, design: d, env = {} } = ctx;
   const s = envelopeSettings(view);
-  await Promise.all(FONTS.map((f) => document.fonts.load(f, 'Rani & Dimas').catch(() => {})));
+  if (document.fonts && document.fonts.load) await Promise.all(FONTS.map((f) => document.fonts.load(f, 'Rani & Dimas').catch(() => {})));
 
   const content = {
     title: view.title, eyebrow: String(view.eventLabel || '').toUpperCase(), lead: s.text.lead,

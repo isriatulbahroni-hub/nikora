@@ -22,7 +22,7 @@ const ok = (data, over = {}) => ({ origin: 'https://undangan.example', source: p
 
 test('frame: hanya menerima draf dari induk sendiri dengan asal sama', () => {
   const ctx = { origin: 'https://undangan.example', parent };
-  assert.deepEqual(acceptPreviewMessage(ok({}), ctx), { kind: 'kisah', config: { items: [] }, active: true });
+  assert.deepEqual(acceptPreviewMessage(ok({}), ctx), { type: 'draft', kind: 'kisah', config: { items: [] }, active: true });
   assert.equal(acceptPreviewMessage(ok({}, { origin: 'https://jahat.example' }), ctx), null);
   assert.equal(acceptPreviewMessage(ok({}, { source: { id: 'lain' } }), ctx), null);
   assert.equal(acceptPreviewMessage(ok({ type: 'lain' }), ctx), null);
