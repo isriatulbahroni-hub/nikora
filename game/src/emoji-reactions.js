@@ -1,7 +1,9 @@
+import { STICKERS } from './emoji-sticker-system.js';
+
 // Reaksi emoji di atas kepala avatar (murni, tanpa THREE/DOM supaya mudah diuji).
 // Dikirim lewat kanal obrolan dengan awalan khusus. Vila belum menampilkan obrolan teks,
 // jadi pesan ini tidak muncul sebagai teks di layar tamu mana pun.
-export const EMOJIS = ['😍', '👏', '🥹', '😂', '🎉', '💐', '🥳', '😭', '🙏', '❤️', '🔥', '👋'];
+export const EMOJIS = STICKERS.map((s) => s.glyph); // satu set untuk semua dunia, lihat emoji-sticker-system.js
 const PREFIX = '::emo:';
 
 /** Indeks emoji -> teks pesan, atau null bila indeks tidak valid. */
