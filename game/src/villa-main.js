@@ -6,7 +6,7 @@ import { loadEventInfo, parseEventParams } from './event-context.js';
 import './gate.css';
 import { mountGate, shouldShowGate } from './gate.js';
 import { LEVEL_HEIGHT, VILLA_SCREEN, findNearestSpot, getVillaWorld, levelY, roomAt, sameVoiceSpace, spotPose } from './villa-layout.js';
-import { buildCameraOccluders, resolveCameraDistance } from './villa-camera.js';
+import { buildCameraOccluders, chooseCameraPose, forwardLookBlend, resolveCameraDistance } from './villa-camera.js';
 import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
@@ -290,6 +290,7 @@ async function start() {
   const camera = new THREE.PerspectiveCamera(48, 1, 0.2, 320);
   const occluders = buildCameraOccluders(world);
   let camArm = 0; // panjang lengan kamera yang sudah dihaluskan (dipendekkan seketika saat terhalang)
+  let camPitch = null; // sudut kamera efektif (dinaikkan halus saat terhalang)
   const indoorLight = new THREE.PointLight(0xffe2b8, 0, 17, 1.4);
   scene.add(indoorLight);
   let indoorK = 0;
@@ -618,14 +619,21 @@ async function start() {
     const wide = clamp((camNow.dist - 8) / 6, 0, 1); // jarak jauh (udara/atas) di layar sempit tetap diperlebar sedikit
     const fit = 1 + (Math.min(1.9, Math.max(1, 1.45 / camera.aspect)) - 1) * wide;
     const want = camNow.dist * fit;
-    const cp = Math.cos(camNow.pitch);
-    const dir = { x: Math.sin(camNow.yaw) * cp, y: Math.sin(camNow.pitch), z: Math.cos(camNow.yaw) * cp };
     const eye = { x: me.x, y: me.y + 1.45, z: me.z };
+    // bila kamera terhalang dinding, naikkan sudutnya (halus) supaya ruangan dan avatar tetap terlihat
+    const camPose = chooseCameraPose(eye, camNow.yaw, camNow.pitch, want, occluders);
+    camPitch = camPitch === null ? camPose.pitch : camPitch + (camPose.pitch - camPitch) * (1 - Math.exp(-6 * delta));
+    const cp = Math.cos(camPitch);
+    const dir = { x: Math.sin(camNow.yaw) * cp, y: Math.sin(camPitch), z: Math.cos(camNow.yaw) * cp };
+    // keselamatan: dengan sudut yang sedang dihaluskan, kamera tetap tidak boleh menembus penghalang
     const { dist: freeArm } = resolveCameraDistance(eye, dir, want, occluders);
     // dinding/atap: kamera mundur ke depan penghalang seketika; saat bebas kembali perlahan (tanpa loncatan)
     camArm = camArm === 0 || freeArm < camArm ? freeArm : camArm + (freeArm - camArm) * (1 - Math.exp(-4 * delta));
     camera.position.set(eye.x + dir.x * camArm, eye.y + dir.y * camArm, eye.z + dir.z * camArm);
-    camera.lookAt(me.x, me.y + 1.2, me.z);
+    // lengan kamera sangat pendek (menempel dinding): pandangan dialihkan ke depan agar ruangan terlihat, bukan lantai
+    const look = forwardLookBlend(camArm);
+    const ahead = { x: eye.x - Math.sin(camNow.yaw) * 6, y: eye.y - 0.3, z: eye.z - Math.cos(camNow.yaw) * 6 };
+    camera.lookAt(me.x + (ahead.x - me.x) * look, me.y + 1.2 + (ahead.y - (me.y + 1.2)) * look, me.z + (ahead.z - me.z) * look);
     avatar.visible = camArm > 0.95; // kamera terlalu dekat: avatar tidak menutupi layar
     // cahaya dalam ruangan menyala halus saat pemain berada di dalam bangunan
     const inside = !me.stair && roomAt(me.x, me.z, me.level).indoor;
