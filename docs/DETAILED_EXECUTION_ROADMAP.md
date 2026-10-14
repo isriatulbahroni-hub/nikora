@@ -65,7 +65,8 @@ Dikerjakan dan diperiksa dengan menjalankan perintahnya:
 
 Belum ada, tidak diklaim selesai (Gate Fase 9 **belum lulus**):
 
-- Simpan ke akun, ajukan, tinjau, dan terbit dari UI; layar moderator. Migrasi belum diterapkan dan belum ada klien yang memanggil fungsi `dunia_*`.
+- **Terhadap database sungguhan.** Klien awan (`game/src/world-cloud.js`) dan UI-nya (`game/src/editor-cloud-ui.js`: masuk, simpan versi, daftar versi, ajukan, batal, tarik, riwayat audit, serta mode tinjau moderator dengan setujui/tolak/tarik paksa) sudah ada, dan 12 tes unit serta 3 skenario E2E lulus. Tetapi E2E memakai **tiruan Supabase** (`game/e2e/support/mock-supabase.js`) yang hanya membuktikan sambungan UI dan klien. Migrasi belum diterapkan, jadi alur ini belum pernah dijalankan terhadap database nyata. Editor memakai `VITE_SUPABASE_URL` dan `VITE_SUPABASE_ANON_KEY` yang sama dengan game (tanpa konfigurasi baru).
+- Hasil sampingan pengujian awan yang sudah diperbaiki: simpan-otomatis sempat menulis dunia yang sedang ditinjau ke draf lokal moderator; pesan alasan "belum bisa diajukan" langsung terhapus; isian login hilang setelah gagal masuk; teks liar "null" di panel.
 - Memuat dunia terbit untuk tamu: server masih memilih dunia lewat `WORLD` (vila/aula). Perlu jalur yang mengambil versi terbit, memvalidasi ulang dengan `validateProject`, lalu `toWorld`, serta renderer dunia proyek di klien tamu.
 - Aset kreator: hanya katalog prosedural; belum ada unggah aset, lisensi, atau validasi performa pada perangkat nyata (anggaran beban adalah bobot perkiraan, belum diukur).
 - Kolaborasi: baru model izin di database, belum UI. Belum ada bangunan bertingkat, pencahayaan kustom, titik interaksi, misi, atau analitik.

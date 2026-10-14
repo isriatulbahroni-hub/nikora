@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { createEditor, openProject } from './world-editor.js';
 import { CATALOG, PROP_TYPES, TEMPLATES, TEMPLATE_KEYS, LIMITS, newProject, toWorld } from './world-project.js';
+import { createCloud } from './world-cloud.js';
+import { initCloudUi } from './editor-cloud-ui.js';
 import { propMesh, placeMesh, footprintLine, buildGround, spawnMarker, SKY_PRESETS, labelOf } from './world-project-view.js';
 
 const $ = (id) => document.getElementById(id);
@@ -25,6 +27,7 @@ function initialProject() {
   return newProject('taman');
 }
 const editor = createEditor(initialProject());
+let cloudUi = null; // diisi di bawah bila Supabase dikonfigurasi
 if (new URLSearchParams(location.search).has('debug')) window.__editor = editor;
 
 // ------------------------------------------------------------------ scene
@@ -67,7 +70,7 @@ function pickProp(ev) { toNdc(ev); const hits = ray.intersectObjects(propsGroup.
 
 const canvas = renderer.domElement;
 canvas.addEventListener('pointerdown', (ev) => {
-  if (playing || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+  if (playing || cloudUi?.reviewing || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
   const id = pickProp(ev);
   tap = { x: ev.clientX, y: ev.clientY, id };
   if (id && armed === null) {
@@ -253,7 +256,10 @@ function refreshUi() {
   $('redo').disabled = !editor.canRedo;
   if (document.activeElement !== $('name')) $('name').value = editor.project.name;
   $('sky').value = editor.project.sky;
-  $('tools').classList.toggle('show', !!editor.selection && !playing);
+  $('tools').classList.toggle('show', !!editor.selection && !playing && !cloudUi?.reviewing);
+  const cs = $('cloudState');
+  cs.textContent = cloudUi?.reviewing ? 'Mode tinjau' : cloudUi?.linked ? `☁ ${cloudUi.linked.name}` : '';
+  cs.style.display = cs.textContent ? '' : 'none';
   $('hint').textContent = playing ? 'Mode uji: jalan dengan WASD / panah / tombol layar.'
     : armed === 'spawn' ? 'Ketuk lahan untuk meletakkan titik mulai.'
       : armed ? `Ketuk lahan untuk menaruh: ${labelOf(armed)}. Ketuk "Pilih" untuk selesai.`
@@ -292,6 +298,7 @@ $('file').addEventListener('change', async (e) => {
   let raw;
   try { raw = JSON.parse(await f.text()); } catch { toast('Berkas bukan JSON yang valid'); return; }
   const r = editor.load(raw);
+  if (r.ok) cloudUi?.unlink(); // berkas lokal bukan proyek akun: jangan tertimpa saat menyimpan ke akun
   if (!r.ok) { toast(`Tidak bisa dibuka: ${r.errors[0]?.msg ?? 'rusak'}`, 4200); return; }
   fitCamera();
   toast(r.errors.length ? `Dibuka dengan ${r.errors.length} masalah yang perlu diperbaiki` : 'Dunia dibuka', 3200);
@@ -299,8 +306,10 @@ $('file').addEventListener('change', async (e) => {
 
 let saveTimer;
 editor.subscribe(() => {
+  if (cloudUi?.reviewing) return; // dunia yang sedang ditinjau tidak boleh menimpa draf lokal
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => store.set(JSON.stringify(editor.project)), 400);
+  // Periksa lagi saat pengatur waktu berjalan: tinjau bisa dimulai setelah perubahan terakhir tetapi sebelum 400 ms habis.
+  saveTimer = setTimeout(() => { if (!cloudUi?.reviewing) store.set(JSON.stringify(editor.project)); }, 400);
 });
 
 // ------------------------------------------------------------------ mode uji jalan
@@ -356,6 +365,7 @@ for (const b of $('pad').querySelectorAll('[data-k]')) {
 
 window.addEventListener('keydown', (e) => {
   const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+  if (cloudUi?.reviewing && !playing) return;
   if (playing) { const k = KEYMAP[e.key]; if (k) { keys.add(k); e.preventDefault(); } if (e.key === 'Escape') stopPlay(); return; }
   if (typing) return;
   const mod = e.ctrlKey || e.metaKey;
@@ -388,8 +398,23 @@ function frame(now) {
   } else {
     controls.update();
   }
-  renderer.render(scene, camera);
+  if (!window.__ORBIT_NO_RENDER__) renderer.render(scene, camera); // saklar hanya untuk tes E2E non-visual (diisi skrip, bukan URL)
   requestAnimationFrame(frame);
+}
+
+const SESSION_KEY = 'orbit.worldeditor.session.v1';
+const sessionStore = {
+  get() { try { return localStorage.getItem(SESSION_KEY); } catch { return null; } },
+  set(v) { try { if (v == null) localStorage.removeItem(SESSION_KEY); else localStorage.setItem(SESSION_KEY, v); } catch { /* penyimpanan diblokir: sesi hanya hidup selama halaman terbuka */ } },
+};
+try {
+  // Konfigurasi dari build (VITE_*). `window.__ORBIT_CLOUD__` hanya bisa diisi skrip sebelum halaman berjalan (dipakai tes E2E);
+  // sengaja BUKAN parameter URL, supaya tautan buatan tidak bisa mengarahkan login ke server lain.
+  const injected = window.__ORBIT_CLOUD__;
+  const cloud = createCloud({ url: injected?.url ?? import.meta.env.VITE_SUPABASE_URL, key: injected?.key ?? import.meta.env.VITE_SUPABASE_ANON_KEY, store: sessionStore });
+  cloudUi = initCloudUi({ editor, cloud, panel: $('cloud'), button: $('cloudBtn'), reviewbar: $('reviewbar'), toast, onChange: () => { sync(); } });
+} catch {
+  $('cloudBtn').addEventListener('click', () => toast('Akun belum dikonfigurasi (VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY).', 4200));
 }
 
 buildPalette();
