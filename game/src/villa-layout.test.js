@@ -250,6 +250,8 @@ test('semua ruangan di semua lantai terjangkau dari gerbang (BFS lintas lantai)'
     for (const [dx, dz] of [[cell, 0], [-cell, 0], [0, cell], [0, -cell]]) {
       const n = step(p, dx, dz);
       if (n.x === p.x && n.z === p.z && n.stair === p.stair && n.level === p.level) continue;
+      // dunia luar (jalan dan pedesaan) terbuka sangat luas: telusuri hanya kompleks vila beserta sekitar gerbang
+      if (n.x < BOUNDS.minX - 1 || n.x > BOUNDS.maxX + 1 || n.z < BOUNDS.minZ - 1 || n.z > BOUNDS.maxZ + 1) continue;
       const k = key(n.level, toI(n.x), toJ(n.z), n.stair);
       if (seen.has(k)) continue;
       seen.set(k, n);

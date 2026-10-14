@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
-import { COUNTRYSIDE, HALL_SEATING, LEVEL_HEIGHT, STAIRS, WALL_HEIGHT, WALL_THICKNESS, hallChairPositions, levelY } from './villa-layout.js';
+import { COUNTRYSIDE, DOOR_HEIGHT, HALL_SEATING, HALL_WALL_HEIGHT, LEVEL_HEIGHT, ROOFS, STAIRS, WALL_HEIGHT, WALL_THICKNESS, hallChairPositions, levelY } from './villa-layout.js';
+
 import {
   PALM_BEND, bedGeometries, broadleafTreeGeometry, carGeometries, chairGeometry, frondGeometry, lanternPostGeometry,
   loungerGeometry, merge, palmTrunkGeometry, part, potPlantGeometry, shrubGeometry,
 } from './villa-props.js';
 import {
-  asphaltTexture, frondTexture, grassTexture, marbleTexture, parquetTexture, poolTileTexture, rng, rugTexture,
-  stoneTexture, waterNormalTexture,
+  asphaltTexture, frondTexture, grassTexture, marbleTexture, parquetTexture, plasterTexture, poolTileTexture, rng, roofTileTexture,
+  rugTexture, stoneTexture, waterNormalTexture,
 } from './villa-textures.js';
 
 const SUN_DIR = new THREE.Vector3(22, 42, 16).normalize();
@@ -75,86 +76,311 @@ function wallPlane(w, h, tile, material, x, y, z, ry, parent) {
   parent.add(m);
 }
 
-function label(text, x, z) {
-  if (typeof document === 'undefined') return null;
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 96;
-  const ctx = canvas.getContext('2d');
-  ctx.font = '600 38px ui-sans-serif, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(20,28,26,0.5)';
-  ctx.beginPath();
-  ctx.roundRect(8, 12, 496, 72, 24);
-  ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.fillText(text, 256, 61);
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, opacity: 0.85, depthWrite: false }));
-  sprite.scale.set(4.4, 0.83, 1);
-  sprite.position.set(x, WALL_HEIGHT + 0.7, z);
-  return sprite;
-}
-
 function leafDepthMaterial(map) {
   return new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map, alphaTest: 0.45 });
 }
 
 // ------------------------------------------------------------------ dinding
-function buildWalls(walls, parent, mats) {
-  const items = walls.map((w) => {
-    const len = w.b - w.a;
-    return w.orient === 'h'
-      ? { x: (w.a + w.b) / 2, z: w.coord, sx: len, sy: WALL_HEIGHT, sz: WALL_THICKNESS }
-      : { x: w.coord, z: (w.a + w.b) / 2, sx: WALL_THICKNESS, sy: WALL_HEIGHT, sz: len };
+// Warna dinding per jenis ruangan (hangat dan berbeda, bukan putih polos).
+const WALL_TINTS = {
+  hall: 0xe3d3b4, suite: 0xd6bf9d, lobby: 0xdfcdae, spa: 0xc9d6c9, bridal: 0xe6cfc6, restaurant: 0xe0c59d,
+  kitchen: 0xd9dfdc, guest: 0xe5d6bb, corridor: 0xd6c9b0, stair: 0xd2c6b0, lounge: 0xdccdb0, library: 0xcdb999,
+  terrace: 0xdccdb0, grounds: 0xddcdaf,
+};
+const SILL = 0.95; // tinggi ambang jendela
+const HEAD = 2.3; // tinggi kepala jendela
+const WINDOW_W = 1.5;
+
+/**
+ * Dinding utuh (opak): kotak padat dengan bukaan jendela pada dinding luar, plint batu, plint kayu, dan lis atas.
+ * Warna per ruangan; tidak ada perubahan tinggi berdasarkan kamera.
+ */
+function buildWalls(walls, rooms, doors, parent, mats) {
+  const inRooms = (x, z) => rooms.find((r) => {
+    const q = r.kind === 'stair' && r.landing && !r.rect ? r.landing : r.rect;
+    return x > q[0] && x < q[2] && z > q[1] && z < q[3];
   });
+  const solid = [];
+  const plinth = [];
+  const skirting = [];
+  const cornice = [];
+  const frames = [];
+  const glass = [];
+  const T = WALL_THICKNESS;
+  const piece = (w, c0, c1, y0, y1, color) => {
+    if (c1 - c0 < 1e-3 || y1 - y0 < 1e-3) return;
+    const mid = (c0 + c1) / 2;
+    const len = c1 - c0;
+    solid.push(w.orient === 'h' ? { x: mid, y: y0, z: w.coord, sx: len, sy: y1 - y0, sz: T, color } : { x: w.coord, y: y0, z: mid, sx: T, sy: y1 - y0, sz: len, color });
+  };
+  for (const w of walls) {
+    if (w.dup) continue;
+    const h = w.h ?? WALL_HEIGHT;
+    const mid = (w.a + w.b) / 2;
+    const p1 = w.orient === 'h' ? [mid, w.coord - 0.5] : [w.coord - 0.5, mid];
+    const p2 = w.orient === 'h' ? [mid, w.coord + 0.5] : [w.coord + 0.5, mid];
+    const r1 = inRooms(...p1);
+    const r2 = inRooms(...p2);
+    const exterior = !r1 || !r2;
+    const color = WALL_TINTS[(r1 ?? r2)?.kind ?? 'grounds'] ?? WALL_TINTS.grounds;
+    const len = w.b - w.a;
+    // jendela hanya di dinding luar yang cukup panjang
+    const n = exterior && len >= 3.4 ? Math.floor((len - 1.4) / 3.2) : 0;
+    const centers = Array.from({ length: n }, (_, i) => w.a + (len * (i + 0.5)) / n);
+    const rows = h > 4 ? [[SILL, HEAD], [4.2, 5.9]] : [[SILL, HEAD]];
+    if (!n) {
+      piece(w, w.a, w.b, 0, h, color);
+    } else {
+      let cursor = w.a;
+      for (const c of centers) {
+        piece(w, cursor, c - WINDOW_W / 2, 0, h, color);
+        cursor = c + WINDOW_W / 2;
+      }
+      piece(w, cursor, w.b, 0, h, color);
+      for (const c of centers) {
+        let y = 0;
+        for (const [sill, head] of rows) {
+          piece(w, c - WINDOW_W / 2, c + WINDOW_W / 2, y, sill, color);
+          y = head;
+          const cx = w.orient === 'h' ? c : w.coord;
+          const cz = w.orient === 'h' ? w.coord : c;
+          const ry = w.orient === 'h' ? 0 : Math.PI / 2;
+          const wh = head - sill;
+          glass.push({ x: cx, y: sill, z: cz, ry, sx: WINDOW_W, sy: wh, sz: 0.03 });
+          // rangka kayu: 4 sisi + kayu tengah
+          frames.push({ x: cx, y: sill - 0.04, z: cz, ry, sx: WINDOW_W + 0.12, sy: 0.08, sz: T + 0.08 });
+          frames.push({ x: cx, y: head - 0.04, z: cz, ry, sx: WINDOW_W + 0.12, sy: 0.08, sz: T + 0.08 });
+          for (const side of [-1, 1]) {
+            const off = (side * (WINDOW_W + 0.04)) / 2;
+            frames.push({ x: cx + (w.orient === 'h' ? off : 0), y: sill, z: cz + (w.orient === 'h' ? 0 : off), ry, sx: 0.08, sy: wh, sz: T + 0.08 });
+          }
+          frames.push({ x: cx, y: sill, z: cz, ry, sx: 0.05, sy: wh, sz: T + 0.04 });
+          frames.push({ x: cx, y: sill + wh / 2 - 0.025, z: cz, ry, sx: WINDOW_W, sy: 0.05, sz: T + 0.04 });
+        }
+        piece(w, c - WINDOW_W / 2, c + WINDOW_W / 2, y, h, color);
+      }
+    }
+    // plint batu di luar, plint kayu di dalam, lis atas
+    const a = w.a;
+    const b = w.b;
+    const add = (list, y, sy, grow, col) => {
+      const m = (a + b) / 2;
+      list.push(w.orient === 'h' ? { x: m, y, z: w.coord, sx: b - a, sy, sz: T + grow, color: col } : { x: w.coord, y, z: m, sx: T + grow, sy, sz: b - a, color: col });
+    };
+    if (exterior) add(plinth, 0, 0.6, 0.06, 0xffffff);
+    else add(skirting, 0, 0.14, 0.04, 0xffffff);
+    add(cornice, h - 0.12, 0.12, 0.1, 0xffffff);
+  }
+  // ambang di atas pintu + rangka kayu pintu
+  for (const d of doors) {
+    const h = d.tall ? HALL_WALL_HEIGHT : WALL_HEIGHT;
+    const color = WALL_TINTS[(inRooms(d.x, d.z) ?? inRooms(d.orient === 'h' ? d.x : d.x + 0.3, d.orient === 'h' ? d.z + 0.3 : d.z))?.kind ?? 'grounds'] ?? WALL_TINTS.grounds;
+    const lin = d.orient === 'h' ? { x: d.x, y: DOOR_HEIGHT, z: d.z, sx: d.width, sy: h - DOOR_HEIGHT, sz: T, color } : { x: d.x, y: DOOR_HEIGHT, z: d.z, sx: T, sy: h - DOOR_HEIGHT, sz: d.width, color };
+    solid.push(lin);
+    const along = d.orient === 'h' ? 'x' : 'z';
+    for (const side of [-1, 1]) {
+      const off = (side * (d.width + 0.08)) / 2;
+      frames.push({ x: d.x + (along === 'x' ? off : 0), y: 0, z: d.z + (along === 'z' ? off : 0), sx: d.orient === 'h' ? 0.1 : T + 0.08, sy: DOOR_HEIGHT, sz: d.orient === 'h' ? T + 0.08 : 0.1 });
+    }
+    frames.push(d.orient === 'h' ? { x: d.x, y: DOOR_HEIGHT - 0.1, z: d.z, sx: d.width + 0.2, sy: 0.1, sz: T + 0.08 } : { x: d.x, y: DOOR_HEIGHT - 0.1, z: d.z, sx: T + 0.08, sy: 0.1, sz: d.width + 0.2 });
+  }
   const geo = new THREE.BoxGeometry(1, 1, 1);
   geo.translate(0, 0.5, 0);
-  const mesh = instanced(geo, mats.plaster, items);
-  parent.add(mesh);
-  parent.add(instanced(geo, mats.skirting, items.map((i) => ({ ...i, sy: 0.16, sx: i.sx + 0.05, sz: i.sz + 0.05 })), { castShadow: false }));
-  const cap = instanced(geo, mats.cornice, items.map((i) => ({ ...i, y: WALL_HEIGHT - 0.1, sy: 0.1, sx: i.sx + 0.08, sz: i.sz + 0.08 })));
-  parent.add(cap);
+  parent.add(instanced(geo, mats.plaster, solid));
+  parent.add(instanced(geo, mats.plinth, plinth, { castShadow: false }));
+  parent.add(instanced(geo, mats.skirting, skirting, { castShadow: false }));
+  parent.add(instanced(geo, mats.cornice, cornice));
+  parent.add(instanced(geo, mats.wood, frames, { castShadow: false }));
+  parent.add(instanced(geo, mats.glass, glass, { castShadow: false, receiveShadow: false }));
+}
 
-  // Dinding timur-barat di selatan pemain (antara kamera dan pemain) direndahkan agar isi ruangan terlihat.
-  const heights = items.map(() => WALL_HEIGHT);
-  const LOW = 0.45;
-  return (px, pz, delta, active = true, camDir = { x: 0, z: 1 }, pitch = 0.9) => {
-    let changed = false;
-    walls.forEach((w, i) => {
-      // titik dinding terdekat dari pemain; dirunduk bila berada di sisi kamera dan cukup dekat
-      const cx = w.orient === 'h' ? Math.min(w.b, Math.max(w.a, px)) : w.coord;
-      const cz = w.orient === 'h' ? w.coord : Math.min(w.b, Math.max(w.a, pz));
-      const vx = cx - px;
-      const vz = cz - pz;
-      const dist = Math.hypot(vx, vz);
-      const blocks = active && pitch < 1.3 && dist < 11 && vx * camDir.x + vz * camDir.z > 0.25 * dist + 0.3;
-      const target = blocks ? LOW : WALL_HEIGHT;
-      if (Math.abs(heights[i] - target) < 0.002) return;
-      heights[i] += (target - heights[i]) * Math.min(1, delta * 9);
-      const it = items[i];
-      dummy.position.set(it.x, 0, it.z);
-      dummy.scale.set(it.sx, heights[i], it.sz);
-      dummy.rotation.set(0, 0, 0);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-      dummy.position.set(it.x, Math.max(0.05, heights[i] - 0.1), it.z);
-      dummy.scale.set(it.sx + 0.08, 0.1, it.sz + 0.08);
-      dummy.updateMatrix();
-      cap.setMatrixAt(i, dummy.matrix);
-      changed = true;
-    });
-    if (changed) {
-      mesh.instanceMatrix.needsUpdate = true;
-      cap.instanceMatrix.needsUpdate = true;
+/** Daun pintu yang membuka halus saat ada avatar mendekat (satu daun untuk pintu sempit, dua daun untuk pintu lebar). */
+function buildDoorLeaves(doors, level, parent, mats) {
+  const doorsOut = [];
+  const leafGeo = new THREE.BoxGeometry(1, DOOR_HEIGHT - 0.06, 0.06);
+  leafGeo.translate(0.5, (DOOR_HEIGHT - 0.06) / 2 + 0.02, 0);
+  for (const d of doors) {
+    const along = d.orient === 'h' ? [d.width, 0.03, 0.55] : [0.55, 0.03, d.width];
+    block(along[0], along[1], along[2], mats.brass, d.x, 0.04, d.z, parent, { cast: false });
+    if (d.width > 3.2) continue; // gerbang lebar dibiarkan terbuka
+    const double = d.width > 2.0;
+    const leaves = [];
+    const make = (hingeAlong, dirSign, openDir) => {
+      const lw = (double ? d.width / 2 : d.width) - 0.08;
+      const pivot = new THREE.Group();
+      const mesh = new THREE.Mesh(leafGeo, mats.door);
+      mesh.scale.x = lw;
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      pivot.add(mesh);
+      const handle = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), mats.brass);
+      handle.position.set(lw - 0.12, 1.05, 0.05);
+      pivot.add(handle);
+      if (d.orient === 'h') pivot.position.set(d.x + hingeAlong, 0.02, d.z);
+      else pivot.position.set(d.x, 0.02, d.z + hingeAlong);
+      const closed = d.orient === 'h' ? (dirSign > 0 ? 0 : Math.PI) : dirSign > 0 ? -Math.PI / 2 : Math.PI / 2;
+      pivot.rotation.y = closed;
+      parent.add(pivot);
+      leaves.push({ pivot, closed, openDir });
+    };
+    const half = d.width / 2 - 0.04;
+    if (double) {
+      make(-half, +1, +1);
+      make(+half, -1, -1);
+    } else {
+      make(-half, +1, +1);
+    }
+    doorsOut.push({ x: d.x, z: d.z, y: levelY(level), leaves, open: 0 });
+  }
+  return (actors, delta, cam) => {
+    for (const door of doorsOut) {
+      let near = false;
+      for (const a of actors) {
+        if (Math.abs((a.y ?? 0) - door.y) < 1.8 && Math.hypot(a.x - door.x, a.z - door.z) < 2.4) {
+          near = true;
+          break;
+        }
+      }
+      door.open += ((near ? 1 : 0) - door.open) * (1 - Math.exp(-7 * delta));
+      const angle = door.open * 1.75;
+      // daun pintu yang terlalu dekat kamera disembunyikan agar tidak menutupi layar (kamera di ambang pintu)
+      const hide = cam && Math.abs(cam.y - door.y - 1.2) < 2.5 && Math.hypot(cam.x - door.x, cam.z - door.z) < 1.6;
+      for (const l of door.leaves) {
+        l.pivot.visible = !hide;
+        // pintu 'h': +angle memutar ke utara; pintu 'v': +angle memutar ke timur (dua daun bercermin)
+        const horizontal = Math.abs(l.closed) < 0.01 || Math.abs(Math.abs(l.closed) - Math.PI) < 0.01;
+        if (horizontal) l.pivot.rotation.y = l.closed + (Math.abs(l.closed) < 0.01 ? angle : -angle);
+        else l.pivot.rotation.y = l.closed + (l.closed < 0 ? angle : -angle);
+      }
     }
   };
 }
 
-function buildDoors(doors, parent, mats) {
-  for (const d of doors) {
-    const along = d.orient === 'h' ? [d.width, 0.03, 0.55] : [0.55, 0.03, d.width];
-    block(along[0], along[1], along[2], mats.brass, d.x, 0.04, d.z, parent, { cast: false });
+/** Atap: pelana (aula) atau limasan, ditambah langit-langit rata di bawahnya. Koordinat dunia. */
+function roofGeometry(r) {
+  const [rx0, rz0, rx1, rz1] = r.rect;
+  const o = r.overhang;
+  const x0 = rx0 - o;
+  const x1 = rx1 + o;
+  const z0 = rz0 - o;
+  const z1 = rz1 + o;
+  const w = x1 - x0;
+  const d = z1 - z0;
+  const top = r.base + r.rise;
+  const zc = (z0 + z1) / 2;
+  const xc = (x0 + x1) / 2;
+  const tris = []; // [ [x,y,z,u,v] x3 ]
+  const quad = (p, q, rr, s) => {
+    tris.push([p, q, rr], [p, rr, s]);
+  };
+  const v = (x, y, z) => [x, y, z, x / 2.2, z / 2.2];
+  if (r.kind === 'gable') {
+    quad(v(x0, r.base, z1), v(x1, r.base, z1), v(x1, top, zc), v(x0, top, zc));
+    quad(v(x1, r.base, z0), v(x0, r.base, z0), v(x0, top, zc), v(x1, top, zc));
+  } else {
+    const m = Math.min(w, d) / 2;
+    if (w >= d) {
+      quad(v(x0, r.base, z1), v(x1, r.base, z1), v(x1 - m, top, zc), v(x0 + m, top, zc));
+      quad(v(x1, r.base, z0), v(x0, r.base, z0), v(x0 + m, top, zc), v(x1 - m, top, zc));
+      tris.push([v(x0, r.base, z0), v(x0, r.base, z1), v(x0 + m, top, zc)]);
+      tris.push([v(x1, r.base, z1), v(x1, r.base, z0), v(x1 - m, top, zc)]);
+    } else {
+      quad(v(x1, r.base, z1), v(x1, r.base, z0), v(xc, top, z0 + m), v(xc, top, z1 - m));
+      quad(v(x0, r.base, z0), v(x0, r.base, z1), v(xc, top, z1 - m), v(xc, top, z0 + m));
+      tris.push([v(x0, r.base, z1), v(x1, r.base, z1), v(xc, top, z1 - m)]);
+      tris.push([v(x1, r.base, z0), v(x0, r.base, z0), v(xc, top, z0 + m)]);
+    }
   }
+  const positions = [];
+  const uvs = [];
+  for (const t of tris) for (const p of t) { positions.push(p[0], p[1], p[2]); uvs.push(p[3], p[4]); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.computeVertexNormals();
+  return g;
+}
+
+function buildRoofs(parent, mats) {
+  for (const r of ROOFS) {
+    const roof = new THREE.Mesh(roofGeometry(r), mats.roof);
+    roof.castShadow = true;
+    roof.receiveShadow = true;
+    parent.add(roof);
+    const [x0, z0, x1, z1] = r.rect;
+    // langit-langit rata menghadap ke bawah, lengkap dengan balok melintang
+    const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0 + 0.3, z1 - z0 + 0.3), mats.ceiling);
+    ceiling.rotation.x = Math.PI / 2;
+    ceiling.position.set((x0 + x1) / 2, r.base - 0.02, (z0 + z1) / 2);
+    ceiling.receiveShadow = true;
+    parent.add(ceiling);
+    if (r.kind === 'gable') {
+      // dinding segitiga di ujung pelana (warna plester)
+      const zc = (z0 + z1) / 2;
+      for (const x of [r.rect[0], r.rect[2]]) {
+        const g = new THREE.BufferGeometry();
+        const hz = (z1 - z0) / 2;
+        g.setAttribute('position', new THREE.Float32BufferAttribute([x, r.base, z0, x, r.base, z1, x, r.base + r.rise, zc].map((n, i) => n), 3));
+        g.setIndex(x === r.rect[0] ? [0, 2, 1] : [0, 1, 2]);
+        g.computeVertexNormals();
+        const tri = new THREE.Mesh(g, mats.plasterFlat);
+        tri.castShadow = true;
+        parent.add(tri);
+        void hz;
+      }
+      // balok kayu melintang di langit-langit aula
+      const beams = [];
+      for (let x = x0 + 2; x < x1 - 1; x += 3.5) beams.push({ x, y: r.base - 0.3, z: (z0 + z1) / 2, sx: 0.28, sy: 0.3, sz: z1 - z0 });
+      const unit = new THREE.BoxGeometry(1, 1, 1);
+      unit.translate(0, 0.5, 0);
+      parent.add(instanced(unit, mats.beam, beams, { castShadow: false }));
+    }
+  }
+}
+
+/** Lampu gantung kristal di aula: cincin emas + bohlam menyala. */
+function buildChandeliers(parent, mats) {
+  const rings = [];
+  const bulbs = [];
+  for (const z of [-8, -12, -16]) {
+    rings.push({ x: 0, y: HALL_WALL_HEIGHT - 1.6, z });
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      bulbs.push({ x: Math.cos(a) * 0.85, y: HALL_WALL_HEIGHT - 1.55, z: z + Math.sin(a) * 0.85, s: 1 });
+    }
+  }
+  const ring = new THREE.TorusGeometry(0.85, 0.04, 8, 28).rotateX(Math.PI / 2);
+  parent.add(instanced(ring, mats.gold, rings, { castShadow: false }));
+  parent.add(instanced(new THREE.SphereGeometry(0.1, 10, 8), mats.lampGlow, bulbs, { castShadow: false }));
+  const rod = new THREE.CylinderGeometry(0.015, 0.015, 1.6, 6);
+  parent.add(instanced(rod, mats.gold, rings.map((r) => ({ ...r, y: HALL_WALL_HEIGHT - 0.8 })), { castShadow: false }));
+}
+
+/** Pemetaan tekstur di ruang dunia (triplanar sederhana) agar tekstur tidak melar pada kotak yang diskalakan. */
+function worldPlanarUV(material, scale) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uWorldUvScale = { value: scale };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNor;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+  vec4 wpos = vec4(transformed, 1.0);
+  vec3 wnor = objectNormal;
+  #ifdef USE_INSTANCING
+    wpos = instanceMatrix * wpos;
+    wnor = mat3(instanceMatrix) * wnor;
+  #endif
+  vWPos = (modelMatrix * wpos).xyz;
+  vWNor = normalize(mat3(modelMatrix) * wnor);`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNor;\nuniform float uWorldUvScale;')
+      .replace('#include <map_fragment>', `#ifdef USE_MAP
+  vec3 an = abs(normalize(vWNor));
+  vec2 wuv = an.x > an.z ? vWPos.zy : vWPos.xy;
+  if (an.y > max(an.x, an.z)) wuv = vWPos.xz;
+  diffuseColor *= texture2D(map, wuv * uWorldUvScale);
+#endif`);
+  };
+  material.needsUpdate = true;
 }
 
 function buildPerimeter(world, parent, mats, rand) {
@@ -707,26 +933,6 @@ function buildStairs(flights, parent, mats) {
   parent.add(railMesh);
 }
 
-// Tiap bangunan punya grup per lantai atas yang "dilipat" (diskalakan ke lantainya) saat pemain berada di dalamnya.
-const BUILDINGS = [
-  { id: 'north', rect: [-42, -21, 42, -2], towers: ['tower_w', 'tower_e'] },
-  { id: 'guest', rect: [15, 3, 42, 23], towers: ['tower_g'] },
-  { id: 'west', rect: [-42, 3, -15, 23], towers: ['tower_r'] },
-];
-const within = (b, x, z, m = 0) => x > b.rect[0] - m && x < b.rect[2] + m && z > b.rect[1] - m && z < b.rect[3] + m;
-
-function splitLevel(data, b) {
-  const wallMid = (w) => (w.orient === 'h' ? [(w.a + w.b) / 2, w.coord] : [w.coord, (w.a + w.b) / 2]);
-  const roomMid = (r) => [(r.rect[0] + r.rect[2]) / 2, (r.rect[1] + r.rect[3]) / 2];
-  const ok = ([x, z]) => within(b, x, z);
-  return {
-    rooms: data.rooms.filter((r) => ok(roomMid(r))),
-    walls: data.walls.filter((w) => ok(wallMid(w))),
-    doors: data.doors.filter((d) => ok([d.x, d.z])),
-    props: data.props.filter((p) => ok([p.x, p.z])),
-  };
-}
-
 const TERRACE_PLANTS = {
   terrace_w: [[-36.5, -18.5], [-15.5, -18.5], [-15.5, -4.5], [-36.5, -4.5]],
   terrace_e: [[15.5, -18.5], [24.5, -18.5], [15.5, -4.5], [24.5, -4.5]],
@@ -736,8 +942,8 @@ const TERRACE_PLANTS = {
 
 function buildUpperLevel(level, data, group, mats, floors, rand) {
   buildFloors(data.rooms, level, group, mats, floors);
-  const updateWalls = buildWalls(data.walls, group, mats);
-  buildDoors(data.doors, group, mats);
+  buildWalls(data.walls, data.rooms, data.doors, group, mats);
+  const updateDoors = buildDoorLeaves(data.doors, level, group, mats);
   buildRailings(data.rooms, group, mats);
   buildProps(data.props, group, mats, rand);
   const plants = [];
@@ -752,7 +958,7 @@ function buildUpperLevel(level, data, group, mats, floors, rand) {
     rug.receiveShadow = true;
     group.add(rug);
   }
-  return updateWalls;
+  return { updateDoors };
 }
 
 function buildLanterns(parent, mats) {
@@ -786,11 +992,11 @@ function skyAndLight(scene, root, renderer) {
     envScene.add(envSky);
     const pmrem = new THREE.PMREMGenerator(renderer);
     scene.environment = pmrem.fromScene(envScene, 0, 0.1, 1200).texture;
-    scene.environmentIntensity = 0.55;
+    scene.environmentIntensity = 0.5;
     pmrem.dispose();
   }
-  root.add(new THREE.HemisphereLight(0xe3f0ff, 0x86946c, 0.55));
-  const sun = new THREE.DirectionalLight(0xfff0d6, 3.1);
+  root.add(new THREE.HemisphereLight(0xe3f0ff, 0x86946c, 0.5));
+  const sun = new THREE.DirectionalLight(0xffeccb, 2.7);
   sun.castShadow = true;
   const lowEnd = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
   sun.shadow.mapSize.set(lowEnd ? 1024 : 2048, lowEnd ? 1024 : 2048);
@@ -810,10 +1016,11 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
   const { sun, sky } = skyAndLight(scene, root, renderer);
 
   const tex = {
-    grass: grassTexture(), stone: stoneTexture(), path: stoneTexture({ slabs: 3, base: [206, 197, 180], seed: 22 }),
-    limestone: stoneTexture({ slabs: 2, base: [232, 226, 212], seed: 23 }), parquet: parquetTexture(),
+    grass: grassTexture(), stone: stoneTexture(), path: stoneTexture({ slabs: 3, base: [188, 176, 156], seed: 22 }),
+    limestone: stoneTexture({ slabs: 2, base: [214, 205, 186], seed: 23 }), parquet: parquetTexture(),
     marble: marbleTexture(), checker: marbleTexture({ checker: true }), asphalt: asphaltTexture(),
     poolTile: poolTileTexture(), waterNormal: waterNormalTexture(), frond: frondTexture(),
+    plaster: plasterTexture(), roofTile: roofTileTexture(),
   };
   tex.grass.repeat.set(1 / 6, 1 / 6);
   tex.waterNormal.repeat.set(5, 5);
@@ -821,8 +1028,13 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
   const vertexMat = (roughness, extra = {}) => new THREE.MeshStandardMaterial({ vertexColors: true, roughness, ...extra });
   const mats = {
     vertex: vertexMat,
-    plaster: std(0xf4efe4, { roughness: 0.92 }), plasterOuter: std(0xe9e0cd, { roughness: 0.95 }),
-    skirting: std(0xe4dac6, { roughness: 0.6 }), cornice: std(0xfbf7ee, { roughness: 0.7 }),
+    plaster: std(0xffffff, { map: tex.plaster, roughness: 0.93 }), plasterOuter: std(0xd9c7a4, { map: tex.plaster, roughness: 0.95 }),
+    plasterFlat: std(0xdccdb0, { roughness: 0.93 }),
+    plinth: std(0xa9967a, { roughness: 0.85 }), skirting: std(0x5b4331, { roughness: 0.55 }), cornice: std(0xeadfc9, { roughness: 0.7 }),
+    wood: std(0x5a3e29, { roughness: 0.55 }), door: std(0x5e402a, { roughness: 0.5 }), beam: std(0x4f3624, { roughness: 0.6 }),
+    ceiling: std(0xeee4cf, { roughness: 0.9 }),
+    roof: std(0xffffff, { map: tex.roofTile, roughness: 0.78, side: THREE.DoubleSide }),
+    glass: new THREE.MeshPhysicalMaterial({ color: 0xa9cfe2, transparent: true, opacity: 0.2, roughness: 0.04, metalness: 0, envMapIntensity: 1.2, depthWrite: false, side: THREE.DoubleSide }),
     stoneCap: std(0xcfc4ad, { roughness: 0.8 }), brass: std(0xb89a62, { roughness: 0.35, metalness: 0.7 }),
     gold: std(0xd4a84b, { roughness: 0.3, metalness: 0.75 }), white: std(0xfaf7f0, { roughness: 0.55 }),
     limestone: std(0xffffff, { map: tex.limestone, roughness: 0.78 }),
@@ -844,10 +1056,12 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
     frond: new THREE.MeshStandardMaterial({ map: tex.frond, alphaTest: 0.45, side: THREE.DoubleSide, roughness: 0.72 }),
     nut: std(0x4a3a22, { roughness: 0.6 }),
     hill: std(0xffffff, { roughness: 1 }),
-    slab: std(0xd9cfbb, { roughness: 0.9 }),
+    slab: std(0xcbbfa6, { roughness: 0.9 }),
     stairStone: std(0xcdc3ae, { roughness: 0.85 }),
     stairTread: std(0xf2ece0, { roughness: 0.7 }),
   };
+  worldPlanarUV(mats.plaster, 1 / 3.2);
+  worldPlanarUV(mats.plasterOuter, 1 / 3.2);
   // Kecocokan kolom/hijau: material vertex-color untuk bunga dan daun memakai warna per instance.
   mats.leaf.vertexColors = false;
 
@@ -919,8 +1133,8 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
   const groundLevel = world.levels[0];
   buildFloors(groundLevel.rooms, 0, root, mats, floors);
 
-  const updaters = [buildWalls(groundLevel.walls, root, mats)];
-  buildDoors(groundLevel.doors, root, mats);
+  buildWalls(groundLevel.walls, groundLevel.rooms, groundLevel.doors, root, mats);
+  const doorUpdaters = [buildDoorLeaves(groundLevel.doors, 0, root, mats)];
   buildPerimeter(world, root, mats, rand);
   buildHall(root, mats, rand);
   buildPoolAndGarden(root, mats, anim);
@@ -930,61 +1144,23 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
   buildLanterns(root, mats);
   buildCountryside(world, root, mats, rand);
   buildStairs(STAIRS.filter((s) => s.from === 0), root, mats);
-  const folds = []; // { level, building, group, scale, updateWalls }
   for (let level = 1; level < world.levels.length; level++) {
-    for (const b of BUILDINGS) {
-      const data = splitLevel(world.levels[level], b);
-      if (!data.rooms.length) continue;
-      const group = new THREE.Group();
-      group.position.y = levelY(level);
-      root.add(group);
-      const updateWalls = buildUpperLevel(level, data, group, mats, floors, rand);
-      const flights = STAIRS.filter((s) => s.from === level && b.towers.includes(s.tower));
-      if (flights.length) buildStairs(flights, group, mats);
-      folds.push({ level, building: b, group, scale: 1, updateWalls });
-    }
+    const group = new THREE.Group();
+    group.position.y = levelY(level);
+    root.add(group);
+    doorUpdaters.push(buildUpperLevel(level, world.levels[level], group, mats, floors, rand).updateDoors);
+    buildStairs(STAIRS.filter((st) => st.from === level), group, mats);
   }
-  const buildingAt = (x, z) => BUILDINGS.find((b) => within(b, x, z, 1.5)) ?? null;
-
-  const labels = [];
-  for (const r of world.rooms) {
-    if (r.kind === 'corridor' || r.kind === 'guest') continue;
-    const sprite = label(r.name, (r.rect[0] + r.rect[2]) / 2, r.rect[1] + 1.6);
-    if (sprite) {
-      root.add(sprite);
-      labels.push(sprite);
-    }
-  }
-  for (const [text, x, z] of [['Pool & Garden', -3.5, 7], ['Parking Area', 30, 33], ['Guest Rooms', 27, 13]]) {
-    const sprite = label(text, x, z);
-    if (sprite) {
-      root.add(sprite);
-      labels.push(sprite);
-    }
-  }
+  buildRoofs(root, mats);
+  buildChandeliers(root, mats);
 
   let clock = 0;
   return {
     root,
-    /** Apakah lantai `level` di titik (x,z) sedang dilipat (disembunyikan) sehingga isinya tidak terlihat? */
-    isHidden(x, z, level) {
-      if (level < 1) return false;
-      return folds.some((f) => f.level === level && within(f.building, x, z, 0.5) && f.scale < 0.5);
-    },
-    update(px, pz, delta = 0.016, level = 0, camDir, pitch, y = levelY(level)) {
+    /** actors = daftar avatar { x, z, y } (pemain lokal dan pemain lain) yang membuat pintu terbuka bila mendekat. */
+    update(px, pz, delta = 0.016, actors = [], cam = null) {
       clock += delta;
-      for (const l of labels) l.visible = level === 0; // label lantai dasar tidak melayang di atas lantai atas
-      updaters[0](px, pz, delta, level === 0, camDir, pitch);
-      // Lantai di atas pemain dilipat bila pemain berada di dalam bangunannya; bangunan lain tetap utuh dan solid.
-      const seen = Math.floor((y + 2.5) / LEVEL_HEIGHT); // lantai berikutnya muncul setelah naik ~0.9 m di tangga
-      const k = Math.min(1, delta * 9);
-      for (const f of folds) {
-        const inside = within(f.building, px, pz, 1.5);
-        f.scale += ((inside && f.level > seen ? 0 : 1) - f.scale) * k;
-        f.group.scale.y = Math.max(0.001, f.scale);
-        f.group.visible = f.scale > 0.02;
-        f.updateWalls(px, pz, delta, inside && f.level === level, camDir, pitch);
-      }
+      for (const updateDoors of doorUpdaters) updateDoors(actors, delta, cam);
       tex.waterNormal.offset.x += delta * 0.018;
       tex.waterNormal.offset.y += delta * 0.011;
       for (const fn of anim) fn(clock);
