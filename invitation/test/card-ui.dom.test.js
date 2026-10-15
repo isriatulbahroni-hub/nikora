@@ -91,3 +91,36 @@ test('WebGL terdeteksi tetapi pembuatan kartu 3D gagal: jatuh ke kartu CSS, tida
   assert.equal(c.mode, 'css'); assert.ok(root.querySelector('.gc')); assert.ok(warned >= 1);
   c.destroy();
 });
+
+const fake3D = () => { const calls = { destroyed: 0, idx: [] }; let opts; const make3D = async (stage, o) => { opts = o; const cv = document.createElement('canvas'); cv.className = 'gc-canvas'; stage.append(cv); return { setIndex: (i) => calls.idx.push(i), flip() {}, isBack: () => false, destroy() { calls.destroyed++; cv.remove(); } }; }; return { make3D, calls, fail: (w) => opts.onFail(w) }; };
+
+test('GPU gagal menggambar (onFail): beralih ke kartu CSS di tempat, rekening terpilih dipertahankan, tab tetap berfungsi', async () => {
+  const { root, list } = mk(); const f = fake3D();
+  const c = await enhanceGifts({ list, gifts: GIFTS, copy() {}, env: {}, probe: () => true, make3D: f.make3D });
+  const stage = root.querySelector('.gc-stage');
+  assert.equal(c.mode, '3d'); assert.equal(stage.dataset.mode, '3d'); assert.ok(stage.querySelector('.gc-canvas')); assert.equal(stage.querySelector('.gc'), null);
+  root.querySelectorAll('.gc-tab')[1].click(); assert.deepEqual(f.calls.idx, [1]);
+  f.fail('kosong');
+  assert.equal(f.calls.destroyed, 1); assert.equal(stage.querySelector('.gc-canvas'), null);
+  assert.ok(stage.querySelector('.gc')); assert.equal(stage.dataset.mode, 'css'); assert.equal(stage.dataset.fail, 'kosong');
+  assert.equal(root.querySelectorAll('.gc-face').length, 2);
+  root.querySelectorAll('.gc-tab')[0].click();                       // tab masih bekerja pada kartu CSS
+  assert.equal(f.calls.idx.length, 1);
+  assert.equal(root.querySelector('.gc-info strong').textContent, 'BCA');
+  f.fail('shader');                                                  // panggilan ganda tidak membuat kartu dobel
+  assert.equal(stage.querySelectorAll('.gc').length, 1); assert.equal(f.calls.destroyed, 1);
+  c.destroy(); assert.equal(root.querySelector('.gc-ui'), null); assert.equal(list.hidden, false);
+});
+
+test('pembuatan kartu 3D melempar galat -> kartu CSS; ?kartu=css memaksa kartu CSS', async () => {
+  const { root, list } = mk();
+  const c = await enhanceGifts({ list, gifts: GIFTS, copy() {}, env: {}, probe: () => true, make3D: async () => { throw new Error('gpu'); } });
+  assert.equal(c.mode, 'css'); assert.ok(root.querySelector('.gc'));
+  const dom2 = new JSDOM('<!doctype html>', { url: 'http://x.test/?tema=islami&kartu=css' });
+  const old = globalThis.location; Object.defineProperty(globalThis, 'location', { value: dom2.window.location, configurable: true });
+  try {
+    const m = mk(); let called = 0;
+    const c2 = await enhanceGifts({ list: m.list, gifts: GIFTS, copy() {}, env: {}, probe: () => true, make3D: async () => { called++; return null; } });
+    assert.equal(c2.mode, 'css'); assert.equal(called, 0);
+  } finally { Object.defineProperty(globalThis, 'location', { value: old, configurable: true }); }
+});

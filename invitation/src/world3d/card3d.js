@@ -19,15 +19,32 @@ function roundedShape(w, h, r) {
  * Kartu rekening emas 3D. models = hasil cardModel(). Mengembalikan { setIndex, flip, isBack, destroy }.
  * Kartu melayang pelan, miring mengikuti kursor/jari, dibalik dengan ketukan, dan berputar saat ganti kartu.
  */
-export function createCard3D(container, { models, index = 0, onFlip }) {
+export function createCard3D(container, { models, index = 0, onFlip, onFail }) {
   const canvas = document.createElement('canvas');
   canvas.className = 'gc-canvas'; canvas.setAttribute('aria-hidden', 'true');
-  container.append(canvas);
+  container.append(canvas); container.classList.add('gc-gl');
 
   const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, premultipliedAlpha: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
+
+  /* ---- jaring pengaman: GPU tertentu gagal menggambar tanpa melempar galat ---- */
+  let destroyed = false, failed = false, frames = 0, seenCard = false, blankProbes = 0;
+  const fail = (why) => { if (failed || destroyed) return; failed = true; console.warn('Kartu 3D gagal tampil, beralih ke kartu CSS:', why); if (onFail) onFail(why); };
+  renderer.debug.onShaderError = () => fail('shader');
+  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); fail('context'); });
+  /** Setelah render, pastikan benar-benar ada piksel kartu (alfa > 0). Dibaca sebelum bingkai ditampilkan. */
+  const probePixels = () => {
+    const gl = renderer.getContext();
+    if (!gl || (gl.isContextLost && gl.isContextLost())) return fail('context');
+    const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, px = new Uint8Array(4);
+    for (const [fx, fy] of [[.5, .5], [.35, .5], [.65, .5], [.5, .4], [.5, .6]]) {
+      gl.readPixels(Math.floor(W * fx), Math.floor(H * fy), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      if (px[3] > 8) { seenCard = true; return; }
+    }
+    if (++blankProbes >= 4) fail('kosong');
+  };
 
   const scene = new THREE.Scene();
   const pm = new THREE.PMREMGenerator(renderer), envTex = pm.fromScene(new RoomEnvironment(), 0.03).texture;
@@ -84,7 +101,7 @@ export function createCard3D(container, { models, index = 0, onFlip }) {
 
   /* ---- keadaan animasi ---- */
   const tilt = { x: 0, y: 0, tx: 0, ty: 0 }, flipS = { a: 0, t: 0 }, spin = { on: false, p: 0, swapped: false, to: 0 };
-  let clock = 0, last = 0, raf = 0, destroyed = false, onScreen = true, down = null;
+  let clock = 0, last = 0, raf = 0, onScreen = true, down = null;
   const sound = { back: false };
 
   function setTilt(e) {
@@ -129,7 +146,10 @@ export function createCard3D(container, { models, index = 0, onFlip }) {
     raf = requestAnimationFrame(frame);
     if (!onScreen || document.hidden) { last = now; return; }
     const dt = Math.min(.05, (now - last) / 1000 || .016); last = now;
-    tick(dt); renderer.render(scene, camera);
+    try {
+      tick(dt); renderer.render(scene, camera);
+      if (!seenCard && !failed && ++frames % 3 === 0) probePixels();
+    } catch (e) { fail(e && e.message ? e.message : 'render'); }
   }
   const io = typeof IntersectionObserver !== 'undefined' ? new IntersectionObserver((es) => { onScreen = es[es.length - 1].isIntersecting; }, { threshold: 0 }) : null;
   if (io) io.observe(canvas);
@@ -138,7 +158,7 @@ export function createCard3D(container, { models, index = 0, onFlip }) {
   return {
     setIndex, flip, isBack: () => sound.back,
     destroy() {
-      destroyed = true; cancelAnimationFrame(raf);
+      destroyed = true; cancelAnimationFrame(raf); container.classList.remove('gc-gl');
       canvas.removeEventListener('pointermove', onMove); canvas.removeEventListener('pointerdown', onDown); canvas.removeEventListener('pointerup', onUp);
       canvas.removeEventListener('pointercancel', onLeave); canvas.removeEventListener('pointerleave', onLeave);
       if (ro) ro.disconnect(); if (io) io.disconnect();

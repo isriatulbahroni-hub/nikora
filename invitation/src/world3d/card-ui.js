@@ -44,7 +44,7 @@ function createCardCSS(stage, { models, index = 0, still = false, onFlip }) {
  * dan seluruh informasi (bank, nama, nomor, tombol salin) tetap tersedia sebagai teks.
  * Mengembalikan { destroy } yang memulihkan daftar semula.
  */
-export async function enhanceGifts({ list, gifts, copy, env = {}, probe = webglAvailable }) {
+export async function enhanceGifts({ list, gifts, copy, env = {}, probe = webglAvailable, make3D = (st, o) => import('./card3d.js').then((m) => m.createCard3D(st, o)) }) {
   if (document.fonts && document.fonts.load) await Promise.all(FONTS.map((f) => document.fonts.load(f, 'ABC 123 Dimas').catch(() => {})));   // peramban lama: pakai huruf cadangan
   const models = gifts.map(cardModel);
   let idx = 0, api = null, mode = 'css';
@@ -66,12 +66,22 @@ export async function enhanceGifts({ list, gifts, copy, env = {}, probe = webglA
   };
   const onFlip = (b) => flipBtn.setAttribute('aria-pressed', String(b));
 
-  const use3D = !env.light && !env.reduced && probe();
+  // ?kartu=css memaksa kartu CSS (berguna untuk menguji perangkat yang bermasalah dengan WebGL)
+  const forceCss = typeof location !== 'undefined' && /(^|[?&])kartu=css(&|$)/.test(location.search || '');
+  const use3D = !forceCss && !env.light && !env.reduced && probe();
+  // GPU yang gagal menggambar tanpa galat: ganti ke kartu CSS di tempat, rekening yang sedang dipilih tetap dipertahankan.
+  const fallback = (why) => {
+    if (mode !== '3d') return;
+    try { api.destroy(); } catch { /* abaikan */ }
+    mode = 'css'; stage.dataset.mode = 'css'; stage.dataset.fail = String(why || '');
+    api = createCardCSS(stage, { models, index: idx, still: !!env.reduced || !!env.light, onFlip });
+  };
   if (use3D) {
-    try { const m = await import('./card3d.js'); api = m.createCard3D(stage, { models, index: 0, onFlip }); mode = '3d'; }
+    try { api = await make3D(stage, { models, index: 0, onFlip, onFail: fallback }); mode = '3d'; }
     catch (e) { console.warn('Kartu 3D tidak dapat dimuat, memakai kartu CSS:', e); api = null; }
   }
   if (!api) api = createCardCSS(stage, { models, index: 0, still: !!env.reduced || !!env.light, onFlip });
+  stage.dataset.mode = mode;
 
   tabEls.forEach((t, i) => t.addEventListener('click', () => { idx = i; api.setIndex(i); info(); }));
   copyBtn.addEventListener('click', (e) => copy(models[idx].raw, e.currentTarget));
