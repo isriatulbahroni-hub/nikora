@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { EMOJIS, decodeReaction, encodeReaction } from './emoji-reactions.js';
+import { COMBO_MAX_DISTANCE, COMBO_WINDOW_MS, comboFor } from './emoji-sticker-system.js';
+import { playCombo, playSticker, unlockAudio } from './emoji-sticker-fx.js';
 
 const LIFETIME_MS = 2400;
 const MAX_PER_AVATAR = 3; // reaksi beruntun dibatasi supaya kepala avatar tidak penuh
@@ -123,20 +125,47 @@ export function mountEmojiPanel({ onPick, doc = document, host = doc.querySelect
 }
 
 /**
- * Pasang reaksi emoji. Dengan sesi multiplayer: dikirim lewat obrolan dan tampil di semua tamu
+ * Pasang stiker emoji. Dengan sesi multiplayer: dikirim lewat obrolan dan tampil di semua tamu
  * (termasuk diri sendiri lewat gema lokal). Tanpa sesi (offline): tampil hanya di avatar sendiri.
+ * Dua reaksi yang cocok dari dua tamu yang berdekatan dalam 3 detik memicu kombo (hati menyatu, api lawan air).
  */
 export function setupEmojiReactions({ session, avatar, doc = document }) {
-  const avatarOf = (id) => (id === session?.net.id ? avatar : session?.view.getAvatar(id));
+  const selfId = session?.net.id ?? 'self';
+  const avatarOf = (id) => (id === selfId ? avatar : session?.view.getAvatar(id));
+  const recent = new Map(); // id pengirim -> { index, at }
+  const react = (id, index) => {
+    const group = avatarOf(id);
+    if (!group) return;
+    showEmojiAbove(group, index);
+    playSticker(group, index, { listener: avatar });
+    const now = performance.now();
+    for (const [otherId, prev] of recent) {
+      if (now - prev.at > COMBO_WINDOW_MS) {
+        recent.delete(otherId);
+        continue;
+      }
+      if (otherId === id) continue;
+      const kind = comboFor(prev.index, index);
+      const other = kind ? avatarOf(otherId) : null;
+      if (other && group.parent && other.position.distanceTo(group.position) <= COMBO_MAX_DISTANCE) {
+        playCombo(kind, group.parent, other.position, group.position);
+        recent.delete(otherId);
+        recent.delete(id);
+        return;
+      }
+    }
+    recent.set(id, { index, at: now });
+  };
   session?.net.on('chat', (msg) => {
     const index = decodeReaction(msg?.text);
-    if (index !== null) showEmojiAbove(avatarOf(msg.id), index);
+    if (index !== null) react(msg.id, index);
   });
   return mountEmojiPanel({
     doc,
     onPick: (index) => {
+      unlockAudio(); // klik pengguna: browser mengizinkan suara
       if (session) session.sendChat(encodeReaction(index));
-      else showEmojiAbove(avatar, index);
+      else react(selfId, index);
     },
   });
 }
