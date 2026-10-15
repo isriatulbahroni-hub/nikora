@@ -64,6 +64,8 @@ export function createCloud({ url, key, store, fetchImpl = globalThis.fetch, now
 
   return {
     session: read,
+    /** Token akses yang masih berlaku (disegarkan bila perlu); dipakai untuk memanggil API server milik sendiri. */
+    accessToken: token,
     userId() { const s = read(); return s?.user?.id ?? null; },
     email() { const s = read(); return s?.user?.email ?? null; },
     signIn: async (email, password) => keep(await auth('token?grant_type=password', { email: String(email || '').trim().slice(0, 254), password })),
