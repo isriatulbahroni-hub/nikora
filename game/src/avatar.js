@@ -191,7 +191,9 @@ const lerp = (a, b, k) => a + (b - a) * k;
 /**
  * Pose berdasarkan aksi. act: null | 'handshake' | 'wave' | 'highfive' | 'bow' | 'clap' | 'walk'.
  * t: waktu (detik). speed: laju nyata avatar (m/s); menentukan ayunan kaki/lengan. Tanpa speed, 'walk' = laju penuh.
- * group.userData.seated = true membuat kaki ditekuk duduk. Dipanggil tiap frame; halus karena peluruhan eksponensial.
+ * group.userData.seated = true membuat avatar duduk seperti manusia: punggung tegak, paha mendatar, betis tegak,
+ * lutut sedikit terbuka, tangan bertumpu di paha. Pemanggil mengaturnya tiap frame sebelum applyPose.
+ * Dipanggil tiap frame; halus karena peluruhan eksponensial.
  */
 export function applyPose(group, act, t, delta = 1 / 60, speed) {
   const spinPivot = group.userData?.pivot;
@@ -236,6 +238,11 @@ export function applyPose(group, act, t, delta = 1 / 60, speed) {
     r = { x: 2.6 + s * 0.3, z: -0.4 + s * 0.3 };
     l = { x: 2.6 - s * 0.3, z: 0.4 - s * 0.3 };
     lean = s * 0.12;
+  } else if (seated) {
+    // duduk santai: lengan atas turun, tangan bertumpu di paha, badan sedikit condong ke depan
+    r = { x: 0.8, z: -0.1 };
+    l = { x: 0.8, z: 0.1 };
+    lean = -0.04;
   } else {
     // jalan / diam: lengan mengayun berlawanan dengan kaki sisi yang sama, mengecil halus saat berhenti
     r = { x: gp.armR, z: -0.08 };
@@ -249,13 +256,16 @@ export function applyPose(group, act, t, delta = 1 / 60, speed) {
 
   const legs = group.userData.legs;
   if (legs) {
-    const hipR = seated ? 1.5 : gp.hipR;
+    const hipR = seated ? 1.5 : gp.hipR; // duduk: paha hampir mendatar
     const hipL = seated ? 1.5 : gp.hipL;
-    const kneeR = seated ? -1.5 : gp.kneeR;
+    const kneeR = seated ? -1.5 : gp.kneeR; // betis menggantung tegak
     const kneeL = seated ? -1.5 : gp.kneeL;
+    const spread = seated ? 0.08 : 0; // lutut sedikit terbuka (rotasi z: + = ke luar untuk kaki kanan)
     const lk = seated || gait.amp < 0.02 ? k : 1; // sambil berjalan langsung mengikuti siklus; duduk/berdiri dihaluskan
     legs.r.hip.rotation.x = lerp(legs.r.hip.rotation.x, hipR, lk);
     legs.l.hip.rotation.x = lerp(legs.l.hip.rotation.x, hipL, lk);
+    legs.r.hip.rotation.z = lerp(legs.r.hip.rotation.z, spread, k);
+    legs.l.hip.rotation.z = lerp(legs.l.hip.rotation.z, -spread, k);
     legs.r.knee.rotation.x = lerp(legs.r.knee.rotation.x, kneeR, lk);
     legs.l.knee.rotation.x = lerp(legs.l.knee.rotation.x, kneeL, lk);
   }
