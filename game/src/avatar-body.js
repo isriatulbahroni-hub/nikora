@@ -6,8 +6,9 @@ import * as THREE from 'three';
 const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...extra });
 export const PANTS_SHADE = 0.55;
 
-function mesh(geometry, material, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1) {
+function mesh(geometry, material, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1, name = '') {
   const m = new THREE.Mesh(geometry, material);
+  m.name = name;
   m.position.set(x, y, z);
   m.scale.set(sx, sy, sz);
   m.castShadow = true;
@@ -15,19 +16,19 @@ function mesh(geometry, material, x = 0, y = 0, z = 0, sx = 1, sy = 1, sz = 1) {
 }
 
 function buildArm(side, outfit, skin) {
-  const sx = side === 'l' ? -0.3 : 0.3;
+  const sx = side === 'l' ? -0.275 : 0.275;
   const shoulder = new THREE.Group(); // pivot bahu: rotation.x/z dipakai applyPose
   shoulder.position.set(sx, 1.02, 0);
   shoulder.add(
-    mesh(new THREE.SphereGeometry(0.085, 12, 10), outfit),
-    mesh(new THREE.CapsuleGeometry(0.065, 0.1, 4, 10), outfit, 0, -0.14, 0),
+    mesh(new THREE.SphereGeometry(0.085, 12, 10), outfit, 0, 0, 0, 1, 1, 1, 'shoulder'),
+    mesh(new THREE.CapsuleGeometry(0.065, 0.17, 4, 10), outfit, 0, -0.135, 0, 1, 1, 1, 'upperArm'),
   );
   const elbow = new THREE.Group();
   elbow.position.y = -0.27;
   elbow.rotation.x = 0.15; // siku sedikit menekuk ke depan
   elbow.add(
-    mesh(new THREE.CapsuleGeometry(0.055, 0.1, 4, 10), skin, 0, -0.12, 0),
-    mesh(new THREE.SphereGeometry(0.07, 12, 10), skin, 0, -0.27, 0),
+    mesh(new THREE.CapsuleGeometry(0.055, 0.15, 4, 10), skin, 0, -0.125, 0, 1, 1, 1, 'forearm'),
+    mesh(new THREE.SphereGeometry(0.07, 12, 10), skin, 0, -0.27, 0, 1, 1, 1, 'hand'),
   );
   shoulder.add(elbow);
   return { shoulder, elbow };
@@ -37,12 +38,12 @@ function buildLeg(side, pants, skin, shoe) {
   const sx = side === 'l' ? -0.115 : 0.115;
   const hip = new THREE.Group(); // pivot pinggul
   hip.position.set(sx, 0.52, 0);
-  hip.add(mesh(new THREE.CapsuleGeometry(0.085, 0.1, 4, 10), pants, 0, -0.13, 0));
+  hip.add(mesh(new THREE.CapsuleGeometry(0.085, 0.12, 4, 10), pants, 0, -0.13, 0, 1, 1, 1, 'thigh'));
   const knee = new THREE.Group();
   knee.position.y = -0.26;
   knee.add(
-    mesh(new THREE.CapsuleGeometry(0.065, 0.08, 4, 10), pants, 0, -0.115, 0),
-    mesh(new THREE.BoxGeometry(0.12, 0.07, 0.26), shoe, 0, -0.235, -0.05),
+    mesh(new THREE.CapsuleGeometry(0.065, 0.1, 4, 10), pants, 0, -0.115, 0, 1, 1, 1, 'shin'),
+    mesh(new THREE.BoxGeometry(0.12, 0.07, 0.26), shoe, 0, -0.235, -0.05, 1, 1, 1, 'foot'),
   );
   hip.add(knee);
   return { hip, knee };
@@ -56,8 +57,8 @@ export function buildBody({ color, skin }) {
   const skinMat = mat(skin);
   const shoe = mat(0x23202a, { roughness: 0.5 });
 
-  const torso = mesh(new THREE.CapsuleGeometry(0.2, 0.34, 5, 14), outfit, 0, 0.8, 0, 1.05, 1, 0.8);
-  const pelvis = mesh(new THREE.SphereGeometry(0.2, 16, 12), pants, 0, 0.5, 0, 1.05, 0.7, 0.85);
+  const torso = mesh(new THREE.CapsuleGeometry(0.2, 0.34, 5, 14), outfit, 0, 0.8, 0, 1.05, 1, 0.8, 'torso');
+  const pelvis = mesh(new THREE.SphereGeometry(0.2, 16, 12), pants, 0, 0.5, 0, 1.05, 0.7, 0.85, 'pelvis');
   const neck = mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.14, 12), skinMat, 0, 1.13, 0);
   const head = mesh(new THREE.SphereGeometry(0.3, 20, 16), skinMat, 0, 1.37, 0);
   root.add(torso, pelvis, neck, head);
