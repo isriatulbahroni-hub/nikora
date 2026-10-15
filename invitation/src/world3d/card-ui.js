@@ -75,7 +75,33 @@ export async function enhanceGifts({ list, gifts, copy, env = {}, probe = webglA
   const css = createCardCSS(stage, { models, index: 0, still: !!env.reduced || !!env.light, onFlip });
   let three = null;
   api = css; stage.dataset.mode = 'css';
+
+  // Jaring pengaman setelah kartu 3D dinyatakan siap: sebagian HP (Chrome Android tertentu) menampilkan kanvas kosong
+  // padahal pemeriksaan awal lolos. Bila kanvas yang terlihat kosong berturut-turut, kembali ke kartu CSS.
+  let watch = 0;
+  const stopWatch = () => { clearInterval(watch); watch = 0; };
+  const startWatch = () => {
+    stopWatch();
+    let blank = 0;
+    watch = setInterval(() => {
+      const cv = stage.querySelector('.gc-canvas');
+      if (!cv || mode !== '3d' || document.hidden) { blank = 0; return; }
+      const r = cv.getBoundingClientRect();
+      if (!(r.width > 0 && r.height > 0 && r.top < window.innerHeight && r.bottom > 0)) { blank = 0; return; }
+      let seen = false;
+      try {
+        const c2 = cv.getContext('2d');
+        for (const [fx, fy] of [[.5, .5], [.35, .5], [.65, .5], [.5, .4], [.5, .6]]) {
+          if (c2.getImageData(Math.floor(cv.width * fx), Math.floor(cv.height * fy), 1, 1).data[3] > 8) { seen = true; break; }
+        }
+      } catch { blank = 0; return; }
+      blank = seen ? 0 : blank + 1;
+      if (blank >= 3) { stopWatch(); toCss('kosong-setelah-siap'); }
+    }, 700);
+  };
+
   const toCss = (why) => {
+    stopWatch();
     if (three) { const wasBack = three.isBack(); try { three.destroy(); } catch { /* abaikan */ } three = null; if (wasBack !== css.isBack()) css.flip(); }
     css.setHidden(false); css.setIndex(idx); api = css; mode = 'css'; stage.dataset.mode = 'css'; stage.classList.remove('gc-gl');
     if (why) stage.dataset.fail = String(why);
@@ -84,6 +110,7 @@ export async function enhanceGifts({ list, gifts, copy, env = {}, probe = webglA
     if (!three) return;
     if (css.isBack()) css.flip();                                  // sisi depan, sama seperti kartu 3D yang baru tampil
     three.setIndex(idx); css.setHidden(true); api = three; mode = '3d'; stage.dataset.mode = '3d';
+    startWatch();
   };
   if (use3D) {
     try { three = await make3D(stage, { models, index: 0, onFlip, onFail: toCss, onReady: () => toThree() }); }
@@ -100,5 +127,5 @@ export async function enhanceGifts({ list, gifts, copy, env = {}, probe = webglA
     h('div', { class: 'gc-actions' }, copyBtn, flipBtn),
     h('p', { class: 'gc-hint', text: 'Ketuk kartu untuk membaliknya, geser untuk memiringkannya.' }));
   list.before(ui); list.hidden = true;
-  return { get mode() { return mode; }, destroy() { try { if (three) three.destroy(); } catch { /* abaikan */ } css.destroy(); ui.remove(); list.hidden = false; } };
+  return { get mode() { return mode; }, destroy() { stopWatch(); try { if (three) three.destroy(); } catch { /* abaikan */ } css.destroy(); ui.remove(); list.hidden = false; } };
 }

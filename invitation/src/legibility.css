@@ -17,3 +17,7 @@
   .pg-stage[data-walkers="1"] .pg-scroll { padding-bottom: 28px; }
   .pg-stage .walkers { display: none; }
 }
+
+/* 4. Kartu hadiah: "Lanjut" jadi tindakan utama (lebar penuh, di tengah); Salin nomor dan Balik kartu tetap sekunder. */
+.guest-hadiah .g-actions { justify-content: center; }
+.guest-hadiah .g-actions .cta { width: 100%; max-width: 360px; }
