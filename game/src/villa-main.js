@@ -1,12 +1,13 @@
 import * as THREE from 'three';
-import { applyPose, createAvatar, setStageRing } from './avatar.js';
+import { applyPose, createAvatar, setStageRing, updateLabel } from './avatar.js';
 import { loadConfig, toWire } from './avatar-config.js';
 import { startMultiplayer } from './multiplayer-view.js';
 import { loadEventInfo, parseEventParams } from './event-context.js';
 import './gate.css';
 import { mountGate, shouldShowGate } from './gate.js';
 import { LEVEL_HEIGHT, VILLA_SCREEN, findNearestSpot, getVillaWorld, levelY, roomAt, sameVoiceSpace, spotPose } from './villa-layout.js';
-import { buildCameraOccluders, chooseCameraPose, forwardLookBlend, resolveCameraDistance } from './villa-camera.js';
+import { buildCameraOccluders, resolveCameraDistance } from './villa-camera.js';
+import { blockedSwing, doorAssist, extraCameraOccluders, forwardBlend, inflateBoxes, joystickAnchor, joystickVector, turnToward, wrapAngle } from './villa-motion.js';
 import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
@@ -33,6 +34,8 @@ import { buildVillaWorld } from './villa-world.js';
 
 const PLAYER_SPEED = 5.2; // harus sama dengan server (ROOM_RULES.playerSpeed)
 const SNAP_DISTANCE = 2.5; // jika posisi klien menyimpang dari server lebih dari ini, ikuti server
+const CAM_PAD = 0.3; // kamera diperlakukan sebagai bola beradius ini terhadap penghalang
+const CAM_ARM = Object.freeze({ margin: 0.08, minDist: 0.9 });
 const world = getVillaWorld();
 const $ = (id) => document.getElementById(id);
 
@@ -53,6 +56,7 @@ function hasWebGL2() {
 // ---------- input ----------
 const held = new Set();
 const joystick = { x: 0, z: 0 };
+const camInput = { dragging: false, lastDrag: -1e9 }; // gestur kamera sedang berlangsung (agar kamera tidak berputar sendiri)
 const KEYS = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
 
 function readInput() {
@@ -79,6 +83,27 @@ function cameraRelative(input, yaw) {
   const rx = Math.cos(yaw);
   const rz = -Math.sin(yaw);
   return { x: rx * input.x - fx * input.z, z: rz * input.x - fz * input.z };
+}
+
+/**
+ * Pilih sudut (pitch) dan jarak kamera. Bila lengan kamera terhalang (dinding di belakang), kamera dinaikkan bertahap
+ * (tetap di bawah langit-langit), tetapi hanya bila hasilnya benar-benar memberi jarak orang ketiga yang layak.
+ */
+function choosePose(eye, yaw, pitch, want, boxes) {
+  const maxPitch = 1.25;
+  const goodDist = Math.max(2.2, want * 0.45);
+  const at = (p) => {
+    const cp = Math.cos(p);
+    return resolveCameraDistance(eye, { x: Math.sin(yaw) * cp, y: Math.sin(p), z: Math.cos(yaw) * cp }, want, boxes, CAM_ARM);
+  };
+  const flat = at(pitch);
+  if (!flat.blocked) return { pitch, dist: flat.dist, raised: false };
+  for (const dp of [0.1, 0.2, 0.32, 0.46, 0.62, 0.8]) {
+    const p = Math.min(maxPitch, pitch + dp);
+    const r = at(p);
+    if (r.dist >= goodDist) return { pitch: p, dist: r.dist, raised: true };
+  }
+  return { pitch, dist: flat.dist, raised: false };
 }
 
 function setupInput(canvas, camState) {
@@ -115,6 +140,7 @@ function setupInput(canvas, camState) {
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    camInput.dragging = true;
     if (pointers.size === 2) pinch = twoFingers();
   });
   canvas.addEventListener('pointermove', (e) => {
@@ -124,6 +150,7 @@ function setupInput(canvas, camState) {
     const dy = e.clientY - p.y;
     p.x = e.clientX;
     p.y = e.clientY;
+    camInput.lastDrag = performance.now();
     if (pointers.size === 1) {
       camState.yaw -= dx * 0.006;
       camState.pitch = clamp(camState.pitch + dy * 0.005, CAM_LIMITS.minPitch, CAM_LIMITS.maxPitch);
@@ -140,15 +167,21 @@ function setupInput(canvas, camState) {
   const release = (e) => {
     pointers.delete(e.pointerId);
     pinch = pointers.size === 2 ? twoFingers() : null;
+    if (pointers.size === 0) {
+      camInput.dragging = false;
+      camInput.lastDrag = performance.now();
+    }
   };
   canvas.addEventListener('pointerup', release);
   canvas.addEventListener('pointercancel', release);
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
+  // Joystick melayang: pusatnya muncul di titik sentuh pertama dalam zona (jempol tidak perlu mencari tombol),
+  // dengan zona mati kecil dan kurva halus (dorong sedikit = jalan pelan, penuh = lari).
   const zone = $('joy-zone');
   const base = $('joy-base');
   const knob = $('joy-knob');
-  const RADIUS = 52;
+  const RADIUS = 60;
   let pointerId = null;
   let origin = null;
   const update = (e) => {
@@ -160,21 +193,20 @@ function setupInput(canvas, camState) {
       dy = (dy / len) * RADIUS;
     }
     knob.style.transform = `translate(${dx}px, ${dy}px)`;
-    const mag = Math.hypot(dx, dy) / RADIUS;
-    if (mag < 0.14) {
-      joystick.x = 0;
-      joystick.z = 0;
-    } else {
-      joystick.x = dx / RADIUS;
-      joystick.z = dy / RADIUS;
-    }
+    const v = joystickVector(dx, dy, RADIUS);
+    joystick.x = v.x;
+    joystick.z = v.z;
   };
   zone.addEventListener('pointerdown', (e) => {
     if (pointerId !== null) return;
     pointerId = e.pointerId;
     zone.setPointerCapture(pointerId);
-    const rect = base.getBoundingClientRect();
-    origin = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    const zr = zone.getBoundingClientRect();
+    origin = joystickAnchor({ x: e.clientX, y: e.clientY }, zr, base.offsetWidth / 2);
+    base.style.left = `${origin.x - zr.left - base.offsetWidth / 2}px`;
+    base.style.top = `${origin.y - zr.top - base.offsetHeight / 2}px`;
+    base.style.bottom = 'auto';
+    base.style.background = 'rgba(255,255,255,.26)';
     update(e);
   });
   zone.addEventListener('pointermove', (e) => {
@@ -186,9 +218,15 @@ function setupInput(canvas, camState) {
     joystick.x = 0;
     joystick.z = 0;
     knob.style.transform = '';
+    base.style.left = '';
+    base.style.top = '';
+    base.style.bottom = '';
+    base.style.background = '';
   };
   zone.addEventListener('pointerup', end);
   zone.addEventListener('pointercancel', end);
+  zone.addEventListener('lostpointercapture', end);
+  zone.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
 // ---------- minimap ----------
@@ -289,8 +327,9 @@ async function start() {
   const scene = new THREE.Scene();
   const built = buildVillaWorld(scene, world, { renderer });
   if (lowQuality) applyQuality(renderer, scene, quality.settings()); // ?q=low: mulai langsung dengan kualitas hemat
-  const camera = new THREE.PerspectiveCamera(48, 1, 0.2, 320);
-  const occluders = buildCameraOccluders(world);
+  const camera = new THREE.PerspectiveCamera(48, 1, 0.12, 320);
+  // penghalang kamera diperbesar sebesar CAM_PAD: kamera diperlakukan sebagai bola, bukan titik
+  const occluders = inflateBoxes([...buildCameraOccluders(world), ...extraCameraOccluders(world)], CAM_PAD);
   let camArm = 0; // panjang lengan kamera yang sudah dihaluskan (dipendekkan seketika saat terhalang)
   let camPitch = null; // sudut kamera efektif (dinaikkan halus saat terhalang)
   const indoorLight = new THREE.PointLight(0xffe2b8, 0, 17, 1.4);
@@ -345,7 +384,7 @@ async function start() {
   screen = createScreen({ scene, renderer, host: root, spec: VILLA_SCREEN });
   screen.resize(window.innerWidth, window.innerHeight); // layar tancap besar di belakang pelaminan
   const avatarConfig = loadConfig(storage); // avatar yang sama dengan yang dibuat di aula
-  const avatar = createAvatar({ config: avatarConfig, name });
+  const avatar = createAvatar({ config: avatarConfig }); // tanpa label nama: nama sendiri tidak perlu melayang di atas kepala sendiri
   avatar.rotation.order = 'YXZ'; // miring (tidur) dulu, lalu arah hadap
   scene.add(avatar);
   const me = { x: world.spawn.x, z: world.spawn.z, level: 0, stair: null, y: 0 };
@@ -357,7 +396,9 @@ async function start() {
   // ---------- duduk / tidur ----------
   let seat = null; // id titik duduk/tidur yang sedang dipakai
   let seatSince = 0;
-  let facing = 0;
+  let facing = 0; // arah hadap tujuan (dikirim ke server)
+  let shownFacing = 0; // arah hadap yang tampil: berputar halus menuju `facing`
+  let speedNow = 0; // laju nyata (m/s) yang dihaluskan; menentukan gaya jalan
   const actBtn = $('act-button');
   const poseFor = (id) => {
     const spot = world.spots[id];
@@ -516,7 +557,7 @@ async function start() {
       session?.net.setAvatar?.(toWire(avatarConfig));
       setupVoice(session);
       setupParty(session);
-      setupEmojiReactions({ session, avatar }); // reaksi emoji di atas kepala avatar (online: terlihat semua tamu)
+      setupEmojiReactions({ session, avatar }); // stiker emoji: gerak badan, efek, dan suara (online: terlihat semua tamu)
       screen.attach(session);
       if (session && roleKey && session.net.role === 'guest') {
         // kunci ada di tautan tetapi server tidak mengenalinya: jangan diam saja
@@ -534,7 +575,6 @@ async function start() {
 
   const drawMap = createMinimap();
   let last = performance.now();
-  let walkClock = 0;
   let placeId = '';
   let voiceTick = 0;
   let partyTick = 0;
@@ -547,18 +587,24 @@ async function start() {
 
     const input = readInput();
     if (seat !== null && Math.hypot(input.x, input.z) > 0.35) standUp(); // bergerak = berdiri
-    const move = cameraRelative(input, camNow.yaw); // relatif terhadap arah kamera
+    let move = cameraRelative(input, camNow.yaw); // relatif terhadap arah kamera
+    // bantuan pintu: bila melaju ke arah bukaan pintu, digeser halus ke garis tengahnya (vektor yang sama dikirim ke server)
+    if (seat === null && me.stair === null) move = doorAssist(me, move, world.levels[me.level]?.doors ?? []);
     const moving = seat === null && (move.x !== 0 || move.z !== 0);
+    let travelled = 0;
     if (moving) {
+      const before = { x: me.x, z: me.z };
       const next = world.move(me, move.x * PLAYER_SPEED * delta, move.z * PLAYER_SPEED * delta);
       me.x = next.x;
       me.z = next.z;
       me.level = next.level;
       me.stair = next.stair;
       me.y = next.y;
+      travelled = Math.hypot(me.x - before.x, me.z - before.z);
       facing = Math.atan2(-move.x, -move.z);
-      walkClock += delta;
     }
+    // laju nyata (bukan sekadar joystick ditekan): menabrak dinding = kaki berhenti, menyusur dinding = melambat
+    speedNow += ((delta > 0 ? travelled / delta : 0) - speedNow) * (1 - Math.exp(-10 * delta));
 
     if (multiplayer) {
       multiplayer.sendInput(seat === null ? move.x : 0, seat === null ? move.z : 0, facing, time, seat, { x: me.x, z: me.z, y: me.y });
@@ -602,15 +648,22 @@ async function start() {
       avatar.position.y += (pose.y - avatar.position.y) * k;
       avatar.userData.tilt = (avatar.userData.tilt ?? 0) + (pose.tilt - (avatar.userData.tilt ?? 0)) * k;
       avatar.rotation.y = pose.rotY;
+      shownFacing = pose.rotY;
     } else {
+      shownFacing = turnToward(shownFacing, facing, delta); // belok halus lewat jalur terpendek, bukan berputar seketika
       avatar.position.x = me.x;
       avatar.position.z = me.z;
-      avatar.position.y += (me.y + (moving && me.stair === null ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0) - avatar.position.y) * Math.max(k, 0.5);
+      avatar.position.y += (me.y - avatar.position.y) * Math.max(k, 0.5);
       avatar.userData.tilt = (avatar.userData.tilt ?? 0) * (1 - k);
-      avatar.rotation.y = facing;
+      avatar.rotation.y = shownFacing;
     }
-    applyPose(avatar, moving ? 'walk' : null, time / 1000, delta);
+    avatar.userData.seated = pose !== null && pose.tilt === 0;
+    applyPose(avatar, speedNow > 0.6 && !pose ? 'walk' : null, time / 1000, delta, speedNow);
     avatar.rotation.x += avatar.userData.tilt ?? 0; // applyPose menimpa rotation.x, tambahkan kemiringan tidur sesudahnya
+
+    // cahaya dalam ruangan menyala halus saat pemain berada di dalam bangunan (juga dipakai untuk memendekkan lengan kamera)
+    const inside = !me.stair && roomAt(me.x, me.z, me.level).indoor;
+    indoorK += ((inside ? 1 : 0) - indoorK) * (1 - Math.exp(-3 * delta));
 
     // kamera mengorbit pemain: yaw bebas 360°, pitch dari hampir sejajar tanah sampai pandangan atas
     camState.pitch = clamp(camState.pitch, CAM_LIMITS.minPitch, CAM_LIMITS.maxPitch);
@@ -621,28 +674,30 @@ async function start() {
     camNow.dist += (camState.dist - camNow.dist) * ck;
     const wide = clamp((camNow.dist - 8) / 6, 0, 1); // jarak jauh (udara/atas) di layar sempit tetap diperlebar sedikit
     const fit = 1 + (Math.min(1.9, Math.max(1, 1.45 / camera.aspect)) - 1) * wide;
-    const want = camNow.dist * fit;
+    const indoorCut = 1 - 0.3 * indoorK * clamp((9 - camNow.dist) / 4, 0, 1); // di dalam ruangan sudut orang ketiga lebih rapat agar tidak terus terjepit
+    const want = camNow.dist * fit * indoorCut;
     const eye = { x: me.x, y: me.y + 1.45, z: me.z };
     // bila kamera terhalang dinding, naikkan sudutnya (halus) supaya ruangan dan avatar tetap terlihat
-    const camPose = chooseCameraPose(eye, camNow.yaw, camNow.pitch, want, occluders);
+    const camPose = choosePose(eye, camNow.yaw, camNow.pitch, want, occluders);
     camPitch = camPitch === null ? camPose.pitch : camPitch + (camPose.pitch - camPitch) * (1 - Math.exp(-6 * delta));
     const cp = Math.cos(camPitch);
     const dir = { x: Math.sin(camNow.yaw) * cp, y: Math.sin(camPitch), z: Math.cos(camNow.yaw) * cp };
     // keselamatan: dengan sudut yang sedang dihaluskan, kamera tetap tidak boleh menembus penghalang
-    const { dist: freeArm } = resolveCameraDistance(eye, dir, want, occluders);
+    const { dist: freeArm } = resolveCameraDistance(eye, dir, want, occluders, CAM_ARM);
     // dinding/atap: kamera mundur ke depan penghalang seketika; saat bebas kembali perlahan (tanpa loncatan)
     camArm = camArm === 0 || freeArm < camArm ? freeArm : camArm + (freeArm - camArm) * (1 - Math.exp(-4 * delta));
+    // lengan terjepit saat pemain berjalan (mis. mundur ke arah dinding di belakang kamera): kamera berputar pelan ke belakang pemain
+    const swing = blockedSwing({ arm: camArm, want, moving, dragging: camInput.dragging || time - camInput.lastDrag < 700, pitch: camNow.pitch });
+    if (swing > 0) camState.yaw += clamp(wrapAngle(facing - camState.yaw) * 1.6 * swing, -1.8, 1.8) * delta;
     camera.position.set(eye.x + dir.x * camArm, eye.y + dir.y * camArm, eye.z + dir.z * camArm);
     // lengan kamera sangat pendek (menempel dinding): pandangan dialihkan ke depan agar ruangan terlihat, bukan lantai
-    const look = forwardLookBlend(camArm);
+    const look = forwardBlend(camArm);
     const ahead = { x: eye.x - Math.sin(camNow.yaw) * 6, y: eye.y - 0.3, z: eye.z - Math.cos(camNow.yaw) * 6 };
     camera.lookAt(me.x + (ahead.x - me.x) * look, me.y + 1.2 + (ahead.y - (me.y + 1.2)) * look, me.z + (ahead.z - me.z) * look);
-    avatar.visible = camArm > 0.95; // kamera terlalu dekat: avatar tidak menutupi layar
-    // cahaya dalam ruangan menyala halus saat pemain berada di dalam bangunan
-    const inside = !me.stair && roomAt(me.x, me.z, me.level).indoor;
-    indoorK += ((inside ? 1 : 0) - indoorK) * (1 - Math.exp(-3 * delta));
+    avatar.visible = camArm > 0.7; // kamera terlalu dekat: avatar tidak menutupi layar
     indoorLight.intensity = 26 * indoorK;
     indoorLight.position.set(me.x, me.y + 2.3, me.z);
+    if (multiplayer) for (const g of multiplayer.view.avatarGroups()) updateLabel(g, camera); // nama pemain lain: ukuran tetap di layar
     const actors = [{ x: me.x, z: me.z, y: me.y }];
     if (multiplayer) for (const p of multiplayer.net.players) if (p.id !== multiplayer.net.id) actors.push({ x: p.x, z: p.z, y: p.y ?? 0 });
     built.update(me.x, me.z, delta, actors, camera.position);
