@@ -1,6 +1,6 @@
 import { h } from '../engine/dom.js';
 import { EVENT_TYPES, EVENT_LABELS, THEMES } from '../themes/index.js';
-import { WORLDS } from '../engine/world-link.js';
+import { WORLDS, WORLD_LABELS } from '../engine/world-link.js';
 import { slugify, validateInvitation, shareLinks, whatsappUrl } from './api.js';
 import { qrPanel } from './qr.js';
 
@@ -67,7 +67,7 @@ export function createView({ client, onCreated, onCancel }) {
     eventDate: input({ name: 'eventDate', type: 'datetime-local', required: true }),
     slug: input({ name: 'slug', maxlength: '40', autocapitalize: 'none', spellcheck: 'false' }),
     theme: h('select', { class: 's-input', name: 'theme' }),
-    world: h('select', { class: 's-input', name: 'world' }, h('option', { value: '', text: 'Otomatis (sesuai jenis acara)' }), WORLDS.map((w) => h('option', { value: w, text: w === 'villa' ? 'Villa (pernikahan)' : 'Aula' }))),
+    world: h('select', { class: 's-input', name: 'world' }, h('option', { value: '', text: 'Otomatis (sesuai jenis acara)' }), WORLDS.map((w) => h('option', { value: w, text: WORLD_LABELS[w] || w }))),
     venue: input({ name: 'venue', maxlength: '120' }),
     address: input({ name: 'address', maxlength: '240' }),
     mapsUrl: input({ name: 'mapsUrl', type: 'url', placeholder: 'https://maps.google.com/...' }),
@@ -194,8 +194,8 @@ export function listView({ items, onOpen, onNew, onSignOut, onDelete, email }) {
 }
 
 /** Dasbor satu undangan: link bagikan, daftar tamu, RSVP, hadiah. */
-export function detailView({ client, slug, inviteBase, worldBase, onBack, onEdit, onDeleted }) {
-  const links = shareLinks({ slug, inviteBase, worldBase });
+export function detailView({ client, slug, inviteBase, worldBase, world, onBack, onEdit, onDeleted }) {
+  const links = shareLinks({ slug, inviteBase, worldBase, world });
   const root = h('div', { class: 's-card' });
   const msg = h('p', { class: 's-msg', role: 'status', 'aria-live': 'polite' });
   const copy = async (text, btn) => {
