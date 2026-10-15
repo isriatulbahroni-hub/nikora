@@ -52,13 +52,17 @@ export function applyStyle(data, style) {
   return data;
 }
 
-/** DOM: gambar/File -> canvas wajah persegi dengan oval transparan. zoom >= 1, offset -1..1 (geser). */
+/** Kotak potong persegi pada gambar w x h. zoom >= 1, offset -1..1 (geser). Murni, bisa diuji tanpa DOM. */
+export function cropSquare(w, h, { zoom = 1, offsetX = 0, offsetY = 0 } = {}) {
+  const side = Math.min(w, h) / Math.max(1, zoom);
+  const clamp = (v) => Math.max(-1, Math.min(1, v));
+  return { side, sx: (w - side) / 2 + clamp(offsetX) * ((w - side) / 2), sy: (h - side) / 2 + clamp(offsetY) * ((h - side) / 2) };
+}
+
+/** DOM: gambar/File -> canvas wajah persegi dengan tepi lingkaran lembut. zoom >= 1, offset -1..1 (geser). */
 export async function faceCanvasFromImage(source, { size = 256, zoom = 1, offsetX = 0, offsetY = 0, style = 'asli' } = {}) {
   const bmp = source instanceof Blob ? await createImageBitmap(source) : source;
-  const w = bmp.width; const h = bmp.height;
-  const side = Math.min(w, h) / Math.max(1, zoom);
-  const sx = (w - side) / 2 + offsetX * ((w - side) / 2);
-  const sy = (h - side) / 2 + offsetY * ((h - side) / 2);
+  const { side, sx, sy } = cropSquare(bmp.width, bmp.height, { zoom, offsetX, offsetY });
   const canvas = document.createElement('canvas');
   canvas.width = size; canvas.height = size;
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -66,8 +70,8 @@ export async function faceCanvasFromImage(source, { size = 256, zoom = 1, offset
   const img = ctx.getImageData(0, 0, size, size);
   applyStyle(img.data, style);
   ctx.putImageData(img, 0, 0);
-  ctx.globalCompositeOperation = 'destination-in'; // oval dengan tepi lembut
-  const g = ctx.createRadialGradient(size / 2, size / 2, size * 0.34, size / 2, size / 2, size * 0.5);
+  ctx.globalCompositeOperation = 'destination-in'; // lingkaran dengan tepi lembut (sama dengan lingkaran di layar potong)
+  const g = ctx.createRadialGradient(size / 2, size / 2, size * 0.4, size / 2, size / 2, size * 0.5);
   g.addColorStop(0, '#000'); g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
@@ -89,7 +93,24 @@ export function thumbnailDataUrl(canvas, size = 96) {
   return c.toDataURL('image/webp', 0.7);
 }
 
-/** Tempel foto (canvas/gambar) sebagai wajah di depan kepala; null melepasnya dan memunculkan mata/hidung/mulut lagi. */
+const GLASSES_SHIFT = 0.045; // kacamata dimajukan supaya tidak tertutup foto
+
+/** Kacamata dari buildGear(): dua cincin (Torus r=0.075) dan jembatan (Box 0.1 x 0.014). Dikenali dari bentuknya. */
+function isGlasses(o) {
+  const t = o.geometry?.type; const p = o.geometry?.parameters;
+  return (t === 'TorusGeometry' && p?.radius === 0.075) || (t === 'BoxGeometry' && p?.width === 0.1 && p?.height === 0.014);
+}
+
+function shiftGlasses(group, forward) {
+  group.userData.gear?.traverse((o) => {
+    if (!isGlasses(o)) return;
+    o.userData.z0 ??= o.position.z;
+    o.position.z = forward ? o.userData.z0 - GLASSES_SHIFT : o.userData.z0;
+  });
+}
+
+/** Tempel foto (canvas/gambar) sebagai wajah di depan kepala; null melepasnya dan memunculkan mata/hidung/mulut lagi.
+ *  Panggil ulang setelah setAvatarConfig (rambut/aksesori dibangun ulang) supaya kacamata tetap di depan foto. */
 export function applyFacePhoto(group, source) {
   const ud = group.userData;
   if (ud.faceDecal) {
@@ -99,11 +120,13 @@ export function applyFacePhoto(group, source) {
   }
   const features = ud.face;
   if (!features) return null; // model manusia (Michelle) tidak punya wajah yang bisa diganti
+  shiftGlasses(group, Boolean(source));
   if (!source) { features.visible = true; return null; }
   const map = new THREE.CanvasTexture(source);
   map.colorSpace = THREE.SRGBColorSpace;
-  // Tambalan bola di depan kepala (-z); u=0 di kiri penonton sehingga foto tidak terbalik.
-  const geometry = new THREE.SphereGeometry(0.303, 28, 20, (3 * Math.PI) / 2 - 0.8, 1.6, 1.0, 1.5);
+  // Tambalan bola (r=0.318) di depan kepala (-z), sedikit di depan cangkang rambut (r=0.325, bergeser ke belakang),
+  // dari dahi sampai dagu. u=0 di kiri penonton sehingga foto tidak terbalik.
+  const geometry = new THREE.SphereGeometry(0.318, 32, 24, (3 * Math.PI) / 2 - 0.7, 1.4, 1.0, 1.4);
   const material = new THREE.MeshStandardMaterial({ map, transparent: true, roughness: 0.65, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   const decal = new THREE.Mesh(geometry, material);
   decal.position.set(0, 1.37, 0);
