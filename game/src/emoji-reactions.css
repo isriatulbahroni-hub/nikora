@@ -1,0 +1,5 @@
+/* Panel reaksi emoji (memakai kelas .panel dan .rb dari villa.html) */
+.emoji-panel { width: min(264px, 86vw); }
+.emoji-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.emoji-cell { font-size: 28px; line-height: 1; padding: 8px 0; border: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.1); cursor: pointer; touch-action: manipulation; }
+.emoji-cell:active { transform: scale(0.92); background: rgba(255, 255, 255, 0.22); }

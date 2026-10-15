@@ -11,6 +11,8 @@ import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
 import { modeFor } from './event-mode.js';
+import './emoji-reactions.css';
+import { setupEmojiReactions } from './emoji-reactions-ui.js';
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
 function applyQuality(renderer, scene, q) {
@@ -514,6 +516,7 @@ async function start() {
       session?.net.setAvatar?.(toWire(avatarConfig));
       setupVoice(session);
       setupParty(session);
+      setupEmojiReactions({ session, avatar }); // reaksi emoji di atas kepala avatar (online: terlihat semua tamu)
       screen.attach(session);
       if (session && roleKey && session.net.role === 'guest') {
         // kunci ada di tautan tetapi server tidak mengenalinya: jangan diam saja
