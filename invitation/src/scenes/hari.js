@@ -5,6 +5,12 @@ import { createShell, heading, rv, skippedScene } from './shell.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 
+/** Status ditentukan dari fase waktu sebenarnya, supaya "Segera dimulai" tidak muncul saat acara masih berhari-hari lagi. */
+const STATUS = {
+  before: 'Acara akan datang', soon: 'Segera dimulai', live: 'Sedang berlangsung',
+  after: 'Baru saja selesai', past: 'Acara telah selesai',
+};
+
 /**
  * Adegan 10 - Hari acara. Hanya tampil dari 24 jam sebelum sampai 6 jam sesudah acara: status hidup
  * (segera / berlangsung / selesai), susunan acara dengan penanda "sekarang", tautan siaran langsung,
@@ -16,7 +22,7 @@ export function mountHariAcara(container, ctx) {
   if (!c.show) return skippedScene();
   const s = createShell(container, ctx, 'hari_acara');
 
-  const status = h('p', { class: 'hr-status', 'data-phase': c.phase, role: 'status' }, h('i', { class: 'hr-dot', 'aria-hidden': 'true' }), h('span', { text: c.status || '' }));
+  const status = h('p', { class: 'hr-status', 'data-phase': c.phase, role: 'status' }, h('i', { class: 'hr-dot', 'aria-hidden': 'true' }), h('span', { text: STATUS[c.phase] || c.status || '' }));
   const count = h('p', { class: 'hr-count', role: 'timer', hidden: true });
   function tick() {
     const p = c.start && countdownParts(c.start);
