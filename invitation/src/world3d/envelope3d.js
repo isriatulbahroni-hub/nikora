@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { EW, EH, FH, LW, LH, FLAP_PTS, POCKET_PTS } from './designs.js';
-import { pocketTextures, flapFrontTextures, flapBackTextures, letterTextures, sealFace, DEFAULT_CONTENT } from './textures.js';
+import { pocketTextures, flapFrontTextures, flapBackTextures, letterTextures, sealFace, fingerprintTexture, DEFAULT_CONTENT } from './textures.js';
 
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const seg = (t, a, b) => clamp((t - a) / (b - a));
@@ -11,7 +11,7 @@ export const TL = { glow: [0.9, 1.55], brk: [1.55, 1.8], flap: [1.7, 2.4], slide
 
 const shapeOf = (pts, w, h, oy) => { const s = new THREE.Shape(); pts.forEach(([px, py], i) => { const x = (px / 100 - .5) * w, y = oy - (py / 100) * h; i ? s.lineTo(x, y) : s.moveTo(x, y); }); s.closePath(); return s; };
 function fixUV(g, w, h, oy) { const p = g.attributes.position, uv = g.attributes.uv; for (let i = 0; i < p.count; i++) uv.setXY(i, p.getX(i) / w + .5, (p.getY(i) - oy) / h + 1); uv.needsUpdate = true; }
-const metalMat = (t) => new THREE.MeshStandardMaterial({ map: t.map, roughnessMap: t.mr, metalnessMap: t.mr, roughness: 1, metalness: 1 });
+const metalMat = (t) => new THREE.MeshStandardMaterial({ map: t.map, roughnessMap: t.mr, metalnessMap: t.mr, roughness: 1, metalness: 1, ...(t.bump ? { bumpMap: t.bump, bumpScale: 0.6 } : {}) });
 
 function sealMesh(d, content) {
   const g = new THREE.Group(), s = d.seal;
@@ -33,6 +33,7 @@ function sealMesh(d, content) {
   const plane = s.kind === 'holo' ? new THREE.PlaneGeometry(4.6, 1.7) : new THREE.CircleGeometry(1.25, 48);
   const faceMesh = new THREE.Mesh(plane, new THREE.MeshStandardMaterial({ map: sealFace(d, s.kind === 'holo', content), transparent: true, roughness: .4, metalness: .5, polygonOffset: true, polygonOffsetFactor: -2 }));
   faceMesh.position.z = top + .01; g.add(faceMesh);
+  g.userData.bodyMat = mat; g.userData.top = top;
   return g;
 }
 
@@ -57,9 +58,23 @@ export function buildEnvelope(d, glowTex, content = DEFAULT_CONTENT) {
   const bt = flapBackTextures(d); const backFace = new THREE.Mesh(bg, new THREE.MeshStandardMaterial({ map: bt.map, roughness: .75 })); backFace.position.z = -.002; hinge.add(backFace);
 
   const seal = sealMesh(d, content); seal.position.set(0, EH / 2 - FH, .165); flat.add(seal);
+  const bodyMat = seal.userData.bodyMat;
+  const thumbMat = new THREE.MeshBasicMaterial({ map: fingerprintTexture(), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const thumb = new THREE.Mesh(new THREE.CircleGeometry(1.05, 48), thumbMat); thumb.position.z = (seal.userData.top || .3) + .03; seal.add(thumb);
+  const sealPos = seal.position.clone();
+  const drips = [[-.85, .2, 1.3], [.12, .26, 2.1], [.92, .18, 1.6]].map(([x, r, run]) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), bodyMat); m.scale.set(1, 1, .4); m.visible = false; m.castShadow = true; flat.add(m); return { m, x, r, run };
+  });
+  let melted = false;
+  const placeDrips = (m) => drips.forEach((d, i) => {
+    const p = clamp((m - .22 - i * .08) / .7);
+    d.m.visible = p > 0;
+    d.m.position.set(sealPos.x + d.x * (.6 + .4 * m), sealPos.y - .7 - d.run * p, .19);
+    d.m.scale.set(1, 1 + 2.4 * p, .4);
+  });
 
   const lt = letterTextures(d, content);
-  const lm = new THREE.MeshStandardMaterial({ map: lt.map, roughnessMap: lt.mr, metalnessMap: lt.mr, roughness: 1, metalness: 1 });
+  const lm = metalMat(lt);
   const side = plain(d.letterBg, .9);
   const letter = new THREE.Mesh(new THREE.BoxGeometry(LW, LH, .03), [side, side, side, side, lm, plain(d.letterBg, .9)]);
   letter.castShadow = true; letter.receiveShadow = true; root.add(letter);
@@ -72,13 +87,24 @@ export function buildEnvelope(d, glowTex, content = DEFAULT_CONTENT) {
   const api = {
     root, sealWorld, letterWorld: new THREE.Vector3(0, 5, -2.5), glowStrength: 0,
     /** Sebelum dibuka: segel berdenyut pelan dan bersinar lembut (waktu nyata, detik). */
-    idle(tm) {
+    idle(tm, m = 0) {
       const pulse = .5 + .5 * Math.sin(tm * 2.4);
-      api.glowStrength = .3 + .3 * pulse;
-      glow.material.opacity = .22 + .2 * pulse; glow.scale.setScalar(4 + pulse * 1.6);
-      seal.visible = true; seal.rotation.z = 0; seal.scale.setScalar(1 + .035 * pulse);
+      const e = m * m * (3 - 2 * m);
+      api.glowStrength = (.3 + .3 * pulse) * (1 - m) + m;
+      glow.material.opacity = (.22 + .2 * pulse) * (1 - m) + .62 * m; glow.scale.setScalar(4 + pulse * 1.6 + m * 4);
+      seal.visible = true;
+      // lilin: menyebar & menipis, memanas (merah-jingga), bergetar halus, lalu menetes
+      seal.rotation.z = Math.sin(tm * 38) * .012 * m;
+      const sp = 1 + .035 * pulse * (1 - m) + .5 * e;
+      seal.scale.set(sp, sp, Math.max(.14, 1 - .86 * e));
+      if (bodyMat.emissive) { bodyMat.emissive.set('#ff6a10'); bodyMat.emissiveIntensity = 1.7 * Math.pow(m, .8); }
+      thumbMat.opacity = ((.28 + .12 * Math.sin(tm * 3)) * (1 - m) + .55 * m * (1 - e)) * (m < .999 ? 1 : 0);
+      thumbMat.color.setHSL((tm * .12) % 1, .75, .72);
+      placeDrips(m);
       hinge.rotation.x = 0; letter.position.set(0, .108, 0); letter.rotation.set(-Math.PI / 2, 0, 0);
     },
+    /** Setelah segel meleleh penuh: sembunyikan segel, biarkan tetesan lilin mengeras di amplop. */
+    setMelted(v) { melted = !!v; if (melted) { if (bodyMat.emissive) bodyMat.emissiveIntensity = 0; thumbMat.opacity = 0; placeDrips(1); } },
     update(t) {
       const g = t < TL.brk[0] ? seg(t, ...TL.glow) * (.65 + .35 * Math.sin((t - TL.glow[0]) * 13)) : 1 - seg(t, TL.brk[0], TL.brk[1] + .45);
       api.glowStrength = clamp(g);
@@ -87,7 +113,8 @@ export function buildEnvelope(d, glowTex, content = DEFAULT_CONTENT) {
       const b = seg(t, ...TL.brk);
       const pulse = t > TL.glow[0] && t < TL.brk[0] ? 1 + .05 * Math.sin(t * 11) : 1;
       const sc = b < .5 ? pulse + .35 * (b / .5) : 1.35 * (1 - (b - .5) / .5);
-      seal.scale.setScalar(Math.max(.0001, sc)); seal.rotation.z = b * .9; seal.visible = b < 1;
+      seal.scale.setScalar(Math.max(.0001, sc)); seal.rotation.z = b * .9; seal.visible = melted ? false : b < 1;
+      if (melted) placeDrips(1);
       // tutup
       hinge.rotation.x = -E.io(seg(t, ...TL.flap)) * (Math.PI + .03);
       // surat: di dalam -> keluar (datar) -> naik berdiri menghadap kamera

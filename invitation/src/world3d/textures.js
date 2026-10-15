@@ -21,6 +21,21 @@ export function wrapLines(measure, text, max, maxLines = 3) {
   return [...lines.slice(0, maxLines - 1), `${last.trimEnd()}…`];
 }
 
+/**
+ * Kalimat pembuka surat: kecilkan huruf bertahap (dan boleh bertambah baris) sampai SELURUH teks muat.
+ * Memotong dengan "…" hanya jalan terakhir untuk teks yang benar-benar sangat panjang.
+ * measureAt(teks, ukuran) -> lebar dalam satuan kanvas.
+ */
+export function fitLead(measureAt, text, max) {
+  const plan = [[14, 3], [13, 3], [12, 4], [11, 4], [10, 5]];
+  for (const [size, n] of plan) {
+    const lines = wrapLines((t) => measureAt(t, size), text, max, 99);
+    if (lines.length <= n) return { size, lines, lh: size * 1.22, cut: false };
+  }
+  const [size, n] = plan[plan.length - 1];
+  return { size, lines: wrapLines((t) => measureAt(t, size), text, max, n), lh: size * 1.22, cut: true };
+}
+
 /** Ukuran huruf terbesar (<= base) agar teks muat dalam lebar max. */
 export const fitSize = (measureAt, base, max) => { const w = measureAt(base); return w <= max ? base : Math.max(base * .45, base * max / w); };
 
@@ -43,7 +58,24 @@ function tex(c, srgb = true) {
   t.anisotropy = 4; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;
   return t;
 }
-const pair = (L) => ({ map: tex(L.c), mr: tex(L.m, false) });
+/** Peta timbul serat kertas: abu-abu 128 dengan goresan tipis acak (deterministik). */
+function fibers(w, h) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'); if (!x) return null;
+  x.fillStyle = '#808080'; x.fillRect(0, 0, w, h);
+  let seed = 91; const r = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
+  for (let i = 0; i < Math.floor(w * h / 260); i++) {
+    const px = r() * w, py = r() * h, len = 6 + r() * 22, a = r() * 6.283;
+    x.strokeStyle = r() < .5 ? 'rgba(255,255,255,.30)' : 'rgba(0,0,0,.30)'; x.lineWidth = .8 + r() * .8;
+    x.beginPath(); x.moveTo(px, py); x.lineTo(px + Math.cos(a) * len, py + Math.sin(a) * len); x.stroke();
+  }
+  return c;
+}
+const pair = (L, paper = false) => {
+  const out = { map: tex(L.c), mr: tex(L.m, false) };
+  if (paper) { const f = fibers(Math.max(2, L.w >> 1), Math.max(2, L.h >> 1)); if (f) out.bump = tex(f, false); }
+  return out;
+};
 
 /* ---------- ornamen ---------- */
 function corner(ctx, paint, x, y, rot, sc, k) {
@@ -100,7 +132,7 @@ export function pocketTextures(d, c = DEFAULT_CONTENT) {
   (d.pocketCorners || []).forEach(c => both(L, (ctx, p) => corner(ctx, p, ...c, k)));
   (d.pocketFlowers || []).forEach(f => peony(x, f[0], f[1], f[2], PEONY[f[3]], k));
   if (d.pkName) both(L, (ctx, p) => { const sz = fitSize((b) => { ctx.font = `${b * k}px GV`; return ctx.measureText(c.title).width / k; }, 22, 230); ctx.font = `${sz * k}px GV`; ctx.textAlign = 'center'; ctx.fillStyle = p; ctx.fillText(c.title, 220 * k, 272 * k); });
-  return pair(L);
+  return pair(L, true);
 }
 
 export function flapFrontTextures(d) {
@@ -142,11 +174,12 @@ export function letterTextures(d, c = DEFAULT_CONTENT) {
   const nameMax = o.arch ? 215 : 300, nameSz = fitSize((b) => { x.font = `${b * k}px GV`; return x.measureText(c.title).width / k; }, 58, nameMax);
   x.fillStyle = d.nameColor; x.font = `${nameSz * k}px GV`; x.fillText(c.title, 193.5 * k, 126 * k);
   x.fillRect(161 * k, 139 * k, 64 * k, 1.5 * k);
-  x.fillStyle = d.ink; x.globalAlpha = .9; x.font = `italic 500 ${14 * k}px Cor`;
-  const lines = wrapLines((t) => x.measureText(t).width / k, c.lead, o.arch ? 220 : 290, 3);
-  lines.forEach((ln, i) => x.fillText(ln, 193.5 * k, (160 + 17 * i) * k)); x.globalAlpha = 1;
-  if (c.date) { x.fillStyle = d.nameColor; x.font = `600 ${11 * k}px Cin`; x.letterSpacing = `${1.5 * k}px`; x.fillText(c.date, 194 * k, (160 + 17 * (lines.length - 1) + 25) * k); }
-  return pair(L);
+  x.fillStyle = d.ink; x.globalAlpha = .9;
+  const fl = fitLead((t, sz) => { x.font = `italic 500 ${sz * k}px Cor`; return x.measureText(t).width / k; }, c.lead, o.arch ? 220 : 290);
+  x.font = `italic 500 ${fl.size * k}px Cor`;
+  fl.lines.forEach((ln, i) => x.fillText(ln, 193.5 * k, (160 + fl.lh * i) * k)); x.globalAlpha = 1;
+  if (c.date) { x.fillStyle = d.nameColor; x.font = `600 ${11 * k}px Cin`; x.letterSpacing = `${1.5 * k}px`; x.fillText(c.date, 194 * k, (160 + fl.lh * (fl.lines.length - 1) + 25) * k); x.letterSpacing = '0px'; }
+  return pair(L, true);
 }
 
 export function sealFace(d, wide = false, content = DEFAULT_CONTENT) {
@@ -161,4 +194,25 @@ export function glowSprite() {
   const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d');
   const g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(.25, 'rgba(255,255,255,.55)'); g.addColorStop(1, 'rgba(255,255,255,0)');
   x.fillStyle = g; x.fillRect(0, 0, 128, 128); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
+/** Pola sidik jari (garis papilari melingkar berbelit) untuk lapisan holografik di segel. Hanya gambar hiasan. */
+export function fingerprintTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const x = c.getContext('2d');
+  if (x) {
+    x.translate(128, 132); x.lineCap = 'round';
+    for (let i = 2; i < 24; i++) {
+      x.beginPath();
+      for (let a = 0; a <= 6.4; a += .05) {
+        const r = i * 5.1 + Math.sin(a * 3 + i * .7) * 1.7 + Math.sin(a * 5 - i) * .9 + (i > 12 ? Math.sin(a * 2) * 3 : 0);
+        const px = Math.cos(a) * r * .9, py = Math.sin(a) * r * 1.08;
+        a ? x.lineTo(px, py) : x.moveTo(px, py);
+      }
+      x.strokeStyle = `rgba(255,255,255,${i < 4 ? .55 : .9})`; x.lineWidth = 2.1; x.stroke();
+    }
+    const g = x.createRadialGradient(0, 0, 40, 0, 0, 126); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,1)');
+    x.globalCompositeOperation = 'destination-out'; x.fillStyle = g; x.fillRect(-128, -132, 256, 256);
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }

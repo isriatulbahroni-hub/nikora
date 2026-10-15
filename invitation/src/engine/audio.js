@@ -29,6 +29,21 @@ export function createAudio(sfx = { wave: 'sine', notes: [523.25, 659.25] }) {
       const g = ac.createGain(); g.gain.value = 0.18;
       src.connect(f); f.connect(g); g.connect(ac.destination); src.start();
     },
+    /** Kertas robek: derau berdenyut cepat (serat putus satu per satu) lewat filter pas tinggi. */
+    tear() {
+      if (!ready()) return;
+      const sr = ac.sampleRate, len = Math.floor(sr * .75), buf = ac.createBuffer(1, len, sr), d = buf.getChannelData(0), step = Math.floor(sr * .012);
+      let g = .3;
+      for (let i = 0; i < len; i++) {
+        if (i % step === 0) g = .15 + Math.random() * .85;
+        d[i] = (Math.random() * 2 - 1) * g * Math.pow(1 - i / len, .7) * Math.min(1, i / (sr * .02));
+      }
+      const src = ac.createBufferSource(); src.buffer = buf;
+      const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 900;
+      const pk = ac.createBiquadFilter(); pk.type = 'peaking'; pk.frequency.value = 3200; pk.gain.value = 6;
+      const gn = ac.createGain(); gn.gain.value = .26;
+      src.connect(hp); hp.connect(pk); pk.connect(gn); gn.connect(ac.destination); src.start();
+    },
     /** Dentang pendek sesuai nada khas tema. */
     chime() {
       if (!ready()) return;
