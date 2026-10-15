@@ -115,3 +115,20 @@ test('hapus hadiah/tamu: id dipaksa angka dan dibatasi slug (tidak bisa menyisip
   await c.deleteGift('rani-dimas', 5);
   assert.match(urls[0], /id=eq\.5&slug=eq\.rani-dimas/);
 });
+
+test('tempat acara: Istana Cinta diterima dan tersimpan di extra.world; nilai asing dibuang', () => {
+  const ok = validateInvitation({ ...base, world: 'royal' });
+  assert.equal(ok.ok, true); assert.equal(ok.value.world, 'royal');
+  assert.equal(invitationRow(ok.value, 'u1').extra.world, 'royal');
+  assert.equal(validateInvitation({ ...base, world: 'hall' }).value.world, 'hall');
+  assert.equal(validateInvitation({ ...base, world: 'javascript:x' }).value.world, null);
+  assert.equal(invitationRow(validateInvitation({ ...base }).value, 'u1').extra.world, undefined);
+});
+
+test('shareLinks: link dunia mengikuti tempat acara; tanpa world tetap villa (kompatibel)', () => {
+  const mk = (world) => shareLinks({ slug: 'rani-dimas', inviteBase: 'https://undangan.example/', worldBase: 'https://dunia.example', world }).world;
+  assert.equal(mk(), 'https://dunia.example/villa.html?e=rani-dimas');
+  assert.equal(mk('villa'), 'https://dunia.example/villa.html?e=rani-dimas');
+  assert.equal(mk('royal'), 'https://dunia.example/royal.html?e=rani-dimas');
+  assert.equal(mk('hall'), 'https://dunia.example/?e=rani-dimas');
+});

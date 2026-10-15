@@ -1,5 +1,6 @@
 import { h } from '../engine/dom.js';
 import { shareLinks, whatsappUrl } from './api.js';
+import { worldOfRow } from '../engine/world-link.js';
 import { icon } from './icons.js';
 import { titleOf } from './views.js';
 import { csvOf, downloadText } from './format.js';
@@ -37,7 +38,7 @@ export function guestsView({ client, items, slug, inviteBase, worldBase, onPick 
   const msg = h('p', { class: 's-msg', role: 'status', 'aria-live': 'polite' });
   if (!items.length) { root.append(h('div', { class: 'st-empty' }, icon('users', { size: 36 }), h('h2', { text: 'Belum ada undangan' }), h('p', { text: 'Buat undangan dulu, lalu tamunya bisa dipantau di sini.' }), h('a', { class: 'st-btn st-btn-primary', href: '#/buat' }, 'Buat undangan'))); return root; }
   const cur = items.find((i) => i.slug === slug) || items[0];
-  const links = shareLinks({ slug: cur.slug, inviteBase, worldBase });
+  const links = shareLinks({ slug: cur.slug, inviteBase, worldBase, world: worldOfRow(cur) });
   let rows = [];
   let filter = 'semua';
   let query = '';

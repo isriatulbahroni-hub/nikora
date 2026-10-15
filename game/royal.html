@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#1a1b3a" />
+    <title>The Royal Wedding · Istana Cinta | NIKORA</title>
+    <style>
+      :root { font-family: ui-sans-serif, 'Segoe UI', sans-serif; color: #fff; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #1a1b3a; touch-action: none; user-select: none; -webkit-user-select: none; }
+      #royal-root, #royal-root canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+      .hud { position: fixed; z-index: 5; pointer-events: none; text-shadow: 0 1px 6px rgba(0,0,0,.6); }
+      .title { top: max(12px, env(safe-area-inset-top)); left: 16px; }
+      .title strong { display: block; font: italic 600 19px Georgia, 'Times New Roman', serif; letter-spacing: .06em; color: #f3dc9a; }
+      .title span { font-size: 11px; opacity: .85; }
+      .place { top: calc(max(12px, env(safe-area-inset-top)) + 46px); left: 14px; padding: 5px 12px; border-radius: 999px; background: rgba(16,16,44,.6); border: 1px solid rgba(243,220,154,.35); font-size: 13px; white-space: nowrap; text-shadow: none; }
+      .topbar { position: fixed; z-index: 7; top: max(10px, env(safe-area-inset-top)); right: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+      .rbs { display: flex; gap: 8px; }
+      .topbar small { padding: 4px 10px; border-radius: 999px; background: rgba(16,16,44,.6); font-size: 12px; max-width: min(62vw, 340px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .rb { width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(243,220,154,.4); background: rgba(16,16,44,.62); color: #fff; font-size: 19px; line-height: 1; display: grid; place-items: center; padding: 0; cursor: pointer; opacity: .85; }
+      .rb[hidden] { display: none; }
+      .rb[aria-pressed="true"] { background: #b8892f; opacity: 1; }
+      .rb.is-speaking { box-shadow: 0 0 0 3px rgba(61,220,132,.55); }
+      .hint { bottom: max(10px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .9; white-space: nowrap; }
+      .act, .ctx-btn { position: fixed; z-index: 8; border: 3px solid #f6e3a6; background: radial-gradient(circle at 35% 30%, #f2d58c, #c9993a); color: #3a2a0c; font: 700 14px ui-sans-serif, sans-serif; letter-spacing: .04em; box-shadow: 0 4px 14px rgba(0,0,0,.45); cursor: pointer; touch-action: manipulation; }
+      .act { right: 22px; bottom: max(34px, calc(env(safe-area-inset-bottom) + 20px)); width: 92px; height: 92px; border-radius: 50%; text-transform: uppercase; }
+      .ctx-btn { right: 16px; padding: 11px 16px; border-radius: 999px; border-width: 2px; }
+      #ctx-bless { bottom: calc(max(34px, env(safe-area-inset-bottom) + 20px) + 108px); }
+      #ctx-toast { bottom: calc(max(34px, env(safe-area-inset-bottom) + 20px) + 108px); }
+      #ctx-photo { bottom: calc(max(34px, env(safe-area-inset-bottom) + 20px) + 108px); }
+      #ctx-pad { bottom: calc(max(34px, env(safe-area-inset-bottom) + 20px) + 108px); }
+      .act[hidden], .ctx-btn[hidden] { display: none; }
+      .act:active, .ctx-btn:active { transform: scale(.96); }
+      .panel { position: fixed; z-index: 10; top: calc(max(10px, env(safe-area-inset-top)) + 90px); right: 10px; width: min(280px, 86vw); max-height: 60vh; overflow: auto; padding: 12px; border-radius: 14px; background: rgba(16,16,44,.94); border: 1px solid rgba(243,220,154,.3); font-size: 13px; }
+      .panel[hidden] { display: none; }
+      .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+      .panel-head button { background: none; border: 0; color: #fff; font-size: 16px; cursor: pointer; }
+      .panel h4 { margin: 10px 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
+      .party-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; }
+      .party-btn { margin-top: 6px; padding: 7px 12px; border-radius: 10px; border: 0; background: #e8c46e; color: #2d210a; font: 600 13px ui-sans-serif, sans-serif; cursor: pointer; }
+      .party-btn.is-ghost { background: rgba(255,255,255,.14); color: #fff; }
+      .toast { position: fixed; z-index: 9; left: 50%; bottom: 150px; transform: translateX(-50%); padding: 8px 14px; border-radius: 12px; background: rgba(16,16,44,.88); border: 1px solid rgba(243,220,154,.3); font-size: 13px; max-width: 86vw; text-align: center; display: none; }
+      .wishes { left: 12px; bottom: 190px; width: min(300px, 62vw); display: flex; flex-direction: column; gap: 4px; }
+      .wish { padding: 5px 10px; border-radius: 12px; background: rgba(16,16,44,.62); font-size: 12px; line-height: 1.3; text-shadow: none; animation: wish-in .3s ease; }
+      .wish b { color: #f3dc9a; }
+      @keyframes wish-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+      .joy-zone { position: fixed; z-index: 6; left: 0; bottom: 0; width: 55%; height: 45%; touch-action: none; display: none; }
+      @media (pointer: coarse) { .joy-zone { display: block; } .hint { display: none; } }
+      .joy-base { position: absolute; left: 28px; bottom: max(28px, env(safe-area-inset-bottom)); width: 124px; height: 124px; border-radius: 50%; background: rgba(255,255,255,.16); border: 2px solid rgba(243,220,154,.45); }
+      .joy-knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(255,255,255,.75); box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+      .sheet { position: fixed; z-index: 15; inset: 0; display: none; place-items: center; padding: 20px; background: rgba(8,8,28,.6); touch-action: auto; user-select: auto; -webkit-user-select: auto; }
+      .sheet.is-open { display: grid; }
+      .sheet-card { width: min(380px, 94vw); padding: 18px; border-radius: 18px; background: #181a42; border: 1px solid rgba(243,220,154,.5); box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+      .sheet-card h3 { margin: 0 0 4px; font: italic 600 20px Georgia, serif; color: #f3dc9a; }
+      .sheet-card p { margin: 0 0 12px; font-size: 12px; opacity: .8; }
+      .sheet-card textarea { width: 100%; height: 90px; padding: 10px; border-radius: 12px; border: 1px solid rgba(243,220,154,.4); background: #0f1030; color: #fff; font: 15px ui-sans-serif, sans-serif; resize: none; }
+      .sheet-row { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; flex-wrap: wrap; }
+      .chip { padding: 8px 12px; border-radius: 999px; border: 1px solid rgba(243,220,154,.45); background: transparent; color: #fff; font-size: 13px; cursor: pointer; }
+      .chip[aria-pressed="true"] { background: #b8892f; border-color: #f6e3a6; }
+      .gold { padding: 10px 18px; border-radius: 12px; border: 0; background: linear-gradient(#f2d58c, #c9993a); color: #3a2a0c; font: 700 14px ui-sans-serif, sans-serif; cursor: pointer; }
+      .ghost { padding: 10px 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,.3); background: transparent; color: #fff; font-size: 14px; cursor: pointer; }
+      #photo-img { width: 100%; border-radius: 12px; display: none; margin-top: 8px; }
+      .flash { position: fixed; z-index: 14; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+      .flash.go { animation: flash .5s ease-out; }
+      @keyframes flash { from { opacity: .9; } to { opacity: 0; } }
+      #royal-error { position: fixed; z-index: 20; inset: 0; display: none; place-items: center; padding: 24px; background: rgba(16,16,44,.94); text-align: center; }
+      #royal-error pre { white-space: pre-wrap; font-size: 12px; opacity: .8; }
+    </style>
+  </head>
+  <body>
+    <div id="royal-root"></div>
+    <div class="hud title"><strong>The Royal Wedding</strong><span>Istana Cinta · NIKORA</span></div>
+    <div class="hud place" id="place">Dermaga Cahaya</div>
+    <div class="topbar">
+      <div class="rbs">
+        <button id="cam-button" class="rb" type="button" aria-label="Ganti sudut kamera" title="Sudut kamera (C)">🎥</button>
+        <button id="sky-button" class="rb" type="button" aria-label="Langit: otomatis" title="Langit: senja / malam">🌗</button>
+        <button id="music-button" class="rb" type="button" aria-label="Nyalakan piano live" aria-pressed="false" title="Piano live">🎹</button>
+        <button id="party-button" class="rb" type="button" aria-label="Panggung MC" title="Panggung MC" hidden>🎤</button>
+        <button id="mic-button" class="rb" type="button" aria-label="Nyalakan mikrofon" aria-pressed="false" title="Suara dekat (V)" hidden>🎙</button>
+      </div>
+      <small id="online">Menyambung…</small>
+    </div>
+    <div id="party-panel" class="panel" hidden>
+      <div class="panel-head"><strong>Panggung MC</strong><button id="party-close" type="button" aria-label="Tutup">✕</button></div>
+      <div id="party-body"></div>
+    </div>
+    <div class="hud wishes" id="wishes"></div>
+    <div class="hud hint">WASD: jalan · E: duduk · seret: putar kamera · scroll: zoom · C: sudut · V: mikrofon · injak lingkaran cahaya untuk terbang ke pulau</div>
+    <button id="ctx-bless" class="ctx-btn" type="button" hidden>💐 Beri Selamat</button>
+    <button id="ctx-toast" class="ctx-btn" type="button" hidden>🥂 Bersulang</button>
+    <button id="ctx-photo" class="ctx-btn" type="button" hidden>📸 Foto 360°</button>
+    <button id="ctx-pad" class="ctx-btn" type="button" hidden>🎆 Luncurkan</button>
+    <button id="act-button" class="act" type="button" hidden>Duduk</button>
+    <div class="toast" id="toast"></div>
+    <div class="joy-zone" id="joy-zone"><div class="joy-base" id="joy-base"><div class="joy-knob" id="joy-knob"></div></div></div>
+
+    <div class="sheet" id="bless-sheet">
+      <div class="sheet-card">
+        <h3>Beri Selamat</h3>
+        <p>Tulis ucapan atau doa. Warna kembang api mengikuti suasana ucapanmu: romantis merah hati, kocak emas berkilau, doa putih keemasan.</p>
+        <textarea id="bless-text" maxlength="120" placeholder="Selamat menempuh hidup baru, semoga sakinah mawaddah warahmah…"></textarea>
+        <div class="sheet-row"><button id="bless-cancel" class="ghost" type="button">Batal</button><button id="bless-send" class="gold" type="button">Kirim ✨</button></div>
+      </div>
+    </div>
+    <div class="sheet" id="photo-sheet">
+      <div class="sheet-card">
+        <h3>Photobooth Holografik</h3>
+        <p id="photo-hint">Pilih gaya, lalu ketuk Ambil Foto. Kartu suvenir berbingkai emas bisa langsung kamu unduh.</p>
+        <div class="sheet-row" id="photo-poses" style="justify-content:flex-start">
+          <button class="chip" type="button" data-pose="wave" aria-pressed="true">Melambai</button>
+          <button class="chip" type="button" data-pose="bow" aria-pressed="false">Membungkuk</button>
+          <button class="chip" type="button" data-pose="dance" aria-pressed="false">Joget</button>
+          <button class="chip" type="button" data-pose="stand" aria-pressed="false">Berdiri</button>
+        </div>
+        <img id="photo-img" alt="Kartu foto suvenir" />
+        <div class="sheet-row">
+          <button id="photo-close" class="ghost" type="button">Tutup</button>
+          <button id="photo-save" class="gold" type="button" hidden>Unduh</button>
+          <button id="photo-shoot" class="gold" type="button">Ambil Foto</button>
+        </div>
+      </div>
+    </div>
+    <div class="flash" id="flash"></div>
+    <div id="royal-error"><div><h2>Tidak bisa memulai</h2><p id="royal-error-text"></p><pre id="royal-error-detail"></pre></div></div>
+    <script type="module" src="/src/royal-main.js"></script>
+  </body>
+</html>

@@ -34,3 +34,7 @@
 /* Bayangan kartu 3D: elemen terpisah. filter langsung pada kanvas WebGL bisa membuatnya tampil kosong di Chrome Android tertentu. */
 .gc-stage.gc-gl::before { content: ""; position: absolute; left: 10%; right: 10%; bottom: 7%; height: 14%; border-radius: 50%; background: radial-gradient(ellipse at center, rgba(40, 24, 0, .42), rgba(40, 24, 0, 0) 70%); filter: blur(6px); pointer-events: none; }
 .gc-debug { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; margin: 0; padding: 4px 6px; font: 10px/1.35 ui-monospace, monospace; color: #0f0; background: rgba(0,0,0,.78); text-align: left; white-space: pre-wrap; pointer-events: none; }
+
+/* Kanvas 3D menunggu terbukti menggambar: tetap terukur (dirender) tetapi belum terlihat; kartu CSS yang tampil lebih dulu. */
+.gc-canvas.gc-wait { position: absolute; inset: 0; visibility: hidden; pointer-events: none; }
+.gc-shadow.gc-off { display: none !important; }

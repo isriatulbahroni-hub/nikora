@@ -105,3 +105,23 @@ dan layar (bila diaktifkan). Titik merah di ≡ muncul bila MC punya tamu yang m
   miring sangat jauh = berputar. Memakai `deviceorientation` dan meminta izin sensor bila browser mewajibkan. Gestur butuh ditahan
   sekitar 0,3 detik, ada jeda 2,2 detik, dan miring yang ditahan tidak memicu berulang. Tidak aktif saat duduk atau joget.
   Pemetaan layar landscape belum diuji di perangkat nyata. Lihat `src/motion-mirror.js`.
+
+
+## Dasbor admin (`/dashboard.html`)
+
+Dasbor monitoring dan pengelolaan untuk admin/pemilik platform: ringkasan, acara & undangan, dunia 3D, pengguna online, admin & peran, pembuat tautan pemilik/MC, dan pengaturan. Tampil rapi di desktop (sidebar bisa dilipat) dan HP (menu geser, kartu bertumpuk).
+
+**Masuk:** buka `https://<situs>/dashboard.html` dan tempel rahasia induk (`EVENT_ROLE_SECRET`). Rahasia tidak pernah dikirim: browser menghitung tanda tangan HMAC berumur 5 menit (`Admin <detik>.<tanda tangan>`) yang diverifikasi server di `GET /api/admin/stats`. Rahasia hanya disimpan di tab ini. Tanpa `EVENT_ROLE_SECRET` endpoint tertutup (503).
+
+**Data yang nyata (tanpa angka karangan):**
+- Pengguna online, ruang aktif, dan daftar peserta berperan: dari LiveKit (`RoomServiceClient`, memakai `LIVEKIT_*` yang sama dengan suara).
+- Total acara dan daftar undangan: dari tabel `invitations` Supabase memakai `SUPABASE_URL` + `SUPABASE_ANON_KEY` (hanya undangan aktif). Pasang `SUPABASE_SERVICE_ROLE_KEY` (khusus server, opsional) untuk melihat juga draf dan undangan nonaktif.
+- Grafik "Acara dibuat" 7/30/90 hari dari `created_at`; grafik Live mencatat pengguna online selama dasbor terbuka (riwayat panjang butuh penyimpanan metrik, belum ada).
+- Status Sistem: API (waktu respons dari browser), Database, dan Realtime (waktu respons server), plus peringatan yang bisa ditindaklanjuti (variabel belum terbaca, layanan lambat/mati, peran belum dikunci).
+- Tiap bagian dikumpulkan terpisah dengan batas waktu 4 detik: satu layanan mati tidak merusak yang lain. Keluaran tidak memuat kunci atau URL layanan.
+
+**Belum tersedia:** menu Template & Aset, Pembayaran, dan Laporan ditandai "Segera" karena tidak ada sumber datanya (penyimpanan aset, penyedia pembayaran, riwayat metrik). Tidak ada autentikasi dua langkah (2FA): akses admin hanya lewat rahasia induk.
+
+**Mode contoh:** `/dashboard.html?demo=1` (atau tombol di halaman masuk) menampilkan data contoh dengan spanduk "DATA CONTOH", untuk meninjau tampilan.
+
+Tautan Studio dan Undangan dapat diganti lewat variabel build `VITE_STUDIO_URL` dan `VITE_INVITATION_URL`.

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { SKINS } from './avatar-config.js';
 import { buildBody } from './avatar-body.js';
-import { applyFacePhoto, applyStyle, nearestSkinIndex, sampleSkin } from './avatar-face.js';
+import { applyFacePhoto, applyStyle, cropSquare, nearestSkinIndex, sampleSkin } from './avatar-face.js';
 
 const solid = (w, h, [r, g, b, a = 255]) => {
   const d = new Uint8ClampedArray(w * h * 4);
@@ -45,6 +45,29 @@ test('applyFacePhoto menyembunyikan mata/mulut, menempel di depan kepala, dan bi
   assert.equal(rig.face.visible, true);
   assert.equal(group.userData.faceDecal, null);
   assert.equal(rig.root.children.includes(decal), false);
+});
+
+test('cropSquare: zoom 1 = persegi terbesar di tengah, geser dibatasi di tepi gambar', () => {
+  assert.deepEqual(cropSquare(400, 300), { side: 300, sx: 50, sy: 0 });
+  const z = cropSquare(400, 300, { zoom: 2 });
+  assert.equal(z.side, 150);
+  assert.deepEqual(cropSquare(400, 300, { zoom: 2, offsetX: 5, offsetY: -5 }), { side: 150, sx: 250, sy: 0 }); // offset dijepit ke -1..1
+  assert.deepEqual(cropSquare(400, 300, { zoom: 0.2 }), { side: 300, sx: 50, sy: 0 }); // zoom < 1 diabaikan
+});
+
+test('applyFacePhoto memajukan kacamata dan mengembalikannya saat foto dilepas', () => {
+  const { group } = avatarLike();
+  const gear = new THREE.Group();
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.016, 8, 18)); ring.position.z = -0.285;
+  const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.014, 0.014)); bridge.position.z = -0.287;
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.325, 8, 6)); hair.position.z = 0.035;
+  gear.add(ring, bridge, hair); group.add(gear); group.userData.gear = gear;
+  applyFacePhoto(group, { width: 8, height: 8 });
+  assert.ok(ring.position.z < -0.32 && bridge.position.z < -0.32);
+  assert.equal(hair.position.z, 0.035); // rambut tidak ikut bergeser
+  applyFacePhoto(group, null);
+  assert.equal(ring.position.z, -0.285);
+  assert.equal(bridge.position.z, -0.287);
 });
 
 test('applyFacePhoto aman untuk avatar tanpa fitur wajah (model Michelle)', () => {

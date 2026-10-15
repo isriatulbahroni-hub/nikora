@@ -44,7 +44,10 @@ export function createShell(container, ctx, kind, { scenery = null, sceneryId = 
   const particles = createParticles(canvas, { kind: theme.envelope.particles, colors: [tk.glow, tk.accent2, tk.accent, tk.letter], light, reduced });
   const bg = scenery ? buildScenery(scenery, sceneryId || 7, { hero: hero ? hero(tk) : null }) : null;
   if (bg) stage.append(bg);
-  if (walkers && !bg && !light && !reduced) stage.append(buildWalkers(view, tk));
+  if (walkers && !bg && !light && !reduced) {
+    stage.append(buildWalkers(view, tk));
+    stage.dataset.walkers = '1';   // sisakan jalur di bawah konten untuk tokoh kecil (lihat legibility.css)
+  }
   stage.append(canvas);
   container.append(stage);
   particles.start();
@@ -52,6 +55,16 @@ export function createShell(container, ctx, kind, { scenery = null, sceneryId = 
   const cleanups = [];
   let finish;
   const done = new Promise((r) => { finish = r; });
+
+  /** Tinggi bilah bawah berbeda per adegan (satu atau dua tombol): ukur supaya tokoh kecil tidak menimpa konten. */
+  const trackFoot = (foot) => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const set = () => { if (foot.offsetHeight) stage.style.setProperty('--foot', `${foot.offsetHeight}px`); };
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(foot);
+    cleanups.push(() => ro.disconnect());
+  };
 
   const shell = {
     stage, view, theme, tk, env, particles, done, finish,
@@ -73,7 +86,9 @@ export function createShell(container, ctx, kind, { scenery = null, sceneryId = 
     /** Tombol lanjut yang selalu terlihat di bawah layar. */
     footer(label, onClick = finish) {
       const btn = h('button', { class: 'pg-cta', type: 'button', text: label, onclick: () => onClick() });
-      stage.append(h('div', { class: 'pg-foot' }, btn));
+      const foot = h('div', { class: 'pg-foot' }, btn);
+      stage.append(foot);
+      trackFoot(foot);
       return btn;
     },
     /** Beberapa aksi di bawah layar: tautan (href) atau tombol; yang pertama menjadi utama. */
@@ -82,6 +97,7 @@ export function createShell(container, ctx, kind, { scenery = null, sceneryId = 
         ? h('a', { class: `pg-cta${i ? ' pg-ghost' : ''}`, href: a.href, text: a.label })
         : h('button', { class: `pg-cta${i ? ' pg-ghost' : ''}`, type: 'button', text: a.label, onclick: () => a.onClick() }))));
       stage.append(foot);
+      trackFoot(foot);
       return foot;
     },
     api() {

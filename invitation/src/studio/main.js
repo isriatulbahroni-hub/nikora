@@ -5,6 +5,7 @@ import { editorView } from './editor.js';
 import { dashboardView } from './dashboard.js';
 import { templateView } from './template.js';
 import { guestsView } from './guests.js';
+import { worldOfRow } from '../engine/world-link.js';
 import { pickerView, settingsView, helpView } from './pages.js';
 import { shellView } from './shell.js';
 import { parseRoute } from './route.js';
@@ -80,7 +81,7 @@ async function render() {
     const need = { editor: ['Editor', 'Pilih undangan yang ingin diisi.'], template: ['Template & amplop', 'Pilih undangan untuk memilih amplop dan suasananya.'], undangan: ['Bagikan', 'Pilih undangan.'] }[page];
     if (!slug) return setContent(pickerView({ title: need[0], lead: need[1], items, hrefFor: (s) => `#/${page}/${s}` }));
     if (!items.some((i) => i.slug === slug)) return setContent(note('Undangan itu tidak ditemukan di akunmu.', () => go('#/dashboard')));
-    if (page === 'undangan') return setContent(detailView({ client, slug, inviteBase, worldBase, onBack: () => go('#/dashboard'), onDeleted: () => go('#/dashboard'), onEdit: () => go(`#/editor/${slug}`) }));
+    if (page === 'undangan') return setContent(detailView({ client, slug, inviteBase, worldBase, world: worldOfRow(items.find((i) => i.slug === slug)), onBack: () => go('#/dashboard'), onDeleted: () => go('#/dashboard'), onEdit: () => go(`#/editor/${slug}`) }));
     if (page === 'editor') return setContent(editorView({ client, slug, inviteBase, onBack: () => go(`#/undangan/${slug}`) }));
     if (page === 'template') {
       const inv = await client.invitationOf(slug);

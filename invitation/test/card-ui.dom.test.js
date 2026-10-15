@@ -92,27 +92,47 @@ test('WebGL terdeteksi tetapi pembuatan kartu 3D gagal: jatuh ke kartu CSS, tida
   c.destroy();
 });
 
-const fake3D = () => { const calls = { destroyed: 0, idx: [] }; let opts; const make3D = async (stage, o) => { opts = o; const cv = document.createElement('canvas'); cv.className = 'gc-canvas'; stage.append(cv); return { setIndex: (i) => calls.idx.push(i), flip() {}, isBack: () => false, destroy() { calls.destroyed++; cv.remove(); } }; }; return { make3D, calls, fail: (w) => opts.onFail(w) }; };
+const fake3D = () => {
+  const calls = { destroyed: 0, idx: [], flips: 0 }; let opts, back = false;
+  const make3D = async (stage, o) => { opts = o; const cv = document.createElement('canvas'); cv.className = 'gc-canvas gc-wait'; stage.append(cv); return { setIndex: (i) => calls.idx.push(i), flip() { calls.flips++; back = !back; o.onFlip(back); }, isBack: () => back, destroy() { calls.destroyed++; cv.remove(); } }; };
+  return { make3D, calls, ready: () => opts.onReady(), fail: (w) => opts.onFail(w) };
+};
 
-test('GPU gagal menggambar (onFail): beralih ke kartu CSS di tempat, rekening terpilih dipertahankan, tab tetap berfungsi', async () => {
+test('kartu CSS tampil lebih dulu; 3D mengambil alih hanya setelah onReady; rekening terpilih ikut', async () => {
+  const { root, list } = mk(); const f = fake3D();
+  const c = await enhanceGifts({ list, gifts: GIFTS, copy() {}, env: {}, probe: () => true, make3D: f.make3D });
+  const stage = root.querySelector('.gc-stage'), cssBox = () => stage.querySelector('.gc-shadow');
+  assert.equal(c.mode, 'css'); assert.equal(stage.dataset.mode, 'css');
+  assert.ok(cssBox() && !cssBox().classList.contains('gc-off'));            // tamu langsung melihat kartu
+  root.querySelectorAll('.gc-tab')[1].click();                              // ganti rekening sebelum 3D siap
+  f.ready();
+  assert.equal(c.mode, '3d'); assert.equal(stage.dataset.mode, '3d'); assert.ok(cssBox().classList.contains('gc-off'));
+  assert.equal(f.calls.idx.at(-1), 1);                                       // 3D memulai di rekening yang dipilih
+  root.querySelector('.gc-flip').click(); assert.equal(f.calls.flips, 1);
+  root.querySelectorAll('.gc-tab')[0].click(); assert.equal(f.calls.idx.at(-1), 0);
+  c.destroy(); assert.equal(f.calls.destroyed, 1); assert.equal(root.querySelector('.gc-ui'), null); assert.equal(list.hidden, false);
+});
+
+test('3D gagal (sebelum atau sesudah siap): kartu CSS tampil/kembali, rekening dan sisi dipertahankan, panggilan ganda aman', async () => {
   const { root, list } = mk(); const f = fake3D();
   const c = await enhanceGifts({ list, gifts: GIFTS, copy() {}, env: {}, probe: () => true, make3D: f.make3D });
   const stage = root.querySelector('.gc-stage');
-  assert.equal(c.mode, '3d'); assert.equal(stage.dataset.mode, '3d'); assert.ok(stage.querySelector('.gc-canvas')); assert.equal(stage.querySelector('.gc'), null);
-  root.querySelectorAll('.gc-tab')[1].click(); assert.deepEqual(f.calls.idx, [1]);
-  f.fail('kosong');
-  assert.equal(f.calls.destroyed, 1); assert.equal(stage.querySelector('.gc-canvas'), null);
-  assert.ok(stage.querySelector('.gc')); assert.equal(stage.dataset.mode, 'css'); assert.equal(stage.dataset.fail, 'kosong');
-  assert.equal(root.querySelectorAll('.gc-face').length, 2);
-  root.querySelectorAll('.gc-tab')[0].click();                       // tab masih bekerja pada kartu CSS
-  assert.equal(f.calls.idx.length, 1);
-  assert.equal(root.querySelector('.gc-info strong').textContent, 'BCA');
-  f.fail('shader');                                                  // panggilan ganda tidak membuat kartu dobel
-  assert.equal(stage.querySelectorAll('.gc').length, 1); assert.equal(f.calls.destroyed, 1);
-  c.destroy(); assert.equal(root.querySelector('.gc-ui'), null); assert.equal(list.hidden, false);
+  f.fail('kosong');                                                          // gagal sebelum siap
+  assert.equal(c.mode, 'css'); assert.equal(stage.dataset.fail, 'kosong'); assert.equal(f.calls.destroyed, 1);
+  assert.equal(stage.querySelectorAll('.gc-shadow').length, 1); assert.ok(!stage.querySelector('.gc-shadow').classList.contains('gc-off'));
+  f.fail('shader'); assert.equal(f.calls.destroyed, 1);                      // tidak dobel
+  const g = fake3D(); const m = mk();
+  const c2 = await enhanceGifts({ list: m.list, gifts: GIFTS, copy() {}, env: {}, probe: () => true, make3D: g.make3D });
+  const st2 = m.root.querySelector('.gc-stage');
+  g.ready(); m.root.querySelectorAll('.gc-tab')[1].click(); assert.equal(c2.mode, '3d');
+  g.fail('context');                                                         // gagal setelah siap
+  assert.equal(c2.mode, 'css'); assert.ok(!st2.querySelector('.gc-shadow').classList.contains('gc-off'));
+  assert.equal(m.root.querySelector('.gc-info strong').textContent, 'GoPay');
+  assert.equal(st2.querySelectorAll('.gc-face').length, 2);
+  c2.destroy(); c.destroy();
 });
 
-test('pembuatan kartu 3D melempar galat -> kartu CSS; ?kartu=css memaksa kartu CSS', async () => {
+test('pembuatan kartu 3D melempar galat -> tetap kartu CSS; ?kartu=css tidak memanggil 3D', async () => {
   const { root, list } = mk();
   const c = await enhanceGifts({ list, gifts: GIFTS, copy() {}, env: {}, probe: () => true, make3D: async () => { throw new Error('gpu'); } });
   assert.equal(c.mode, 'css'); assert.ok(root.querySelector('.gc'));

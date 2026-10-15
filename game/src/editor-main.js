@@ -4,6 +4,7 @@ import { createEditor, openProject } from './world-editor.js';
 import { CATALOG, PROP_TYPES, TEMPLATES, TEMPLATE_KEYS, LIMITS, newProject, toWorld } from './world-project.js';
 import { createCloud } from './world-cloud.js';
 import { initCloudUi } from './editor-cloud-ui.js';
+import { initAiUi } from './editor-ai-ui.js';
 import { propMesh, placeMesh, footprintLine, buildGround, spawnMarker, SKY_PRESETS, labelOf } from './world-project-view.js';
 
 const $ = (id) => document.getElementById(id);
@@ -28,6 +29,7 @@ function initialProject() {
 }
 const editor = createEditor(initialProject());
 let cloudUi = null; // diisi di bawah bila Supabase dikonfigurasi
+let aiUi = null; // diisi di bawah bersama klien awan (butuh sesi akun)
 if (new URLSearchParams(location.search).has('debug')) window.__editor = editor;
 
 // ------------------------------------------------------------------ scene
@@ -413,8 +415,14 @@ try {
   const injected = window.__ORBIT_CLOUD__;
   const cloud = createCloud({ url: injected?.url ?? import.meta.env.VITE_SUPABASE_URL, key: injected?.key ?? import.meta.env.VITE_SUPABASE_ANON_KEY, store: sessionStore });
   cloudUi = initCloudUi({ editor, cloud, panel: $('cloud'), button: $('cloudBtn'), reviewbar: $('reviewbar'), toast, onChange: () => { sync(); } });
+  try {
+    aiUi = initAiUi({ editor, cloud, panel: $('ai'), button: $('aiBtn'), toast, canUse: () => !cloudUi?.reviewing && !playing, onApplied: () => { fitCamera(); sync(); } });
+  } catch {
+    $('aiBtn').addEventListener('click', () => toast('Fitur AI tidak tersedia.', 3200));
+  }
 } catch {
   $('cloudBtn').addEventListener('click', () => toast('Akun belum dikonfigurasi (VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY).', 4200));
+  $('aiBtn').addEventListener('click', () => toast('Draf AI butuh akun: isi VITE_SUPABASE_URL dan VITE_SUPABASE_ANON_KEY.', 4200));
 }
 
 buildPalette();

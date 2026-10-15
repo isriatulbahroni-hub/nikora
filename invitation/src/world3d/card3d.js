@@ -20,32 +20,35 @@ function roundedShape(w, h, r) {
  * Kartu rekening emas 3D. models = hasil cardModel(). Mengembalikan { setIndex, flip, isBack, destroy }.
  * Kartu melayang pelan, miring mengikuti kursor/jari, dibalik dengan ketukan, dan berputar saat ganti kartu.
  */
-export function createCard3D(container, { models, index = 0, onFlip, onFail }) {
+export function createCard3D(container, { models, index = 0, onFlip, onFail, onReady }) {
+  // WebGL menggambar ke kanvas yang TIDAK dipasang di halaman; hasilnya disalin ke kanvas 2D biasa yang ditampilkan.
+  // Kanvas 2D tampil andal di semua peramban, dan pemeriksaan piksel dilakukan pada kanvas yang benar-benar terlihat.
+  const gl = document.createElement('canvas');
   const canvas = document.createElement('canvas');
-  canvas.className = 'gc-canvas'; canvas.setAttribute('aria-hidden', 'true');
-  container.append(canvas); container.classList.add('gc-gl');
+  canvas.className = 'gc-canvas gc-wait'; canvas.setAttribute('aria-hidden', 'true');
+  const x2 = canvas.getContext('2d');
+  if (!x2) throw new Error('Kanvas 2D tidak tersedia');
+  container.append(canvas);
 
-  const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, premultipliedAlpha: true, powerPreference: 'high-performance' });
+  const renderer = new THREE.WebGLRenderer({ canvas: gl, alpha: true, antialias: true, premultipliedAlpha: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
 
   /* ---- jaring pengaman: GPU tertentu gagal menggambar tanpa melempar galat ---- */
-  let destroyed = false, failed = false, frames = 0, seenCard = false, blankProbes = 0;
-  const fail = (why) => { if (failed || destroyed) return; failed = true; console.warn('Kartu 3D gagal tampil, beralih ke kartu CSS:', why); if (onFail) onFail(why); };
+  let destroyed = false, failed = false, ready = false, frames = 0, seenCard = false, blankProbes = 0;
+  const fail = (why) => { if (failed || destroyed) return; failed = true; console.warn('Kartu 3D gagal tampil, kartu CSS tetap dipakai:', why); if (onFail) onFail(why); };
   renderer.debug.onShaderError = () => fail('shader');
-  canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); fail('context'); });
-  /** Setelah render, pastikan benar-benar ada piksel kartu (alfa > 0). Dibaca sebelum bingkai ditampilkan. */
+  gl.addEventListener('webglcontextlost', (e) => { e.preventDefault(); fail('context'); });
+  /** Ada piksel kartu (alfa > 0) pada kanvas 2D yang tampil? Dibaca langsung dari yang terlihat. */
   const probePixels = () => {
-    const gl = renderer.getContext();
-    if (!gl || (gl.isContextLost && gl.isContextLost())) return fail('context');
-    const W = gl.drawingBufferWidth, H = gl.drawingBufferHeight, px = new Uint8Array(4);
+    const W = canvas.width, H = canvas.height;
     for (const [fx, fy] of [[.5, .5], [.35, .5], [.65, .5], [.5, .4], [.5, .6]]) {
-      gl.readPixels(Math.floor(W * fx), Math.floor(H * fy), 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-      if (px[3] > 8) { seenCard = true; return; }
+      if (x2.getImageData(Math.floor(W * fx), Math.floor(H * fy), 1, 1).data[3] > 8) { seenCard = true; return; }
     }
     if (++blankProbes >= 4) fail('kosong');
   };
+  const markReady = () => { if (ready || failed) return; ready = true; canvas.classList.remove('gc-wait'); container.classList.add('gc-gl'); if (onReady) onReady(); };
 
   const scene = new THREE.Scene();
   const pm = new THREE.PMREMGenerator(renderer), envTex = pm.fromScene(new RoomEnvironment(), 0.03).texture;
@@ -94,7 +97,7 @@ export function createCard3D(container, { models, index = 0, onFlip, onFail }) {
   };
   const resize = () => {
     w = Math.max(2, container.clientWidth); h = Math.max(2, Math.round(w * .72));
-    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); fitCamera(); dirty = true;
+    renderer.setSize(w, h, false); canvas.width = gl.width; canvas.height = gl.height; camera.aspect = w / h; camera.updateProjectionMatrix(); fitCamera(); dirty = true;
   };
   let dirty = true;
   resize();
@@ -150,24 +153,27 @@ export function createCard3D(container, { models, index = 0, onFlip, onFail }) {
     const dt = Math.min(.05, (now - last) / 1000 || .016); last = now;
     try {
       tick(dt); renderer.render(scene, camera);
-      if (!seenCard && !failed && ++frames % 3 === 0) probePixels();
+      x2.clearRect(0, 0, canvas.width, canvas.height); x2.drawImage(gl, 0, 0);
+      frames++;
+      if (!seenCard && !failed && frames % 2 === 0) probePixels();
+      if (seenCard && frames >= 3) markReady();
     } catch (e) { fail(e && e.message ? e.message : 'render'); }
   }
   last = performance.now(); raf = requestAnimationFrame(frame);
 
   /* Penjaga: kanvas yang seharusnya tampil tetapi tidak pernah menggambar bingkai -> kartu CSS. */
   const t0 = performance.now();
-  const watchdog = setTimeout(() => { if (renderStalled({ frames, hidden: document.hidden, ms: performance.now() - t0 })) fail('tidak-menggambar'); }, 3200);
+  const watchdog = setTimeout(() => { if (!ready && !document.hidden) fail(renderStalled({ frames, hidden: false, ms: performance.now() - t0, limit: 1 }) ? 'tidak-menggambar' : 'tidak-siap'); }, 15000);   // kartu CSS sudah terlihat selama menunggu, jadi penjaga boleh longgar (HP lemah)
 
   /* Diagnosis: tambahkan ?kartu=debug di alamat untuk melihat keadaan kartu langsung di layar. */
   let dbgTimer = 0;
   if (typeof location !== 'undefined' && /(^|[?&])kartu=debug(&|$)/.test(location.search || '')) {
     const pre = document.createElement('pre'); pre.className = 'gc-debug'; container.append(pre);
-    const gl = renderer.getContext(), ext = gl && gl.getExtension && gl.getExtension('WEBGL_debug_renderer_info');
-    const gpu = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'n/a';
+    const ctxGl = renderer.getContext(), ext = ctxGl && ctxGl.getExtension && ctxGl.getExtension('WEBGL_debug_renderer_info');
+    const gpu = ext ? ctxGl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'n/a';
     dbgTimer = setInterval(() => {
       const r = canvas.getBoundingClientRect();
-      pre.textContent = `3D frames:${frames} seen:${seenCard} blank:${blankProbes} fail:${failed}\nonScreen:${onScreen} hidden:${document.hidden}\ncanvas:${canvas.width}x${canvas.height} css:${Math.round(r.width)}x${Math.round(r.height)} @${Math.round(r.top)}\ndpr:${window.devicePixelRatio} gpu:${String(gpu).slice(0, 42)}`;
+      pre.textContent = `3D frames:${frames} seen:${seenCard} ready:${ready} blank:${blankProbes} fail:${failed}\nonScreen:${onScreen} hidden:${document.hidden}\ncanvas:${canvas.width}x${canvas.height} gl:${gl.width}x${gl.height} css:${Math.round(r.width)}x${Math.round(r.height)} @${Math.round(r.top)}\ndpr:${window.devicePixelRatio} gpu:${String(gpu).slice(0, 42)}`;
     }, 400);
   }
 

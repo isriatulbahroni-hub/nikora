@@ -45,25 +45,40 @@
 
         <div id="join-overlay" class="result-overlay">
           <form id="join-form" class="result-panel editor-panel" autocomplete="off">
-            <p class="eyebrow">ORBIT WORLD</p>
-            <h2 id="editor-title">Buat avatarmu</h2>
+            <div class="editor-head">
+              <p class="eyebrow">ORBIT WORLD</p>
+              <h2 id="editor-title">Buat avatarmu</h2>
+            </div>
             <div class="editor-layout">
-              <canvas id="avatar-preview" class="avatar-preview" aria-label="Pratinjau avatar, geser untuk memutar"></canvas>
+              <div class="editor-stage">
+                <canvas id="avatar-preview" class="avatar-preview" aria-label="Pratinjau avatar, geser untuk memutar, cubit untuk zoom"></canvas>
+                <button type="button" class="stage-btn" data-view-reset aria-label="Kembalikan kamera" title="Kembalikan kamera">↺</button>
+                <div class="stage-poses" role="group" aria-label="Pose pratinjau">
+                  <button type="button" class="stage-chip" data-pose="wave" aria-pressed="false">👋 Lambai</button>
+                  <button type="button" class="stage-chip" data-pose="dance" aria-pressed="false">💃 Joget</button>
+                </div>
+                <div class="stage-photo">
+                  <button type="button" id="photo-style" class="stage-chip is-small" hidden>Gaya: Asli</button>
+                  <button type="button" id="photo-clear" class="stage-chip is-small" hidden>Hapus foto</button>
+                </div>
+              </div>
               <div class="editor-controls">
                 <input id="name-input" class="name-input" type="text" maxlength="24" placeholder="Nama tamu" aria-label="Nama tamu" />
                 <div id="editor-tabs" class="editor-tabs" role="tablist"></div>
                 <div id="editor-options" class="editor-options"></div>
-                <div class="editor-actions">
-                  <input id="photo-input" type="file" accept="image/*" hidden />
-                  <button type="button" id="editor-random" class="party-btn is-ghost">Acak 🎲</button>
-                  <button type="button" id="photo-button" class="party-btn is-ghost">Foto wajah 📷</button>
-                  <button type="button" id="photo-style" class="party-btn is-ghost" hidden>Gaya: Asli</button>
-                  <button type="button" id="photo-clear" class="party-btn is-ghost" hidden>Hapus foto</button>
-                  <button type="button" id="editor-export" class="party-btn is-ghost">Unduh 3D ⬇</button>
-                  <button type="button" id="editor-dance" class="party-btn is-ghost" hidden>Joget 💃</button>
-                  <button type="button" id="editor-cancel" class="party-btn is-ghost" hidden>Batal</button>
-                  <button id="join-button" class="action-button" type="submit"><span id="join-label">Masuk</span> <span>↗</span></button>
-                </div>
+              </div>
+            </div>
+            <div class="editor-actions">
+              <input id="photo-input" type="file" accept="image/*" hidden />
+              <div class="editor-tools">
+                <button type="button" id="editor-random" class="tool-btn">Acak 🎲</button>
+                <button type="button" id="photo-button" class="tool-btn">Foto wajah 📷</button>
+                <button type="button" id="editor-export" class="tool-btn">Unduh 3D ⬇</button>
+              </div>
+              <button type="button" id="editor-dance" class="party-btn is-ghost" hidden>Joget 💃</button>
+              <div class="editor-main-row">
+                <button type="button" id="editor-cancel" class="party-btn is-ghost" hidden>Batal</button>
+                <button id="join-button" class="action-button" type="submit"><span id="join-label">Masuk</span> <span>↗</span></button>
               </div>
             </div>
           </form>

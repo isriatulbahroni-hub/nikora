@@ -12,8 +12,6 @@ import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
 import { modeFor } from './event-mode.js';
-import './emoji-reactions.css';
-import { setupEmojiReactions } from './emoji-reactions-ui.js';
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
 function applyQuality(renderer, scene, q) {
@@ -31,6 +29,8 @@ import { takeRoleKey } from './role-key.js';
 import { renderPartyPanel } from './party-panel.js';
 import { VOICE_CROWD, VoiceChat } from './voice.js';
 import { buildVillaWorld } from './villa-world.js';
+import './emoji-reactions.css';
+import { setupEmojiReactions } from './emoji-reactions-ui.js';
 
 const PLAYER_SPEED = 5.2; // harus sama dengan server (ROOM_RULES.playerSpeed)
 const SNAP_DISTANCE = 2.5; // jika posisi klien menyimpang dari server lebih dari ini, ikuti server

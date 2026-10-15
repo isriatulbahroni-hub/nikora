@@ -1,7 +1,7 @@
 import { cleanText, defaultScenes, SCENE_KINDS } from '../engine/config.js';
 import { sanitizeStyle } from '../engine/style.js';
 import { EVENT_TYPES, getTheme } from '../themes/index.js';
-import { WORLDS, DEFAULT_WORLD_URL } from '../engine/world-link.js';
+import { WORLDS, DEFAULT_WORLD_URL, worldPage } from '../engine/world-link.js';
 
 export const SLUG = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
 // Sama dengan check constraint invitations_slug_check di database.
@@ -53,7 +53,7 @@ export function invitationRow(value, ownerId) {
 }
 
 /** Link siap bagikan. Nama tamu masuk lewat ?to= dan ikut ke dunia 3D. */
-export function shareLinks({ slug, inviteBase, worldBase = DEFAULT_WORLD_URL }) {
+export function shareLinks({ slug, inviteBase, worldBase = DEFAULT_WORLD_URL, world }) {
   const base = String(inviteBase || '').replace(/\/+$/, '');
   const invite = new URL(`${base}/`);
   invite.searchParams.set('slug', slug);
@@ -65,7 +65,7 @@ export function shareLinks({ slug, inviteBase, worldBase = DEFAULT_WORLD_URL }) 
       if (to) u.searchParams.set('to', to);
       return u.toString();
     },
-    world: (() => { const u = new URL(`${String(worldBase).replace(/\/+$/, '')}/villa.html`); u.searchParams.set('e', slug); return u.toString(); })(),
+    world: (() => { const u = new URL(`${String(worldBase).replace(/\/+$/, '')}/${worldPage(world)}`); u.searchParams.set('e', slug); return u.toString(); })(),
   };
 }
 

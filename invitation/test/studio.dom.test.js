@@ -107,3 +107,23 @@ test('dasbor: galat memuat tampil sebagai pesan, bukan crash', async () => {
   await tick(); await tick();
   assert.match(v.querySelector('.s-msg').textContent, /403/);
 });
+
+test('form buat undangan: pilihan Dunia 3D memuat Villa, Istana Cinta, dan Aula', () => {
+  const v = createView({ client: {}, onCreated() {}, onCancel() {} });
+  document.body.append(v);
+  const opts = [...v.querySelectorAll('[name=world] option')].map((o) => [o.value, o.textContent]);
+  assert.deepEqual(opts.map((o) => o[0]), ['', 'villa', 'royal', 'hall']);
+  assert.match(opts.find((o) => o[0] === 'royal')[1], /Istana Cinta/);
+  v.remove();
+});
+
+test('dasbor undangan yang memilih Istana Cinta: link dunia menuju royal.html', async () => {
+  const client = { guestsOf: async () => [], rsvpsOf: async () => [], giftsOf: async () => [] };
+  const v = detailView({ client, slug: 'rani-dimas', inviteBase: 'https://undangan.example/', worldBase: 'https://dunia.example', world: 'royal', onBack() {} });
+  document.body.append(v);
+  await tick(); await tick(); await tick();
+  const codes = [...v.querySelectorAll('code')].map((c) => c.textContent);
+  assert.ok(codes.includes('https://dunia.example/royal.html?e=rani-dimas'));
+  assert.ok(!codes.includes('https://dunia.example/villa.html?e=rani-dimas'));
+  v.remove();
+});
