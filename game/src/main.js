@@ -12,6 +12,7 @@ import { createPartyController, stageIds } from './party.js';
 import { takeRoleKey } from './role-key.js';
 import { loadConfig, saveConfig, toWire } from './avatar-config.js';
 import { createAvatarEditor } from './avatar-editor.js';
+import { applyFacePhoto } from './avatar-face.js';
 import { GAME_RULES, cameraRelativeMovement, normalizeMovement } from './game-rules.js';
 import { HALL, SEATS, TABLES, facingAngle, findNearestSeat, resolveCollisions } from './hall-layout.js';
 import { resolveServerUrl, startMultiplayer } from './multiplayer-view.js';
@@ -1110,6 +1111,12 @@ function setupJoin() {
     optionsEl: $('#editor-options'),
     initial: avatarCfg,
     onChange: (cfg) => { $('#editor-dance').hidden = cfg.m === 0; },
+    photoButton: $('#photo-button'),
+    photoInput: $('#photo-input'),
+    styleButton: $('#photo-style'),
+    clearButton: $('#photo-clear'),
+    exportButton: $('#editor-export'),
+    onNotice: notify,
   });
   $('#editor-random').addEventListener('click', () => avatarEditor.randomize());
   $('#editor-dance').addEventListener('click', () => avatarEditor.toggleDance());
@@ -1129,6 +1136,7 @@ function setupJoin() {
     avatarCfg = avatarEditor.config;
     saveConfig(safeStorage(), avatarCfg);
     setAvatarConfig(playerAvatar, avatarCfg);
+    applyFacePhoto(playerAvatar, avatarEditor.faceCanvas); // foto wajah (atau null = wajah 3D biasa); hanya terlihat di perangkat ini
     avatarEditor.stop();
     if (editMode) {
       ui.joinOverlay.hidden = true;
