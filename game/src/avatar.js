@@ -34,7 +34,7 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
   const rig = buildBody({ color, skin });
   group.add(rig.root);
   Object.assign(group.userData, {
-    arms: rig.arms, legs: rig.legs, elbows: rig.elbows, tint: rig.tint, skin: rig.skin, pants: rig.pants, body: rig.torso,
+    arms: rig.arms, legs: rig.legs, elbows: rig.elbows, tint: rig.tint, skin: rig.skin, pants: rig.pants, body: rig.torso, face: rig.face,
   });
   // Semua bagian tubuh masuk ke satu pivot supaya bisa berputar (gestur 'spin') tanpa mengganggu arah hadap grup.
   const spinPivot = new THREE.Group();

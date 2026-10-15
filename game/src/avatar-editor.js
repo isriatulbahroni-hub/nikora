@@ -1,9 +1,11 @@
-// Editor avatar ala pemilihan hero: pratinjau 3D yang bisa diputar + tab pilihan + acak.
+// Editor avatar ala pemilihan hero: pratinjau 3D yang bisa diputar + tab pilihan + acak + foto wajah + unduh 3D.
 import * as THREE from 'three';
 import { ACCESSORIES, CHARACTERS, HAIR_COLORS, HAIR_STYLES, OUTFITS, SKINS, randomConfig, sanitizeConfig } from './avatar-config.js';
 import { applyPose, createAvatar, setAvatarConfig } from './avatar.js';
+import { FACE_STYLES, applyFacePhoto, faceCanvasFromImage, skinIndexFromCanvas, thumbnailDataUrl } from './avatar-face.js';
 
 const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
+const STYLE_LABEL = { asli: 'Asli', royal: 'Royal', kartun: 'Kartun' };
 export const TABS = [
   { id: 'm', label: 'Karakter', swatch: false, items: CHARACTERS.map(({ name }) => ({ name })) },
   { id: 'o', label: 'Pakaian', swatch: true, items: OUTFITS },
@@ -13,7 +15,10 @@ export const TABS = [
   { id: 'a', label: 'Aksesori', swatch: false, items: ACCESSORIES.map((name) => ({ name })) },
 ];
 
-export function createAvatarEditor({ canvas, tabsEl, optionsEl, initial, onChange = () => {} }) {
+export function createAvatarEditor({
+  canvas, tabsEl, optionsEl, initial, onChange = () => {},
+  photoButton = null, photoInput = null, styleButton = null, clearButton = null, exportButton = null, onFace = () => {}, onNotice = () => {},
+}) {
   let cfg = sanitizeConfig(initial);
   let tab = TABS[0].id;
   let dancing = false;
@@ -26,6 +31,20 @@ export function createAvatarEditor({ canvas, tabsEl, optionsEl, initial, onChang
   let dragging = false;
   let lastX = 0;
   let last = 0;
+  let photoFile = null; // foto asli tetap di perangkat; hanya hasil potongan yang dipakai
+  let face = null; // canvas wajah hasil potongan + filter
+  let styleIdx = 0;
+  let busy = false;
+
+  function refreshPhotoUi() {
+    const human = cfg.m > 0; // model manusia (Michelle) tidak punya wajah yang bisa diganti
+    if (photoButton) photoButton.hidden = human;
+    if (styleButton) {
+      styleButton.hidden = human || !face;
+      styleButton.textContent = `Gaya: ${STYLE_LABEL[FACE_STYLES[styleIdx]]}`;
+    }
+    if (clearButton) clearButton.hidden = human || !face;
+  }
 
   function renderOptions() {
     tabsEl.replaceChildren();
@@ -57,12 +76,66 @@ export function createAvatarEditor({ canvas, tabsEl, optionsEl, initial, onChang
       b.addEventListener('click', () => { cfg = { ...cfg, [tab]: index }; apply(); renderOptions(); });
       optionsEl.append(b);
     });
+    refreshPhotoUi();
   }
 
   function apply() {
     if (avatar) setAvatarConfig(avatar, cfg);
     onChange(cfg);
   }
+
+  async function buildFace({ pickSkin }) {
+    if (!photoFile || busy) return;
+    busy = true;
+    try {
+      face = await faceCanvasFromImage(photoFile, { style: FACE_STYLES[styleIdx] });
+      if (pickSkin) cfg = { ...cfg, s: skinIndexFromCanvas(face) }; // warna kulit mengikuti foto (diambil dari foto asli, bukan hasil filter)
+      if (avatar) applyFacePhoto(avatar, face);
+      apply();
+      renderOptions();
+      onFace(face);
+    } catch (error) {
+      console.warn('[avatar] foto wajah gagal diproses', error);
+      onNotice('Foto tidak bisa dibaca. Coba foto lain.');
+    } finally {
+      busy = false;
+    }
+  }
+
+  function clearFace() {
+    photoFile = null;
+    face = null;
+    styleIdx = 0;
+    if (avatar) applyFacePhoto(avatar, null);
+    onFace(null);
+    refreshPhotoUi();
+  }
+
+  photoButton?.addEventListener('click', () => photoInput?.click());
+  photoInput?.addEventListener('change', () => {
+    const file = photoInput.files?.[0];
+    photoInput.value = ''; // supaya foto yang sama bisa dipilih lagi
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { onNotice('Pilih berkas gambar.'); return; }
+    photoFile = file;
+    styleIdx = 0;
+    buildFace({ pickSkin: true });
+  });
+  styleButton?.addEventListener('click', () => {
+    styleIdx = (styleIdx + 1) % FACE_STYLES.length;
+    buildFace({ pickSkin: false });
+  });
+  clearButton?.addEventListener('click', clearFace);
+  exportButton?.addEventListener('click', async () => {
+    if (!avatar) { onNotice('Pratinjau 3D tidak tersedia di perangkat ini.'); return; }
+    try {
+      const { downloadAvatarGLB } = await import('./avatar-export.js'); // dimuat hanya saat dibutuhkan
+      await downloadAvatarGLB(avatar, 'avatar-orbit');
+    } catch (error) {
+      console.warn('[avatar] ekspor 3D gagal', error);
+      onNotice('Gagal membuat berkas 3D.');
+    }
+  });
 
   function initPreview() {
     if (renderer || !canvas) return;
@@ -83,6 +156,7 @@ export function createAvatarEditor({ canvas, tabsEl, optionsEl, initial, onChang
     camera.lookAt(0, 1.0, 0);
     avatar = createAvatar({ config: cfg });
     avatar.rotation.y = Math.PI - 0.5; // depan avatar (-Z) menghadap kamera pratinjau
+    if (face) applyFacePhoto(avatar, face);
     scene.add(avatar);
     canvas.addEventListener('pointerdown', (e) => { dragging = true; lastX = e.clientX; canvas.setPointerCapture(e.pointerId); });
     canvas.addEventListener('pointermove', (e) => { if (dragging) { avatar.rotation.y += (e.clientX - lastX) * 0.012; lastX = e.clientX; } });
@@ -109,6 +183,11 @@ export function createAvatarEditor({ canvas, tabsEl, optionsEl, initial, onChang
   renderOptions();
   return {
     get config() { return cfg; },
+    /** Canvas wajah (atau null) untuk dipasang pada avatar pemain di dunia. Tidak berlaku untuk model manusia. */
+    get faceCanvas() { return cfg.m > 0 ? null : face; },
+    /** Thumbnail kecil (data URL) untuk dikirim ke pemain lain; null bila tak ada foto. */
+    faceThumbnail(size = 96) { return face && cfg.m === 0 ? thumbnailDataUrl(face, size) : null; },
+    clearFace,
     set(next) { cfg = sanitizeConfig(next); apply(); renderOptions(); },
     randomize() { cfg = randomConfig(); apply(); renderOptions(); },
     start() {

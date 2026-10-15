@@ -54,7 +54,12 @@
                 <div id="editor-tabs" class="editor-tabs" role="tablist"></div>
                 <div id="editor-options" class="editor-options"></div>
                 <div class="editor-actions">
+                  <input id="photo-input" type="file" accept="image/*" hidden />
                   <button type="button" id="editor-random" class="party-btn is-ghost">Acak 🎲</button>
+                  <button type="button" id="photo-button" class="party-btn is-ghost">Foto wajah 📷</button>
+                  <button type="button" id="photo-style" class="party-btn is-ghost" hidden>Gaya: Asli</button>
+                  <button type="button" id="photo-clear" class="party-btn is-ghost" hidden>Hapus foto</button>
+                  <button type="button" id="editor-export" class="party-btn is-ghost">Unduh 3D ⬇</button>
                   <button type="button" id="editor-dance" class="party-btn is-ghost" hidden>Joget 💃</button>
                   <button type="button" id="editor-cancel" class="party-btn is-ghost" hidden>Batal</button>
                   <button id="join-button" class="action-button" type="submit"><span id="join-label">Masuk</span> <span>↗</span></button>
