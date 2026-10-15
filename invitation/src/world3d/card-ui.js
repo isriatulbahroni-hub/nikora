@@ -35,6 +35,7 @@ function createCardCSS(stage, { models, index = 0, still = false, onFlip }) {
   return {
     setIndex(i) { if (i === current) return; current = i; back = false; paint(); apply(); },
     flip, isBack: () => back,
+    setHidden(v) { shadow.classList.toggle('gc-off', !!v); },
     destroy() { shadow.remove(); },
   };
 }
@@ -66,24 +67,30 @@ export async function enhanceGifts({ list, gifts, copy, env = {}, probe = webglA
   };
   const onFlip = (b) => flipBtn.setAttribute('aria-pressed', String(b));
 
-  // ?kartu=css memaksa kartu CSS (berguna untuk menguji perangkat yang bermasalah dengan WebGL)
+  // Kartu CSS SELALU tampil lebih dulu, sehingga tamu tidak pernah melihat area kosong. Kartu 3D menggantikannya
+  // hanya setelah terbukti menggambar pada kanvas yang terlihat (onReady); bila gagal, kartu CSS tetap dipakai.
+  // ?kartu=css memaksa kartu CSS saja (pengujian).
   const forceCss = typeof location !== 'undefined' && /(^|[?&])kartu=css(&|$)/.test(location.search || '');
   const use3D = !forceCss && !env.light && !env.reduced && probe();
-  // GPU yang gagal menggambar tanpa galat: ganti ke kartu CSS di tempat, rekening yang sedang dipilih tetap dipertahankan.
-  const fallback = (why) => {
-    if (mode !== '3d') return;
-    try { api.destroy(); } catch { /* abaikan */ }
-    mode = 'css'; stage.dataset.mode = 'css'; stage.dataset.fail = String(why || '');
-    api = createCardCSS(stage, { models, index: idx, still: !!env.reduced || !!env.light, onFlip });
+  const css = createCardCSS(stage, { models, index: 0, still: !!env.reduced || !!env.light, onFlip });
+  let three = null;
+  api = css; stage.dataset.mode = 'css';
+  const toCss = (why) => {
+    if (three) { const wasBack = three.isBack(); try { three.destroy(); } catch { /* abaikan */ } three = null; if (wasBack !== css.isBack()) css.flip(); }
+    css.setHidden(false); css.setIndex(idx); api = css; mode = 'css'; stage.dataset.mode = 'css'; stage.classList.remove('gc-gl');
+    if (why) stage.dataset.fail = String(why);
+  };
+  const toThree = () => {
+    if (!three) return;
+    if (css.isBack()) css.flip();                                  // sisi depan, sama seperti kartu 3D yang baru tampil
+    three.setIndex(idx); css.setHidden(true); api = three; mode = '3d'; stage.dataset.mode = '3d';
   };
   if (use3D) {
-    try { api = await make3D(stage, { models, index: 0, onFlip, onFail: fallback }); mode = '3d'; }
-    catch (e) { console.warn('Kartu 3D tidak dapat dimuat, memakai kartu CSS:', e); api = null; }
+    try { three = await make3D(stage, { models, index: 0, onFlip, onFail: toCss, onReady: () => toThree() }); }
+    catch (e) { console.warn('Kartu 3D tidak dapat dimuat, kartu CSS tetap dipakai:', e); three = null; }
   }
-  if (!api) api = createCardCSS(stage, { models, index: 0, still: !!env.reduced || !!env.light, onFlip });
-  stage.dataset.mode = mode;
 
-  tabEls.forEach((t, i) => t.addEventListener('click', () => { idx = i; api.setIndex(i); info(); }));
+  tabEls.forEach((t, i) => t.addEventListener('click', () => { idx = i; css.setIndex(i); if (three) three.setIndex(i); info(); }));
   copyBtn.addEventListener('click', (e) => copy(models[idx].raw, e.currentTarget));
   flipBtn.addEventListener('click', () => api.flip());
   info();
@@ -93,5 +100,5 @@ export async function enhanceGifts({ list, gifts, copy, env = {}, probe = webglA
     h('div', { class: 'gc-actions' }, copyBtn, flipBtn),
     h('p', { class: 'gc-hint', text: 'Ketuk kartu untuk membaliknya, geser untuk memiringkannya.' }));
   list.before(ui); list.hidden = true;
-  return { mode, destroy() { api.destroy(); ui.remove(); list.hidden = false; } };
+  return { get mode() { return mode; }, destroy() { try { if (three) three.destroy(); } catch { /* abaikan */ } css.destroy(); ui.remove(); list.hidden = false; } };
 }
