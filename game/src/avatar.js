@@ -2,7 +2,17 @@ import * as THREE from 'three';
 import { CHARACTERS, HAIR_COLORS, OUTFITS, SKINS, sanitizeConfig } from './avatar-config.js';
 import { HumanRig, loadHumanModel } from './avatar-human.js';
 import { auraFor } from './avatar-aura.js';
-import { buildBody, PANTS_SHADE } from './avatar-body.js';
+import { GAIT, gaitPose, labelMetrics, stepGait } from './villa-motion.js';
+
+// Proporsi avatar sederhana (meter): tinggi total ±1,72 m, kepala ±1/7,5 tinggi badan, kaki ±47% tinggi.
+const HIP_Y = 0.82;
+const THIGH = 0.4;
+const SHANK = 0.38;
+const HEAD_Y = 1.55;
+const HEAD_R = 0.155;
+const LABEL_Y = 1.95;
+const GEAR_SCALE = HEAD_R / 0.3; // aksesori/rambut dirancang untuk kepala r=0,3 di y=1,37
+const GEAR_Y = HEAD_Y - 1.37 * GEAR_SCALE;
 
 export function makeLabel(text) {
   if (typeof document === 'undefined') return null;
@@ -11,19 +21,41 @@ export function makeLabel(text) {
   canvas.height = 64;
   const ctx = canvas.getContext('2d');
   if (!ctx) return null;
-  ctx.font = 'bold 30px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillRect(0, 8, 256, 48);
+  ctx.font = '600 26px sans-serif';
+  const w = Math.min(244, Math.ceil(ctx.measureText(text).width) + 30);
+  const x = (256 - w) / 2;
+  ctx.fillStyle = 'rgba(16,22,20,0.5)';
+  if (ctx.roundRect) {
+    ctx.beginPath();
+    ctx.roundRect(x, 16, w, 32, 16);
+    ctx.fill();
+  } else {
+    ctx.fillRect(x, 16, w, 32); // browser lama tanpa roundRect
+  }
   ctx.fillStyle = '#fff';
-  ctx.fillText(text, 128, 42);
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true }));
-  sprite.scale.set(1.0, 0.25, 1);
-  sprite.position.y = 2.0;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 128, 33, w - 30);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthWrite: false }));
+  sprite.scale.set(0.8, 0.2, 1);
+  sprite.position.y = LABEL_Y;
+  sprite.renderOrder = 5;
   return sprite;
 }
 
-/** Avatar sederhana berbentuk manusia lengkap (kepala+wajah, badan, tangan, kaki; lihat avatar-body.js), menghadap -z, nama opsional. */
+const labelPos = new THREE.Vector3();
+/** Ukuran label dijaga tetap di layar (tidak membesar saat kamera dekat); memudar bila terlalu dekat atau jauh. Panggil tiap frame. */
+export function updateLabel(group, camera) {
+  const label = group.userData?.label;
+  if (!label) return;
+  label.getWorldPosition(labelPos);
+  const { height, opacity } = labelMetrics(labelPos.distanceTo(camera.position), camera.fov);
+  label.scale.set(height * 4, height, 1);
+  label.material.opacity = opacity;
+  label.visible = opacity > 0.02;
+}
+
+/** Avatar sederhana: badan, kepala, wajah, kaki berlutut, lengan, dan nama opsional. Depan = -z. */
 export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, config = null } = {}) {
   const cfg = config ? sanitizeConfig(config) : null;
   if (cfg) {
@@ -31,12 +63,61 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
     skin = SKINS[cfg.s].hex;
   }
   const group = new THREE.Group();
-  const rig = buildBody({ color, skin });
-  group.add(rig.root);
-  Object.assign(group.userData, {
-    arms: rig.arms, legs: rig.legs, elbows: rig.elbows, tint: rig.tint, skin: rig.skin, pants: rig.pants, body: rig.torso, face: rig.face,
-  });
-  // Semua bagian tubuh masuk ke satu pivot supaya bisa berputar (gestur 'spin') tanpa mengganggu arah hadap grup.
+  const bodyMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
+  const skinMaterial = new THREE.MeshStandardMaterial({ color: skin, roughness: 0.6 });
+  const pantsMaterial = new THREE.MeshStandardMaterial({ color: 0x2f3a4d, roughness: 0.7 });
+  const shoeMaterial = new THREE.MeshStandardMaterial({ color: 0x1b1a1f, roughness: 0.6 });
+  const eyeMaterial = new THREE.MeshStandardMaterial({ color: 0x26332d, roughness: 0.74 });
+  const mesh = (geometry, material, x, y, z) => {
+    const m = new THREE.Mesh(geometry, material);
+    m.position.set(x, y, z);
+    m.castShadow = true;
+    return m;
+  };
+
+  const body = mesh(new THREE.CapsuleGeometry(0.15, 0.24, 5, 12), bodyMaterial, 0, 1.08, 0);
+  body.scale.set(1.3, 1, 0.85); // bahu lebih lebar dari dada
+  const neck = mesh(new THREE.CylinderGeometry(0.055, 0.06, 0.1, 10), skinMaterial, 0, 1.4, 0);
+  const head = mesh(new THREE.SphereGeometry(HEAD_R, 18, 14), skinMaterial, 0, HEAD_Y, 0);
+  const markerMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
+  const marker = mesh(new THREE.SphereGeometry(0.03, 8, 6), markerMaterial, 0, 1.2, -0.125);
+  group.add(body, neck, head, marker);
+  const face = new THREE.Group(); // mata dikelompokkan agar bisa disembunyikan saat stiker menampilkan ekspresi
+  for (const sx of [-0.058, 0.058]) face.add(mesh(new THREE.SphereGeometry(0.017, 8, 6), eyeMaterial, sx, HEAD_Y + 0.015, -(HEAD_R - 0.013)));
+  group.add(face);
+  group.userData.face = face;
+  group.userData.faceAnchor = { y: HEAD_Y, z: -(HEAD_R + 0.02), size: HEAD_R * 1.5 }; // tempat overlay ekspresi (emoji-sticker-fx.js)
+
+  // Lengan: pivot di bahu, menggantung ke bawah (-y); rotation.x = +90° mengarahkannya ke depan (-z).
+  const armMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
+  const arms = {};
+  for (const [side, sx] of [['l', -0.24], ['r', 0.24]]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(sx, 1.28, 0);
+    pivot.add(mesh(new THREE.CapsuleGeometry(0.05, 0.34, 4, 8), armMaterial, 0, -0.24, 0), mesh(new THREE.SphereGeometry(0.055, 10, 8), skinMaterial, 0, -0.5, 0));
+    group.add(pivot);
+    arms[side] = pivot;
+  }
+
+  // Kaki: pinggul (paha) dan lutut (betis + sepatu), rotation.x positif = ayun ke depan (-z).
+  const legs = {};
+  for (const [side, sx] of [['l', -0.095], ['r', 0.095]]) {
+    const hip = new THREE.Group();
+    hip.position.set(sx, HIP_Y, 0);
+    const knee = new THREE.Group();
+    knee.position.y = -THIGH;
+    knee.add(mesh(new THREE.CapsuleGeometry(0.065, 0.26, 4, 8), pantsMaterial, 0, -0.19, 0), mesh(new THREE.BoxGeometry(0.12, 0.08, 0.26), shoeMaterial, 0, -(SHANK), -0.05));
+    hip.add(mesh(new THREE.CapsuleGeometry(0.075, 0.26, 4, 8), pantsMaterial, 0, -0.2, 0), knee);
+    group.add(hip);
+    legs[side] = { hip, knee };
+  }
+
+  group.userData.arms = arms;
+  group.userData.legs = legs;
+  group.userData.tint = [bodyMaterial, markerMaterial, armMaterial];
+  group.userData.skin = skinMaterial;
+  group.userData.body = body;
+  // Semua bagian tubuh masuk ke satu pivot supaya bisa berputar (gestur 'spin') dan turun-naik saat berjalan.
   const spinPivot = new THREE.Group();
   for (const child of [...group.children]) spinPivot.add(child);
   group.add(spinPivot);
@@ -53,10 +134,9 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
   return group;
 }
 
-/** Ganti warna pakaian avatar (baju dan celana) tanpa membuat ulang model. */
+/** Ganti warna badan avatar (badan, penanda, lengan) tanpa membuat ulang model. */
 export function setAvatarColor(group, color) {
   for (const m of group.userData?.tint ?? []) m.color.set(color);
-  group.userData?.pants?.color.set(color).multiplyScalar(PANTS_SHADE);
 }
 
 /** Warna konsisten per id pemain: semua perangkat menghitung warna yang sama dari id yang sama. */
@@ -114,11 +194,15 @@ const lerp = (a, b, k) => a + (b - a) * k;
 
 /**
  * Pose berdasarkan aksi. act: null | 'handshake' | 'wave' | 'highfive' | 'bow' | 'clap' | 'walk'.
- * t: waktu (detik). Dipanggil tiap frame; halus karena memakai peluruhan eksponensial menuju target.
+ * t: waktu (detik). speed: laju nyata avatar (m/s); menentukan ayunan kaki/lengan. Tanpa speed, 'walk' = laju penuh.
+ * group.userData.seated = true membuat avatar duduk seperti manusia: punggung tegak, paha mendatar, betis tegak,
+ * lutut sedikit terbuka, tangan bertumpu di paha. Pemanggil mengaturnya tiap frame sebelum applyPose.
+ * Dipanggil tiap frame; halus karena peluruhan eksponensial.
  */
-export function applyPose(group, act, t, delta = 1 / 60) {
+export function applyPose(group, act, t, delta = 1 / 60, speed) {
   // gestur dari stiker emoji (emoji-sticker-fx.js): berjalan tetap menang, dan tidak dipaksakan saat duduk
-  if (act !== 'walk' && group.userData?.forcedAct && !(group.position.y < -0.1)) act = group.userData.forcedAct;
+  const forced = group.userData?.forcedAct;
+  if (forced && act !== 'walk' && !((speed ?? 0) > 0.6) && group.userData.seated !== true && !(group.position.y < -0.1)) act = forced;
   const spinPivot = group.userData?.pivot;
   if (spinPivot) spinPivot.rotation.y = act === 'spin' ? (t * Math.PI * 2 * 1.25) % (Math.PI * 2) : 0; // putar satu kali tiap ~0,8 detik
   animateAura(group, t);
@@ -130,16 +214,13 @@ export function applyPose(group, act, t, delta = 1 / 60) {
   const arms = group.userData?.arms;
   if (!arms) return;
   const k = 1 - Math.exp(-14 * Math.max(0, delta));
-  const legs = group.userData?.legs;
-  if (legs) {
-    const seated = group.position.y < -0.1; // y turun = duduk di kursi
-    const sw = act === 'walk' ? Math.sin(t * 9) * 0.65 : act === 'dance' ? Math.sin(t * 8) * 0.3 : 0;
-    for (const [side, dir] of [['l', 1], ['r', -1]]) {
-      const hip = seated ? 1.5 : sw * dir;
-      legs[side].hip.rotation.x = lerp(legs[side].hip.rotation.x, hip, k);
-      legs[side].knee.rotation.x = lerp(legs[side].knee.rotation.x, seated ? -1.5 : -Math.max(0, -hip) * 1.1, k);
-    }
-  }
+  const seated = group.userData.seated === true;
+  const gait = (group.userData.gait ??= { phase: 0, amp: 0 });
+  const next = stepGait(gait, seated ? 0 : speed ?? (act === 'walk' ? GAIT.maxSpeed : 0), delta);
+  gait.phase = next.phase;
+  gait.amp = next.amp;
+  const gp = gaitPose(gait.phase, gait.amp);
+
   let r = { x: 0, z: -0.08 };
   let l = { x: 0, z: 0.08 };
   let lean = 0;
@@ -164,15 +245,38 @@ export function applyPose(group, act, t, delta = 1 / 60) {
     r = { x: 2.6 + s * 0.3, z: -0.4 + s * 0.3 };
     l = { x: 2.6 - s * 0.3, z: 0.4 - s * 0.3 };
     lean = s * 0.12;
-  } else if (act === 'walk') {
-    const sw = Math.sin(t * 9) * 0.7;
-    r = { x: -sw, z: -0.08 };
-    l = { x: sw, z: 0.08 };
+  } else if (seated) {
+    // duduk santai: lengan atas turun, tangan bertumpu di paha, badan sedikit condong ke depan
+    r = { x: 0.8, z: -0.1 };
+    l = { x: 0.8, z: 0.1 };
+    lean = -0.04;
+  } else {
+    // jalan / diam: lengan mengayun berlawanan dengan kaki sisi yang sama, mengecil halus saat berhenti
+    r = { x: gp.armR, z: -0.08 };
+    l = { x: gp.armL, z: 0.08 };
+    lean = gp.lean;
   }
   arms.r.rotation.x = lerp(arms.r.rotation.x, r.x, k);
   arms.r.rotation.z = lerp(arms.r.rotation.z, r.z, k);
   arms.l.rotation.x = lerp(arms.l.rotation.x, l.x, k);
   arms.l.rotation.z = lerp(arms.l.rotation.z, l.z, k);
+
+  const legs = group.userData.legs;
+  if (legs) {
+    const hipR = seated ? 1.5 : gp.hipR; // duduk: paha hampir mendatar
+    const hipL = seated ? 1.5 : gp.hipL;
+    const kneeR = seated ? -1.5 : gp.kneeR; // betis menggantung tegak
+    const kneeL = seated ? -1.5 : gp.kneeL;
+    const spread = seated ? 0.08 : 0; // lutut sedikit terbuka (rotasi z: + = ke luar untuk kaki kanan)
+    const lk = seated || gait.amp < 0.02 ? k : 1; // sambil berjalan langsung mengikuti siklus; duduk/berdiri dihaluskan
+    legs.r.hip.rotation.x = lerp(legs.r.hip.rotation.x, hipR, lk);
+    legs.l.hip.rotation.x = lerp(legs.l.hip.rotation.x, hipL, lk);
+    legs.r.hip.rotation.z = lerp(legs.r.hip.rotation.z, spread, k);
+    legs.l.hip.rotation.z = lerp(legs.l.hip.rotation.z, -spread, k);
+    legs.r.knee.rotation.x = lerp(legs.r.knee.rotation.x, kneeR, lk);
+    legs.l.knee.rotation.x = lerp(legs.l.knee.rotation.x, kneeL, lk);
+  }
+  if (spinPivot) spinPivot.position.y = lerp(spinPivot.position.y, seated ? 0 : gp.dip, k);
   group.userData.leanTarget = lean;
   group.userData.leanNow = lerp(group.userData.leanNow ?? 0, lean, k);
   group.rotation.x = group.userData.leanNow;
@@ -196,6 +300,8 @@ export function setStageRing(group, on) {
 
 function buildGear(cfg) {
   const gear = new THREE.Group();
+  gear.scale.setScalar(GEAR_SCALE); // aksesori dirancang untuk kepala besar; skala ke kepala berproporsi manusia
+  gear.position.y = GEAR_Y;
   const hairColor = HAIR_COLORS[cfg.k].hex;
   const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...extra });
   const add = (geometry, material, x, y, z, rx = 0) => {
