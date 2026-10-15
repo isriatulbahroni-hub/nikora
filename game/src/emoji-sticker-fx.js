@@ -220,7 +220,7 @@ function makeFaceOverlay(group, kind) {
   mesh.position.set(0, 1.38, -0.325); // di depan kotak wajah bawaan (depan di -z)
   mesh.rotation.y = Math.PI;
   pivot.add(mesh);
-  const original = group.userData.parts?.[2]; // kotak wajah bawaan disembunyikan selama ekspresi
+  const original = group.userData.face ?? group.userData.parts?.[2]; // wajah bawaan (mata, hidung, mulut) disembunyikan selama ekspresi
   if (original) original.visible = false;
   return {
     mesh,
