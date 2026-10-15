@@ -52,6 +52,8 @@
       .panel input[type=text], .panel input[type=email], .panel input[type=password] { width: 100%; height: 38px; margin: 4px 0; padding: 0 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); }
       .panel .proj { border-top: 1px solid rgba(255,255,255,.12); padding: 8px 0; }
       .panel .proj .st { font-size: 12px; opacity: .85; }
+      .panel textarea { width: 100%; margin: 4px 0; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); resize: vertical; user-select: text; -webkit-user-select: text; }
+      .panel .st { font-size: 12px; margin: 4px 0; }
       .panel .mini { height: 30px; min-width: 0; padding: 0 9px; font-size: 12px; }
       .panel .tabs { display: flex; gap: 6px; margin-bottom: 6px; }
       .panel small.msg { display: block; min-height: 1.2em; color: #f0c15a; }
@@ -74,6 +76,7 @@
       <select class="sel edit-only" id="sky" aria-label="Langit"><option value="siang">Siang</option><option value="senja">Senja</option><option value="malam">Malam</option></select>
       <button class="btn edit-only" id="save">Simpan</button>
       <button class="btn edit-only" id="open">Buka</button>
+      <button class="btn edit-only" id="aiBtn" title="Buat draf dunia dengan AI">✨ AI</button>
       <button class="btn" id="cloudBtn">Akun</button>
       <input type="file" id="file" accept="application/json,.json" hidden />
     </div>
@@ -86,6 +89,7 @@
 
     <div class="panel" id="issues" role="region" aria-label="Masalah"></div>
     <div class="panel big" id="cloud" role="region" aria-label="Akun dan versi"></div>
+    <div class="panel big" id="ai" role="region" aria-label="Draf dunia dengan AI"></div>
     <div class="reviewbar" id="reviewbar" role="region" aria-label="Mode tinjau"></div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
