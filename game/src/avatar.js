@@ -117,6 +117,8 @@ const lerp = (a, b, k) => a + (b - a) * k;
  * t: waktu (detik). Dipanggil tiap frame; halus karena memakai peluruhan eksponensial menuju target.
  */
 export function applyPose(group, act, t, delta = 1 / 60) {
+  // gestur dari stiker emoji (emoji-sticker-fx.js): berjalan tetap menang, dan tidak dipaksakan saat duduk
+  if (act !== 'walk' && group.userData?.forcedAct && !(group.position.y < -0.1)) act = group.userData.forcedAct;
   const spinPivot = group.userData?.pivot;
   if (spinPivot) spinPivot.rotation.y = act === 'spin' ? (t * Math.PI * 2 * 1.25) % (Math.PI * 2) : 0; // putar satu kali tiap ~0,8 detik
   animateAura(group, t);
