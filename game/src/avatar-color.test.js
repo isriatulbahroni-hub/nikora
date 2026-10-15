@@ -10,12 +10,15 @@ test('colorForId: deterministik per id dan bervariasi antar id', () => {
   assert.ok(colors.size >= 5);
 });
 
-// Avatar sederhana kini tubuh manusia lengkap (avatar-body.js): baju satu bahan, celana lebih gelap.
-test('setAvatarColor mewarnai baju dan celana (celana lebih gelap)', () => {
+// Berlaku untuk kedua bentuk avatar sederhana: semua bahan di `tint` ikut berubah warna; bila avatar punya celana
+// berwarna mengikuti baju (`userData.pants`, dari avatar-body.js), celana ikut berubah dan lebih gelap.
+test('setAvatarColor mewarnai bahan pakaian (dan celana bila ada)', () => {
   const g = createAvatar({ color: 0x70c7a2 });
   setAvatarColor(g, 0xff0000);
   assert.ok(g.userData.tint.length >= 1);
   for (const m of g.userData.tint) assert.equal(m.color.getHex(), 0xff0000);
-  const pants = new THREE.Color(0xff0000).multiplyScalar(PANTS_SHADE).getHex();
-  assert.equal(g.userData.pants.color.getHex(), pants);
+  if (g.userData.pants) {
+    const pants = new THREE.Color(0xff0000).multiplyScalar(PANTS_SHADE).getHex();
+    assert.equal(g.userData.pants.color.getHex(), pants);
+  }
 });
