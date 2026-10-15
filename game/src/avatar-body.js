@@ -63,22 +63,24 @@ export function buildBody({ color, skin }) {
   root.add(torso, pelvis, neck, head);
 
   // Wajah: posisi dihitung agar menonjol sedikit dari cangkang rambut (r=0.325 di buildGear).
+  const face = new THREE.Group(); // mata, alis, hidung, mulut (disembunyikan saat foto wajah dipakai)
+  root.add(face);
   const white = mat(0xffffff, { roughness: 0.3 });
   const iris = mat(0x1b1620, { roughness: 0.3 });
   const brow = mat(0x2a1f1a);
   for (const s of [-1, 1]) {
     const x = s * 0.105;
-    root.add(
+    face.add(
       mesh(new THREE.SphereGeometry(0.05, 14, 12), white, x, 1.36, -0.285, 1, 1.15, 0.45),
       mesh(new THREE.SphereGeometry(0.028, 12, 10), iris, x, 1.36, -0.304, 1, 1, 0.5),
       mesh(new THREE.SphereGeometry(0.008, 8, 6), white, x + 0.01, 1.372, -0.318),
     );
     const b = mesh(new THREE.BoxGeometry(0.085, 0.014, 0.02), brow, x, 1.435, -0.292);
     b.rotation.z = -s * 0.12;
-    root.add(b);
+    face.add(b);
     root.add(mesh(new THREE.SphereGeometry(0.055, 10, 8), skinMat, s * 0.295, 1.3, 0, 0.5, 1, 0.8)); // telinga
   }
-  root.add(
+  face.add(
     mesh(new THREE.SphereGeometry(0.034, 10, 8), skinMat, 0, 1.305, -0.298, 1, 1, 0.9), // hidung
     mesh(new THREE.BoxGeometry(0.09, 0.016, 0.02), mat(0x8a3b3b), 0, 1.225, -0.268), // mulut
   );
@@ -96,5 +98,5 @@ export function buildBody({ color, skin }) {
     legs[side] = buildLeg(side, pants, skinMat, shoe);
     root.add(legs[side].hip);
   }
-  return { root, torso, arms, elbows, legs, tint: [outfit], skin: skinMat, pants };
+  return { root, face, torso, arms, elbows, legs, tint: [outfit], skin: skinMat, pants };
 }
