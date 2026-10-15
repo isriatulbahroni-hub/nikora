@@ -43,3 +43,21 @@ test('fit: mengecil hanya bila perlu dan tidak kurang dari batas bawah', () => {
   assert.ok(Math.abs(fit(at(10), 100, 500) - 50) < 1e-9);
   assert.equal(fit(at(1000), 100, 100, 40), 40);
 });
+
+import { rectOnScreen, renderStalled } from '../src/world3d/card-guard.js';
+test('rectOnScreen: terlihat sebagian = true; di luar layar atau berukuran nol = false', () => {
+  const R = (l, t, w, h) => ({ left: l, top: t, width: w, height: h, right: l + w, bottom: t + h });
+  assert.equal(rectOnScreen(R(20, 300, 330, 240), 390, 780), true);
+  assert.equal(rectOnScreen(R(20, 700, 330, 240), 390, 780), true);          // sebagian masih terlihat
+  assert.equal(rectOnScreen(R(20, 800, 330, 240), 390, 780), false);
+  assert.equal(rectOnScreen(R(20, -300, 330, 240), 390, 780), false);
+  assert.equal(rectOnScreen(R(500, 300, 330, 240), 390, 780), false);
+  assert.equal(rectOnScreen(R(20, 300, 0, 0), 390, 780), false); assert.equal(rectOnScreen(null, 390, 780), false);
+});
+test('renderStalled: macet hanya bila lewat batas waktu, bingkai < 3, dan tab tidak tersembunyi', () => {
+  assert.equal(renderStalled({ frames: 0, hidden: false, ms: 3200 }), true);
+  assert.equal(renderStalled({ frames: 2, hidden: false, ms: 5000 }), true);
+  assert.equal(renderStalled({ frames: 3, hidden: false, ms: 5000 }), false);
+  assert.equal(renderStalled({ frames: 0, hidden: true, ms: 5000 }), false);
+  assert.equal(renderStalled({ frames: 0, hidden: false, ms: 1000 }), false);
+});

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { paintCard, CARD } from './card-art.js';
+import { rectOnScreen, renderStalled } from './card-guard.js';
 
 const U = 0.1;                                              // 1 mm = 0.1 satuan dunia
 const CW = CARD.W * U, CH = CARD.H * U, CR = CARD.R * U, CT = 0.09;
@@ -101,7 +102,7 @@ export function createCard3D(container, { models, index = 0, onFlip, onFail }) {
 
   /* ---- keadaan animasi ---- */
   const tilt = { x: 0, y: 0, tx: 0, ty: 0 }, flipS = { a: 0, t: 0 }, spin = { on: false, p: 0, swapped: false, to: 0 };
-  let clock = 0, last = 0, raf = 0, onScreen = true, down = null;
+  let clock = 0, last = 0, raf = 0, onScreen = true, down = null, checkAt = 0;
   const sound = { back: false };
 
   function setTilt(e) {
@@ -144,6 +145,7 @@ export function createCard3D(container, { models, index = 0, onFlip, onFail }) {
   function frame(now) {
     if (destroyed) return;
     raf = requestAnimationFrame(frame);
+    if (now - checkAt > 250) { checkAt = now; onScreen = rectOnScreen(canvas.getBoundingClientRect(), window.innerWidth, window.innerHeight); }
     if (!onScreen || document.hidden) { last = now; return; }
     const dt = Math.min(.05, (now - last) / 1000 || .016); last = now;
     try {
@@ -151,17 +153,31 @@ export function createCard3D(container, { models, index = 0, onFlip, onFail }) {
       if (!seenCard && !failed && ++frames % 3 === 0) probePixels();
     } catch (e) { fail(e && e.message ? e.message : 'render'); }
   }
-  const io = typeof IntersectionObserver !== 'undefined' ? new IntersectionObserver((es) => { onScreen = es[es.length - 1].isIntersecting; }, { threshold: 0 }) : null;
-  if (io) io.observe(canvas);
   last = performance.now(); raf = requestAnimationFrame(frame);
+
+  /* Penjaga: kanvas yang seharusnya tampil tetapi tidak pernah menggambar bingkai -> kartu CSS. */
+  const t0 = performance.now();
+  const watchdog = setTimeout(() => { if (renderStalled({ frames, hidden: document.hidden, ms: performance.now() - t0 })) fail('tidak-menggambar'); }, 3200);
+
+  /* Diagnosis: tambahkan ?kartu=debug di alamat untuk melihat keadaan kartu langsung di layar. */
+  let dbgTimer = 0;
+  if (typeof location !== 'undefined' && /(^|[?&])kartu=debug(&|$)/.test(location.search || '')) {
+    const pre = document.createElement('pre'); pre.className = 'gc-debug'; container.append(pre);
+    const gl = renderer.getContext(), ext = gl && gl.getExtension && gl.getExtension('WEBGL_debug_renderer_info');
+    const gpu = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'n/a';
+    dbgTimer = setInterval(() => {
+      const r = canvas.getBoundingClientRect();
+      pre.textContent = `3D frames:${frames} seen:${seenCard} blank:${blankProbes} fail:${failed}\nonScreen:${onScreen} hidden:${document.hidden}\ncanvas:${canvas.width}x${canvas.height} css:${Math.round(r.width)}x${Math.round(r.height)} @${Math.round(r.top)}\ndpr:${window.devicePixelRatio} gpu:${String(gpu).slice(0, 42)}`;
+    }, 400);
+  }
 
   return {
     setIndex, flip, isBack: () => sound.back,
     destroy() {
-      destroyed = true; cancelAnimationFrame(raf); container.classList.remove('gc-gl');
+      destroyed = true; cancelAnimationFrame(raf); clearTimeout(watchdog); clearInterval(dbgTimer); container.classList.remove('gc-gl');
       canvas.removeEventListener('pointermove', onMove); canvas.removeEventListener('pointerdown', onDown); canvas.removeEventListener('pointerup', onUp);
       canvas.removeEventListener('pointercancel', onLeave); canvas.removeEventListener('pointerleave', onLeave);
-      if (ro) ro.disconnect(); if (io) io.disconnect();
+      if (ro) ro.disconnect();
       owned.forEach((t) => t.dispose()); [bodyGeo, faceF, faceB].forEach((g) => g.dispose()); [body.material, matF, matB].forEach((m) => m.dispose());
       envTex.dispose(); pm.dispose(); renderer.dispose(); renderer.forceContextLoss(); canvas.remove();
     },
