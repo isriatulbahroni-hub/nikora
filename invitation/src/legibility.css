@@ -1,0 +1,23 @@
+/* Perbaikan keterbacaan dan tata letak (fase 2). Dimuat setelah scenes.css; selektor sengaja lebih spesifik agar menang tanpa bergantung urutan. */
+
+/* 1. Huruf hanya beranimasi masuk satu kali. Animasi melayang tanpa henti (ch-bob) membuat teks tampak bergelombang. */
+:is(.pg-stage, .env-stage, .end-card) .t3d .ch {
+  animation: ch-in .9s cubic-bezier(.2, .8, .2, 1) both;
+  animation-delay: calc(var(--c, 0) * 30ms + 140ms);
+}
+
+/* 2. Teks di kartu kertas (surat, kisah, detail): tanpa ekstrusi dan tanpa kemiringan ganda.
+      Kartunya sendiri sudah miring; menumpuk bayangan 7 lapis pada huruf kecil membuatnya kabur dan terlihat dobel. */
+.pg-stage :is(.sheet, .ks-inner, .dt-card) .t3d { text-shadow: none; transform: none; }
+.pg-stage :is(.sheet-inner, .ks-inner, .dt-card) > * { transform: none; }
+
+/* 3. Tokoh kecil yang berjalan memakai jalur sendiri di atas tombol, sehingga tidak lagi menimpa kartu dan tombol. */
+.pg-stage[data-walkers="1"] .pg-scroll { padding-bottom: 100px; }
+@media (max-height: 700px) {
+  .pg-stage[data-walkers="1"] .pg-scroll { padding-bottom: 28px; }
+  .pg-stage .walkers { display: none; }
+}
+
+/* 4. Kartu hadiah: "Lanjut" jadi tindakan utama (lebar penuh, di tengah); Salin nomor dan Balik kartu tetap sekunder. */
+.guest-hadiah .g-actions { justify-content: center; }
+.guest-hadiah .g-actions .cta { width: 100%; max-width: 360px; }

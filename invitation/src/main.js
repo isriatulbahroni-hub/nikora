@@ -1,5 +1,6 @@
 import './style.css';
 import './scenes.css';
+import './legibility.css';
 import { h } from './engine/dom.js';
 import { createEngine, registerScene } from './engine/scene-engine.js';
 import { buildView } from './engine/config.js';
