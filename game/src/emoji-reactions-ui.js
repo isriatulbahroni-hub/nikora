@@ -1,11 +1,11 @@
 import * as THREE from 'three';
 import { EMOJIS, decodeReaction, encodeReaction } from './emoji-reactions.js';
-import { COMBO_MAX_DISTANCE, COMBO_WINDOW_MS, comboFor } from './emoji-sticker-system.js';
-import { playCombo, playSticker, unlockAudio } from './emoji-sticker-fx.js';
+import { CATEGORIES, COMBO_MAX_DISTANCE, COMBO_WINDOW_MS, INTENSITY, STICKERS, comboFor, nextIntensity } from './emoji-sticker-system.js';
+import { getIntensity, getIntensityName, playCombo, playSticker, setIntensityName, unlockAudio } from './emoji-sticker-fx.js';
 
-const LIFETIME_MS = 2400;
+const LIFETIME_MS = 1800;
 const MAX_PER_AVATAR = 3; // reaksi beruntun dibatasi supaya kepala avatar tidak penuh
-const BASE_Y = 2.35; // di atas label nama (2,0) dan di bawah gelembung obrolan (2,95)
+const BASE_Y = 2.45; // di atas label nama (2,0 sampai 2,13) dan di bawah gelembung obrolan (2,95)
 
 function makeEmojiSprite(emoji) {
   if (typeof document === 'undefined') return null;
@@ -47,7 +47,7 @@ export function showEmojiAbove(group, index) {
   const dx = (Math.random() - 0.5) * 0.5; // sebar sedikit ke samping agar reaksi beruntun tidak bertumpuk
   const start = performance.now();
   sprite.position.set(dx, BASE_Y, 0);
-  sprite.scale.set(0.45, 0.45, 1);
+  sprite.scale.set(0.25, 0.25, 1);
   group.add(sprite);
   list.push(sprite);
   const step = (now) => {
@@ -58,9 +58,9 @@ export function showEmojiAbove(group, index) {
       return;
     }
     const pop = Math.min(1, k / 0.15);
-    const size = 0.9 * (0.5 + 0.5 * (1 - (1 - pop) ** 3)); // membesar cepat di awal
+    const size = getIntensity().emoji * (0.5 + 0.5 * (1 - (1 - pop) ** 3)); // kecil dan sebentar: aksen, bukan fokus
     sprite.scale.set(size, size, 1);
-    sprite.position.set(dx + Math.sin(k * 9) * 0.06, BASE_Y + k * 0.9, 0);
+    sprite.position.set(dx + Math.sin(k * 9) * 0.06, BASE_Y + k * 0.6, 0);
     sprite.material.opacity = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
     requestAnimationFrame(step);
   };
@@ -68,7 +68,7 @@ export function showEmojiAbove(group, index) {
   return true;
 }
 
-/** Tombol 😊 di baris tombol atas dan panel pilihan emoji. Mengembalikan null bila sudah terpasang atau kerangka halaman tidak ada. */
+/** Tombol 😊 di baris tombol atas dan panel stiker berkategori dengan label. Mengembalikan null bila sudah terpasang atau kerangka halaman tidak ada. */
 export function mountEmojiPanel({ onPick, doc = document, host = doc.querySelector('.rbs') }) {
   if (!host || doc.getElementById('emoji-button')) return null;
   const button = doc.createElement('button');
@@ -89,26 +89,51 @@ export function mountEmojiPanel({ onPick, doc = document, host = doc.querySelect
   head.className = 'panel-head';
   const title = doc.createElement('strong');
   title.textContent = 'Reaksi';
+  const fx = doc.createElement('button');
+  fx.type = 'button';
+  fx.className = 'emoji-fx';
+  const showFx = () => {
+    fx.textContent = `Efek: ${INTENSITY[getIntensityName()].label}`;
+  };
+  showFx();
+  fx.addEventListener('click', () => {
+    setIntensityName(nextIntensity(getIntensityName()));
+    showFx();
+  });
   const close = doc.createElement('button');
   close.type = 'button';
   close.textContent = '✕';
   close.setAttribute('aria-label', 'Tutup');
-  head.append(title, close);
-  const grid = doc.createElement('div');
-  grid.className = 'emoji-grid';
-  EMOJIS.forEach((emoji, i) => {
-    const cell = doc.createElement('button');
-    cell.type = 'button';
-    cell.className = 'emoji-cell';
-    cell.textContent = emoji;
-    cell.setAttribute('aria-label', `Kirim ${emoji}`);
-    cell.addEventListener('click', () => {
-      onPick(i);
-      setOpen(false);
-    });
-    grid.append(cell);
-  });
-  panel.append(head, grid);
+  head.append(title, fx, close);
+  panel.append(head);
+  for (const cat of CATEGORIES) {
+    const items = STICKERS.map((sticker, i) => ({ sticker, i })).filter(({ sticker }) => sticker.cat === cat);
+    if (!items.length) continue;
+    const heading = doc.createElement('div');
+    heading.className = 'emoji-cat';
+    heading.textContent = cat;
+    const grid = doc.createElement('div');
+    grid.className = 'emoji-grid';
+    for (const { sticker, i } of items) {
+      const cell = doc.createElement('button');
+      cell.type = 'button';
+      cell.className = 'emoji-cell';
+      cell.setAttribute('aria-label', sticker.label);
+      const glyph = doc.createElement('span');
+      glyph.className = 'emoji-glyph';
+      glyph.textContent = sticker.glyph;
+      const name = doc.createElement('span');
+      name.className = 'emoji-name';
+      name.textContent = sticker.label;
+      cell.append(glyph, name);
+      cell.addEventListener('click', () => {
+        onPick(i);
+        setOpen(false); // tutup otomatis supaya layar HP tetap lega
+      });
+      grid.append(cell);
+    }
+    panel.append(heading, grid);
+  }
   doc.body.append(panel);
 
   function setOpen(on) {
