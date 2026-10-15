@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 // Studio Dunia untuk kreator (editor.html), dan dasbor admin (dashboard.html).
 const page = (name) => fileURLToPath(new URL(name, import.meta.url));
 
-export default defineConfig({
+const config = defineConfig({
   build: {
     rollupOptions: {
       input: {
@@ -15,3 +15,6 @@ export default defineConfig({
     },
   },
 });
+// The Royal Wedding · Istana Cinta (royal.html): ditambahkan terpisah agar tidak bentrok dengan daftar halaman di atas.
+config.build.rollupOptions.input.royal = page('royal.html');
+export default config;
