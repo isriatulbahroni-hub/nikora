@@ -1,10 +1,37 @@
 import * as THREE from 'three';
-import { PARTICLE_GLYPHS, STICKERS, motionAt } from './emoji-sticker-system.js';
+import { INTENSITY, PARTICLE_GLYPHS, STICKERS, isIntensity, motionAt } from './emoji-sticker-system.js';
 
 const DURATION_MS = 2400;
 const rnd = (a, b) => a + Math.random() * (b - a);
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
 const raf = (fn) => requestAnimationFrame(fn);
+
+// ---------- intensitas efek (pengaturan pemain, disimpan di perangkat) ----------
+const FX_KEY = 'nikora-fx';
+let intensityName = null;
+export function getIntensityName() {
+  if (!intensityName) {
+    let saved = null;
+    try {
+      saved = window.localStorage.getItem(FX_KEY);
+    } catch {
+      /* penyimpanan tidak tersedia */
+    }
+    intensityName = isIntensity(saved) ? saved : 'normal';
+  }
+  return intensityName;
+}
+export const getIntensity = () => INTENSITY[getIntensityName()];
+export function setIntensityName(name) {
+  if (!isIntensity(name)) return;
+  intensityName = name;
+  try {
+    window.localStorage.setItem(FX_KEY, name);
+  } catch {
+    /* abaikan */
+  }
+}
+let activeFx = 0; // jumlah efek stiker yang sedang berjalan (membatasi kekacauan visual saat ramai)
 
 // ---------- tekstur bersama (dibuat sekali, tidak dibuang per efek) ----------
 const glyphTextures = new Map();
@@ -286,11 +313,17 @@ export function playSticker(group, index, { listener = null } = {}) {
   const pivot = group.userData.pivot;
   const start = performance.now();
 
-  const glow = spriteOf(glowTexture(), { color: spec.color, additive: true });
-  glow.position.set(0, 1.0, 0);
-  group.add(glow);
-  const particles = createParticles(group, spec.particles);
+  const level = getIntensity();
+  const budget = activeFx < level.maxFx; // terlalu banyak efek serentak: lewati pendar dan partikel, gerak tetap
+  activeFx += 1;
+  const glow = budget && level.glow > 0 ? spriteOf(glowTexture(), { color: spec.color, additive: true }) : null;
+  if (glow) {
+    glow.position.set(0, 1.0, 0);
+    group.add(glow);
+  }
+  const particles = budget && level.particles > 0 ? createParticles(group, spec.particles, [0, 0, 0], level.particles) : null;
   const face = makeFaceOverlay(group, spec.face);
+  if (spec.act) group.userData.forcedAct = spec.act; // gestur tubuh sungguhan, dibaca applyPose di avatar.js
 
   let finished = false;
   const done = () => {
@@ -302,10 +335,12 @@ export function playSticker(group, index, { listener = null } = {}) {
       pivot.rotation.z = 0;
       pivot.scale.setScalar(1);
     }
-    glow.parent?.remove(glow);
-    glow.material.dispose();
+    activeFx = Math.max(0, activeFx - 1);
+    glow?.parent?.remove(glow);
+    glow?.material.dispose();
     particles?.dispose();
     face?.dispose();
+    if (spec.act && group.userData.forcedAct === spec.act) group.userData.forcedAct = null;
     if (group.userData.stickerRun === run) group.userData.stickerRun = null;
   };
   const run = { cancel: done };
@@ -330,8 +365,10 @@ export function playSticker(group, index, { listener = null } = {}) {
       pivot.scale.setScalar(m.s);
     }
     const env = k < 0.1 ? k / 0.1 : k > 0.75 ? (1 - k) / 0.25 : 1;
-    glow.material.opacity = 0.55 * env * (0.8 + 0.2 * Math.sin(k * 40)); // berdenyut seperti lampu
-    glow.scale.setScalar(2.4 + 0.3 * Math.sin(k * 30));
+    if (glow) {
+      glow.material.opacity = level.glow * env * (0.8 + 0.2 * Math.sin(k * 40)); // berdenyut halus, bukan menyilaukan
+      glow.scale.setScalar(1.6 + 0.2 * Math.sin(k * 30));
+    }
     particles?.update(ms);
     if (face) face.mesh.material.opacity = k < 0.05 ? k / 0.05 : k > 0.85 ? (1 - k) / 0.15 : 1;
     raf(step);
@@ -389,8 +426,9 @@ export function playCombo(kind, scene, a, b) {
       if (!burstStarted) {
         burstStarted = true;
         const origin = [mid.x, mid.y, mid.z];
-        for (const kindName of fusion ? ['petals', 'confetti'] : ['smoke', 'sparks']) {
-          const p = createParticles(scene, kindName, origin, 1.5);
+        const boost = getIntensity().particles * 2.2; // mode Minimal: tanpa ledakan partikel
+        for (const kindName of boost > 0 ? (fusion ? ['petals', 'confetti'] : ['smoke', 'sparks']) : []) {
+          const p = createParticles(scene, kindName, origin, boost);
           if (p) burst.push(p);
         }
         if (fusion) sprites[1].visible = false;
