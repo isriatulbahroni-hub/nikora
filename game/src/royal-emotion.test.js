@@ -20,7 +20,9 @@ test('tanpa kata kunci: meriah; teks bukan string aman; bentuk sesuai suasana', 
 test('pesan efek: encode lalu decode, dan penolakan yang tidak sah', () => {
   assert.deepEqual(decodeFx(encodeFx('toast', 'meja_3')), { kind: 'toast', arg: 'meja_3' });
   assert.deepEqual(decodeFx(encodeFx('sky', 'night')), { kind: 'sky', arg: 'night' });
+  assert.deepEqual(decodeFx(encodeFx('pad', 'fw_red')), { kind: 'pad', arg: 'fw_red' });
   assert.equal(decodeFx(encodeFx('sky', 'meledak')), null);
+  assert.equal(decodeFx(encodeFx('pad', 'A<b>')), null);
   assert.equal(decodeFx(`${FX_MARK}hack|x`), null);
   assert.equal(decodeFx('Semoga bahagia'), null);
   assert.equal(decodeFx(null), null);
