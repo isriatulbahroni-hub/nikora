@@ -71,3 +71,10 @@ Tab **Tampilan** di editor. Disimpan di `invitations.extra.style` = `{ colors: {
 - **Ambil warna dari foto** (`studio/palette.js`): palet 4 warna dihitung di peramban dari foto yang dipilih.
 - **Foto sampul**: unggah (dikecilkan, ke bucket `media`) atau link https; menggantikan pemandangan dan tokoh di cover, dengan lapisan warna latar yang bisa diatur.
 - Pratinjau langsung ikut (pesan `orbit-preview:style`). Font dimuat lewat satu `<link>` Google Fonts (`loadFonts`).
+
+## Studio sebagai dasbor pelanggan
+Kerangka baru (`studio/shell.js`): bilah atas (logo, akun, Keluar), menu samping di layar lebar, menu bawah di ponsel; alamat berbasis hash (`studio/route.js`): `#/dashboard`, `#/tamu/<slug>`, `#/editor/<slug>`, `#/template/<slug>`, `#/undangan/<slug>` (bagikan, QR, tamu, hapus), `#/buat`, `#/pengaturan`, `#/bantuan`. Editor/Template/Tamu membawa undangan terakhir yang dibuka.
+- **Dashboard**: ringkasan (undangan, akan datang, total tamu, orang hadir, belum membalas) dan kartu per undangan: miniatur amplop tema, hitung mundur, tamu/hadir/belum balas, kelengkapan (tema, isi >= 3 adegan, tamu, tampilan), jalan pintas. Mode Pilih untuk hapus banyak.
+- **Template & amplop**: pilih tema (amplop/kado, segel, pemandangan) dengan pratinjau dari amplop sampai akhir; tersimpan di `invitations.theme`.
+- **Tamu & RSVP**: tamu digabung dengan RSVP lewat nama (hadir/berhalangan/belum membalas), cari, saring, pengingat WhatsApp berisi link pribadi, ekspor CSV (rumus Excel dinetralkan).
+- Daftar undangan hanya memuat `owner_id` akun ini. Kebijakan baca publik sebelumnya membuat data contoh tanpa pemilik ikut tampil dan tidak bisa dihapus.

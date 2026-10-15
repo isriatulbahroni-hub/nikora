@@ -101,6 +101,8 @@ export function isoToLocal(iso, tz = 'Asia/Jakarta') {
 }
 
 export const MAX_CONFIG_BYTES = 24000;
+/** Adegan yang diisi pelanggan; dipakai untuk bilah kelengkapan di dasbor. */
+export const FILLABLE = ['surat', 'cover', 'kisah', 'detail', 'galeri', 'hari_acara', 'arsip', 'penutup'];
 
 /** Teks WhatsApp per tamu. */
 const intId = (v) => {
@@ -169,7 +171,39 @@ export function createClient({ url, key, fetchImpl = globalThis.fetch, store }) 
     },
     userId() { const s = read(); return s && s.user ? s.user.id : null; },
     rest,
-    myInvitations: () => rest('invitations?select=slug,groom,bride,event_type,event_date,theme,status,created_at&order=created_at.desc'),
+    /** Hanya undangan milik akun ini (kebijakan baca publik membuat data contoh tanpa pemilik ikut terlihat bila tidak difilter). */
+    async myInvitations() {
+      const uid = this.userId();
+      if (!uid) throw new Error('Silakan masuk dulu.');
+      return rest(`invitations?owner_id=eq.${encodeURIComponent(uid)}&select=slug,groom,bride,event_type,event_date,theme,status,created_at,extra&order=event_date.asc`);
+    },
+    /** Ringkasan per undangan untuk dasbor: tamu, konfirmasi hadir, dan berapa adegan yang sudah diisi. */
+    async dashboardStats(slugs) {
+      const mine = new Set(slugs);
+      const [guests, rsvps, scenes] = await Promise.all([
+        rest('guests?select=slug'), rest('rsvps?select=slug,attending,guests'), rest('invitation_scenes?select=slug,kind,active,config'),
+      ]);
+      const out = Object.fromEntries(slugs.map((sl) => [sl, { guests: 0, replied: 0, attending: 0, filled: 0 }]));
+      for (const g of guests || []) if (mine.has(g.slug)) out[g.slug].guests += 1;
+      for (const r of rsvps || []) {
+        if (!mine.has(r.slug)) continue;
+        out[r.slug].replied += 1;
+        if (r.attending) out[r.slug].attending += Number(r.guests) || 1;
+      }
+      for (const sc of scenes || []) {
+        if (!mine.has(sc.slug) || !FILLABLE.includes(sc.kind) || sc.active === false) continue;
+        const c = sc.config && typeof sc.config === 'object' ? sc.config : {};
+        if (Object.keys(c).some((k) => k !== 'tokens')) out[sc.slug].filled += 1;
+      }
+      return out;
+    },
+    /** Pilih tema (termasuk gaya amplop-nya) untuk satu undangan. */
+    async saveTheme(slug, themeId) {
+      if (!getTheme(themeId)) throw new Error('Tema tidak dikenal.');
+      const rows = await rest(`invitations?slug=eq.${encodeURIComponent(slug)}`, { method: 'PATCH', body: { theme: themeId }, prefer: 'return=representation' });
+      if (!Array.isArray(rows) || !rows.length) throw new Error('Tema tidak tersimpan. Pastikan undangan itu milik akunmu.');
+      return themeId;
+    },
     async createInvitation(value) {
       const ownerId = this.userId();
       if (!ownerId) throw new Error('Silakan masuk dulu.');

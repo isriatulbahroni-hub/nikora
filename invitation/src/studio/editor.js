@@ -4,6 +4,9 @@ import { safeUrl } from '../engine/content.js';
 import { zonedIso, isoToLocal } from './api.js';
 import { resizeToJpeg } from './images.js';
 import { appearanceView } from './appearance.js';
+import { icon } from './icons.js';
+
+const TAB_ICON = { tampilan: 'palette', surat: 'mail', cover: 'image', kisah: 'book', detail: 'calendar', galeri: 'image', hari_acara: 'calendar', arsip: 'book', penutup: 'heart' };
 
 /**
  * Editor "Isi undangan": satu tab per adegan. Setiap tab dibangun dari skema kecil, lalu
@@ -207,15 +210,17 @@ export function editorView({ client, slug, inviteBase, onBack }) {
     if (p === 'preview') sendDraft();
   };
   seg.append(
-    h('button', { class: 's-btn s-small s-ghost', type: 'button', 'data-pane': 'edit', text: 'Edit', onclick: () => setPane('edit') }),
-    h('button', { class: 's-btn s-small s-ghost', type: 'button', 'data-pane': 'preview', text: 'Pratinjau', onclick: () => setPane('preview') }));
+    h('button', { class: 's-btn s-small s-ghost', type: 'button', 'data-pane': 'edit', onclick: () => setPane('edit') }, icon('pencil', { size: 16 }), h('span', { text: 'Edit' })),
+    h('button', { class: 's-btn s-small s-ghost', type: 'button', 'data-pane': 'preview', onclick: () => setPane('preview') }, icon('eye', { size: 16 }), h('span', { text: 'Pratinjau' })));
 
   root.append(h('div', { class: 's-row s-between' }, h('h1', { text: 'Isi undangan' }), h('button', { class: 's-link', type: 'button', text: 'Kembali', onclick: onBack })),
-    h('p', { class: 's-sub' }, `${slug} - `, h('a', { href: link, target: '_blank', rel: 'noopener noreferrer', text: 'Buka di tab baru' })),
+    h('p', { class: 's-sub s-subline' }, `${slug} - `, h('a', { href: link, target: '_blank', rel: 'noopener noreferrer', class: 's-link' }, icon('eye', { size: 14 }), ' Buka di tab baru')),
     seg, tabs,
     h('div', { class: 's-split' },
       h('div', { class: 's-editpane' }, body, msg),
-      h('div', { class: 's-previewpane' }, note, iframe)));
+      h('div', { class: 's-previewpane' },
+        h('div', { class: 's-pvhead' }, h('h2', { text: 'Pratinjau Undangan' }), h('a', { class: 'st-iconbtn', href: link, target: '_blank', rel: 'noopener noreferrer', 'aria-label': 'Buka pratinjau di tab baru' }, icon('expand', { size: 18 }))),
+        note, iframe)));
 
   /* --- pesan ke/dari bingkai pratinjau --- */
   let ready = false;
@@ -268,7 +273,7 @@ export function editorView({ client, slug, inviteBase, onBack }) {
       const form = buildFields(SCHEMAS[kind], config, ctx);
       const active = h('input', { type: 'checkbox' });
       active.checked = existing.active !== false;
-      const save = h('button', { class: 's-btn', type: 'submit', text: 'Simpan' });
+      const save = h('button', { class: 's-btn s-savebtn', type: 'submit' }, icon('save', { size: 17 }), h('span', { text: 'Simpan perubahan' }));
       const el = h('form', { class: 's-grid', novalidate: true }, h('label', { class: 's-field s-check' }, active, h('span', { text: `Tampilkan adegan ${KIND_LABELS[kind] || kind}` })), ...form.nodes, save);
       // pertahankan kunci lain di config (mis. warna dari editor lain) yang tidak ada di skema
       const keep = Object.fromEntries(Object.entries(config).filter(([k]) => !SCHEMAS[kind].some((f) => f.key === k)));
@@ -300,10 +305,10 @@ export function editorView({ client, slug, inviteBase, onBack }) {
     }
 
     for (const kind of ['tampilan', ...EDITABLE]) {
-      const b = h('button', { class: 's-tab', type: 'button', role: 'tab', 'aria-selected': 'false', text: kind === 'tampilan' ? 'Tampilan' : (KIND_LABELS[kind] || kind), onclick: () => {
+      const b = h('button', { class: 's-tab', type: 'button', role: 'tab', 'aria-selected': 'false', onclick: () => {
         if (root.dataset.dirty === '1' && !byKind.__warned) { /* pindah tab tidak menghapus isian: dibiarkan */ }
         open(kind);
-      } });
+      } }, icon(TAB_ICON[kind] || 'pencil', { size: 15 }), h('span', { text: kind === 'tampilan' ? 'Tampilan' : (KIND_LABELS[kind] || kind) }));
       buttons.set(kind, b);
       tabs.append(b);
     }
