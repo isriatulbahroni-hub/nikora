@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CHARACTERS, HAIR_COLORS, OUTFITS, SKINS, sanitizeConfig } from './avatar-config.js';
 import { HumanRig, loadHumanModel } from './avatar-human.js';
 import { auraFor } from './avatar-aura.js';
+import { buildBody, PANTS_SHADE } from './avatar-body.js';
 
 export function makeLabel(text) {
   if (typeof document === 'undefined') return null;
@@ -22,7 +23,7 @@ export function makeLabel(text) {
   return sprite;
 }
 
-/** Avatar sederhana: badan, kepala, wajah, penanda arah hadap (-z), dan nama opsional. */
+/** Avatar sederhana berbentuk manusia lengkap (kepala+wajah, badan, tangan, kaki; lihat avatar-body.js), menghadap -z, nama opsional. */
 export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, config = null } = {}) {
   const cfg = config ? sanitizeConfig(config) : null;
   if (cfg) {
@@ -30,40 +31,11 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
     skin = SKINS[cfg.s].hex;
   }
   const group = new THREE.Group();
-  const bodyMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.55, 5, 12), bodyMaterial);
-  body.position.y = 0.75;
-  body.castShadow = true;
-  const skinMaterial = new THREE.MeshStandardMaterial({ color: skin, roughness: 0.6 });
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 18, 14), skinMaterial);
-  head.position.y = 1.37;
-  head.castShadow = true;
-  const face = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.09, 0.12), new THREE.MeshStandardMaterial({ color: 0x26332d, roughness: 0.74 }));
-  face.position.set(0, 1.39, -0.255);
-  const markerMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
-  const marker = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.26, 4), markerMaterial);
-  marker.rotation.x = -Math.PI / 2;
-  marker.position.set(0, 0.83, -0.48);
-  group.add(body, head, face, marker);
-  // Lengan: pivot di bahu, lengan menggantung ke bawah (-y); rotation.x = +90° mengarahkannya ke depan (-z).
-  const armMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
-  const arms = {};
-  for (const [side, sx] of [['l', -0.42], ['r', 0.42]]) {
-    const pivot = new THREE.Group();
-    pivot.position.set(sx, 1.08, 0);
-    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.085, 0.46, 4, 8), armMaterial);
-    arm.position.y = -0.3;
-    arm.castShadow = true;
-    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.095, 10, 8), skinMaterial);
-    hand.position.y = -0.6;
-    pivot.add(arm, hand);
-    group.add(pivot);
-    arms[side] = pivot;
-  }
-  group.userData.arms = arms;
-  group.userData.tint = [bodyMaterial, markerMaterial, armMaterial];
-  group.userData.skin = skinMaterial;
-  group.userData.body = body;
+  const rig = buildBody({ color, skin });
+  group.add(rig.root);
+  Object.assign(group.userData, {
+    arms: rig.arms, legs: rig.legs, elbows: rig.elbows, tint: rig.tint, skin: rig.skin, pants: rig.pants, body: rig.torso,
+  });
   // Semua bagian tubuh masuk ke satu pivot supaya bisa berputar (gestur 'spin') tanpa mengganggu arah hadap grup.
   const spinPivot = new THREE.Group();
   for (const child of [...group.children]) spinPivot.add(child);
@@ -81,9 +53,10 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
   return group;
 }
 
-/** Ganti warna badan avatar (badan, penanda arah, lengan) tanpa membuat ulang model. */
+/** Ganti warna pakaian avatar (baju dan celana) tanpa membuat ulang model. */
 export function setAvatarColor(group, color) {
   for (const m of group.userData?.tint ?? []) m.color.set(color);
+  group.userData?.pants?.color.set(color).multiplyScalar(PANTS_SHADE);
 }
 
 /** Warna konsisten per id pemain: semua perangkat menghitung warna yang sama dari id yang sama. */
@@ -155,6 +128,16 @@ export function applyPose(group, act, t, delta = 1 / 60) {
   const arms = group.userData?.arms;
   if (!arms) return;
   const k = 1 - Math.exp(-14 * Math.max(0, delta));
+  const legs = group.userData?.legs;
+  if (legs) {
+    const seated = group.position.y < -0.1; // y turun = duduk di kursi
+    const sw = act === 'walk' ? Math.sin(t * 9) * 0.65 : act === 'dance' ? Math.sin(t * 8) * 0.3 : 0;
+    for (const [side, dir] of [['l', 1], ['r', -1]]) {
+      const hip = seated ? 1.5 : sw * dir;
+      legs[side].hip.rotation.x = lerp(legs[side].hip.rotation.x, hip, k);
+      legs[side].knee.rotation.x = lerp(legs[side].knee.rotation.x, seated ? -1.5 : -Math.max(0, -hip) * 1.1, k);
+    }
+  }
   let r = { x: 0, z: -0.08 };
   let l = { x: 0, z: 0.08 };
   let lean = 0;
