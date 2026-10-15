@@ -76,14 +76,14 @@ function spriteOf(map, { color = 0xffffff, additive = false } = {}) {
   return sprite;
 }
 
-// ---------- partikel ----------
+// ---------- partikel (koordinat lokal avatar: tinggi total ±1,72 m, kepala di y≈1,55) ----------
 const PARTICLES = {
-  hearts: { n: 8, size: 0.32, life: 1800, stagger: 220, g: 0, spawn: () => [rnd(-0.3, 0.3), 1.6, rnd(-0.3, 0.1)], vel: () => [rnd(-0.25, 0.25), rnd(0.7, 1.2), 0] },
-  tears: { n: 10, size: 0.16, life: 1500, stagger: 160, g: -2.2, floor: 0.05, spawn: () => [pick([-0.1, 0.1]), 1.45, -0.27], vel: () => [rnd(-0.05, 0.05), 0, -0.15] },
+  hearts: { n: 8, size: 0.32, life: 1800, stagger: 220, g: 0, spawn: () => [rnd(-0.3, 0.3), 1.75, rnd(-0.3, 0.1)], vel: () => [rnd(-0.25, 0.25), rnd(0.7, 1.2), 0] },
+  tears: { n: 10, size: 0.16, life: 1500, stagger: 160, g: -2.2, floor: 0.05, spawn: () => [pick([-0.06, 0.06]), 1.56, -0.15], vel: () => [rnd(-0.05, 0.05), 0, -0.1] },
   confetti: { n: 18, size: 0.22, life: 2000, stagger: 0, g: -3.2, spawn: () => [0, 1.9, 0], vel: () => [rnd(-1.6, 1.6), rnd(1.4, 2.6), rnd(-1.6, 1.6)] },
   petals: { n: 12, size: 0.24, life: 2200, stagger: 150, g: 0, spawn: () => [rnd(-0.8, 0.8), 3.0, rnd(-0.8, 0.8)], vel: () => [rnd(-0.2, 0.2), -0.5, rnd(-0.2, 0.2)] },
-  smoke: { n: 8, size: 0.3, life: 1300, stagger: 140, g: 0, spawn: () => [pick([-0.3, 0.3]), 1.5, 0], vel: () => [rnd(-0.1, 0.1), rnd(0.5, 0.9), 0] },
-  sparks: { n: 8, size: 0.18, life: 1100, stagger: 0, g: -1, spawn: () => [0, 1.5, 0], vel: () => [rnd(-1, 1), rnd(0.4, 1.2), rnd(-1, 1)] },
+  smoke: { n: 8, size: 0.3, life: 1300, stagger: 140, g: 0, spawn: () => [pick([-0.17, 0.17]), 1.55, 0], vel: () => [rnd(-0.1, 0.1), rnd(0.5, 0.9), 0] },
+  sparks: { n: 8, size: 0.18, life: 1100, stagger: 0, g: -1, spawn: () => [0, 1.7, 0], vel: () => [rnd(-1, 1), rnd(0.4, 1.2), rnd(-1, 1)] },
 };
 
 /** Partikel sprite di dalam `parent` (grup avatar atau scene). update(ms) mengembalikan false saat semua selesai. */
@@ -242,12 +242,13 @@ function makeFaceOverlay(group, kind) {
   if (!kind || !pivot || group.userData.human || typeof document === 'undefined') return null;
   const map = drawFace(kind);
   if (!map) return null;
+  const anchor = group.userData.faceAnchor ?? { y: 1.38, z: -0.325, size: 0.46 }; // ditentukan avatar.js sesuai ukuran kepala
   const material = new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, toneMapped: false });
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(0.46, 0.46), material);
-  mesh.position.set(0, 1.38, -0.325); // di depan kotak wajah bawaan (depan di -z)
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(anchor.size, anchor.size), material);
+  mesh.position.set(0, anchor.y, anchor.z); // tepat di depan wajah bawaan (depan di -z)
   mesh.rotation.y = Math.PI;
   pivot.add(mesh);
-  const original = group.userData.face ?? group.userData.parts?.[2]; // wajah bawaan (mata, hidung, mulut) disembunyikan selama ekspresi
+  const original = group.userData.face; // wajah bawaan (mata) disembunyikan selama ekspresi
   if (original) original.visible = false;
   return {
     mesh,
