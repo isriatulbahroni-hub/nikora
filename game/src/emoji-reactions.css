@@ -1,5 +1,10 @@
-/* Panel reaksi emoji (memakai kelas .panel dan .rb dari villa.html) */
-.emoji-panel { width: min(264px, 86vw); }
+/* Panel stiker (memakai kelas .panel dan .rb dari villa.html) */
+.emoji-panel { width: min(280px, 88vw); max-height: 62vh; overflow-y: auto; }
+.emoji-panel .panel-head { gap: 8px; }
+.emoji-fx { margin-left: auto; padding: 4px 10px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.12); color: inherit; font-size: 12px; cursor: pointer; touch-action: manipulation; }
+.emoji-cat { margin: 10px 0 4px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.65; }
 .emoji-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.emoji-cell { font-size: 28px; line-height: 1; padding: 8px 0; border: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.1); cursor: pointer; touch-action: manipulation; }
-.emoji-cell:active { transform: scale(0.92); background: rgba(255, 255, 255, 0.22); }
+.emoji-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 5px; border: 0; border-radius: 12px; background: rgba(255, 255, 255, 0.1); color: inherit; cursor: pointer; touch-action: manipulation; }
+.emoji-cell:active { transform: scale(0.94); background: rgba(255, 255, 255, 0.22); }
+.emoji-glyph { font-size: 26px; line-height: 1.1; }
+.emoji-name { font-size: 10px; line-height: 1.1; opacity: 0.85; }

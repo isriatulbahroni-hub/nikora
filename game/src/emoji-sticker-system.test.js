@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { COMBO_MAX_DISTANCE, COMBO_WINDOW_MS, PARTICLE_GLYPHS, STICKERS, comboFor, motionAt } from './emoji-sticker-system.js';
+import { CATEGORIES, COMBO_MAX_DISTANCE, COMBO_WINDOW_MS, INTENSITY, PARTICLE_GLYPHS, STICKERS, STICKER_ACTS, comboFor, isIntensity, motionAt, nextIntensity } from './emoji-sticker-system.js';
 
 const indexOf = (id) => STICKERS.findIndex((s) => s.id === id);
 
@@ -40,4 +40,28 @@ test('motionAt: gerak tak dikenal tidak mengubah apa pun', () => {
 
 test('konstanta kombo masuk akal', () => {
   assert.ok(COMBO_WINDOW_MS >= 1000 && COMBO_MAX_DISTANCE > 0);
+});
+
+test('katalog: setiap stiker punya label unik, kategori dikenal, dan gestur yang sah', () => {
+  assert.equal(new Set(STICKERS.map((s) => s.label)).size, STICKERS.length);
+  for (const s of STICKERS) {
+    assert.ok(CATEGORIES.includes(s.cat), s.id);
+    assert.ok(s.act === null || STICKER_ACTS.includes(s.act), s.id);
+  }
+  for (const c of CATEGORIES) assert.ok(STICKERS.some((s) => s.cat === c), c);
+});
+
+test('intensitas: makin ringan makin sedikit efek; nextIntensity berputar dan memulihkan nama ngawur', () => {
+  const { normal, light, minimal } = INTENSITY;
+  assert.ok(normal.glow > light.glow && light.glow >= minimal.glow);
+  assert.ok(normal.particles > light.particles && light.particles >= minimal.particles);
+  assert.ok(normal.maxFx > light.maxFx && light.maxFx >= minimal.maxFx);
+  assert.equal(minimal.glow, 0);
+  assert.equal(minimal.particles, 0);
+  assert.equal(nextIntensity('normal'), 'light');
+  assert.equal(nextIntensity('light'), 'minimal');
+  assert.equal(nextIntensity('minimal'), 'normal');
+  assert.equal(nextIntensity('???'), 'normal');
+  assert.equal(nextIntensity(undefined), 'normal');
+  assert.ok(isIntensity('light') && !isIntensity('x'));
 });
