@@ -4,6 +4,7 @@ import { configFromId, sameConfig } from './avatar-config.js';
 import { HALL } from './hall-layout.js';
 import { NetClient } from './net-client.js';
 import { LiveKitNet } from './livekit-net.js';
+import { VideoCall } from './video-call.js';
 import { parseEventParams } from './event-context.js';
 
 const SMOOTHING = 12; // semakin besar, semakin cepat avatar mengejar posisi server
@@ -109,7 +110,7 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
 }
 
 /** Sambung ke server jika ?server= ada. Tidak pernah melempar error; game offline tetap jalan. */
-export async function startMultiplayer({ scene, search, name = 'Tamu', world, poseFor, roleKey, NetClientImpl = NetClient, LiveKitImpl = LiveKitNet, useLiveKit = !import.meta.env?.VITE_DISABLE_LIVEKIT, onError = () => {} }) {
+export async function startMultiplayer({ scene, search, name = 'Tamu', world, poseFor, roleKey, NetClientImpl = NetClient, LiveKitImpl = LiveKitNet, useLiveKit = !import.meta.env?.VITE_DISABLE_LIVEKIT, useVideoCall = typeof document !== 'undefined' && !import.meta.env?.VITE_DISABLE_VIDEO, onError = () => {} }) {
   // ?server=ws://... memakai server WebSocket sendiri; selain itu coba LiveKit lewat /api/token (cukup Vercel).
   const url = resolveServerUrl(search);
   if (!url && !useLiveKit) return null;
@@ -126,10 +127,23 @@ export async function startMultiplayer({ scene, search, name = 'Tamu', world, po
     view.dispose();
     return null;
   }
+  // Video call (kamera) hanya lewat LiveKit: Room-nya sama dengan posisi/chat/suara. Gagal memasangnya tidak boleh mengganggu game.
+  let videoCall = null;
+  if (useVideoCall && net.room && typeof document !== 'undefined') {
+    try {
+      videoCall = await new VideoCall().attach(net.room);
+      videoCall.mount();
+    } catch (error) {
+      console.warn('[video] panggilan video tidak tersedia:', error?.message ?? error);
+      videoCall?.dispose();
+      videoCall = null;
+    }
+  }
   let lastSent = 0;
   return {
     net,
     view,
+    videoCall,
     sendChat(text) {
       net.sendChat(text);
     },
@@ -137,8 +151,10 @@ export async function startMultiplayer({ scene, search, name = 'Tamu', world, po
       if (nowMs - lastSent < SEND_INTERVAL_MS) return;
       lastSent = nowMs;
       net.sendInput(x, z, rot, sit, pos);
+      videoCall?.tick(net.self, net.players);
     },
     dispose() {
+      videoCall?.dispose();
       net.close();
       view.dispose();
     },
