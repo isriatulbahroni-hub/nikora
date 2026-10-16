@@ -4,6 +4,7 @@
 //
 // Vila bertingkat 3 lantai (level 0, 1, 2). Lantai atas dicapai lewat empat menara tangga
 // (dua lengan tangga lurus per menara). Status pemain: { x, z, level, stair, y }.
+import { COURT_MARGIN, VILLA_COURT, createCourtFrame } from './activities/court-frame.js';
 
 export const WALL_THICKNESS = 0.3;
 export const WALL_HEIGHT = 3.0;
@@ -23,6 +24,10 @@ export const SPAWN = Object.freeze({ x: 0, z: 37 });
 export const VILLA_SCREEN = Object.freeze({ x: 0, y: 4.3, z: -19.7, ry: 0, width: 6, height: 3.375, posts: true });
 export const SIT_RANGE = 1.9; // jarak maksimum ke kursi/sofa/tempat tidur agar boleh duduk atau tidur
 export const SEATED_DROP = -0.3; // avatar duduk sedikit lebih rendah
+
+// Lapangan bulu tangkis di halaman barat daya: pepohonan di dalamnya disingkirkan dan net menghalangi jalan.
+// Server memakai berkas ini juga, jadi klien dan server selalu sepakat soal net.
+const COURT_FRAME = createCourtFrame(VILLA_COURT);
 
 const GUEST_COLS = [16, 21.5, 27, 32.5, 38];
 
@@ -202,7 +207,10 @@ function buildProps() {
     [-14, 24], [-22, 26], [-30, 34], [-36, 36], [-26, 38], [-18, 33], [-12, 38], [14, 24], [13, 36], [12, 30],
     [-40, -23.5], [-40, 28], [40, -23.5], [40, 26], [-40, 33], [-2.8, 40], [2.8, 40],
   ];
-  for (const [x, z] of palms) props.push({ type: 'palm', x, z });
+  for (const [x, z] of palms) {
+    if (COURT_FRAME.contains({ x, z }, COURT_MARGIN)) continue; // area lapangan bulu tangkis dikosongkan
+    props.push({ type: 'palm', x, z });
+  }
 
   // lantai 1
   for (const r of guestRooms(1)) {
@@ -370,11 +378,12 @@ export function propToRect(p) {
   return { minX: p.x - s.hx, maxX: p.x + s.hx, minZ: p.z - s.hz, maxZ: p.z + s.hz };
 }
 
-// Kolam (dua sisi jembatan) dan air mancur menghalangi jalan.
+// Kolam (dua sisi jembatan), air mancur, dan net bulu tangkis menghalangi jalan.
 const FIXED_COLLIDERS = Object.freeze([
   { minX: -7, maxX: -1.5, minZ: 2, maxZ: 16 },
   { minX: 1.5, maxX: 7, minZ: 2, maxZ: 16 },
   { minX: -2.4, maxX: 2.4, minZ: 25.6, maxZ: 30.4 },
+  COURT_FRAME.netCollider(),
 ]);
 
 export function resolveMove(pos, radius, colliders, bounds = WORLD_LIMIT) {
