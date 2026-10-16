@@ -27,9 +27,10 @@ export function createGameServer({ port = 8080, host = '0.0.0.0', tickRate = 20,
   const sockets = new Map(); // id -> ws
   let tick = 0;
   let last = Date.now();
+  let roomsVersion = room.locks?.version ?? 0;
 
   const send = (ws, data) => {
-    if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(data));
+    if (ws && ws.readyState === ws.OPEN) ws.send(JSON.stringify(data));
   };
   const broadcast = (data) => {
     for (const ws of sockets.values()) send(ws, data);
@@ -70,7 +71,7 @@ export function createGameServer({ port = 8080, host = '0.0.0.0', tickRate = 20,
         id = newId;
         sockets.set(id, ws);
         clearTimeout(joinTimer);
-        send(ws, { t: 'welcome', id, players: room.snapshot() });
+        send(ws, { t: 'welcome', id, players: room.snapshot(), rooms: room.locks?.snapshot() ?? [] });
         log(`join ${id} (${player.name})`);
       } else if (msg.t === 'input') {
         if (!id) return send(ws, { t: 'error', reason: 'join first' });
@@ -92,6 +93,14 @@ export function createGameServer({ port = 8080, host = '0.0.0.0', tickRate = 20,
         const r = room.respondGreet(id, msg.from, msg.accept === true, now);
         if (!r) return send(ws, { t: 'error', reason: 'greet expired' });
         if (r.declined) send(sockets.get(r.from), { t: 'greet-declined', by: id });
+      } else if (msg.t === 'room') {
+        // Kunci kamar villa: checkin | checkout | lock | knock | knock-reply. Semua diputuskan server.
+        if (!id) return send(ws, { t: 'error', reason: 'join first' });
+        const r = room.roomCommand(id, msg, now);
+        if (!r.ok) return send(ws, { t: 'room-error', act: String(msg.act ?? ''), reason: r.reason });
+        send(ws, { t: 'room-ok', act: msg.act, room: r.room });
+        if (msg.act === 'knock') send(sockets.get(r.to), { t: 'knock', room: r.room, from: id, name: room.players.get(id)?.name });
+        if (msg.act === 'knock-reply') send(sockets.get(r.visitor), { t: 'knock-result', room: r.room, accepted: r.accepted });
       } else if (msg.t === 'voice-token') {
         if (!id) return send(ws, { t: 'error', reason: 'join first' });
         createVoiceToken({ id, name: room.players.get(id)?.name, env: voiceEnv ?? process.env })
@@ -118,9 +127,13 @@ export function createGameServer({ port = 8080, host = '0.0.0.0', tickRate = 20,
   const loop = setInterval(() => {
     const now = Date.now();
     room.expire(now);
-    room.step((now - last) / 1000);
+    room.step((now - last) / 1000, now);
     last = now;
     tick += 1;
+    if (room.locks && room.locks.version !== roomsVersion) {
+      roomsVersion = room.locks.version;
+      broadcast({ t: 'rooms', rooms: room.locks.snapshot() });
+    }
     if (sockets.size > 0) broadcast({ t: 'state', tick, players: room.snapshot() });
     for (const ws of wss.clients) {
       if (now - ws.lastSeen > LIMITS.idleTimeoutMs) ws.terminate();

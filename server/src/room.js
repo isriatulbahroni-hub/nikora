@@ -1,5 +1,6 @@
 import { normalizeMovement } from '../../game/src/game-rules.js';
 import { HALL, SEATS, resolveCollisions } from '../../game/src/hall-layout.js';
+import { RoomLocks } from '../../game/src/villa-doors.js';
 
 export const ROOM_RULES = Object.freeze({
   maxPlayers: 50,
@@ -35,6 +36,9 @@ export class Room {
     this.players = new Map();
     this.spawnCounter = 0;
     this.greetRequests = new Map(); // id penerima -> { from, kind, expires }
+    // Kunci kamar villa (check-in, kunci, ketuk). Hanya untuk dunia bertingkat seperti villa;
+    // dunia hasil proyek (editor) tidak punya `levels` sehingga tidak memakainya.
+    this.locks = this.rules.world?.levels ? new RoomLocks(this.rules.world) : null;
   }
 
   addPlayer(id, name) {
@@ -79,6 +83,7 @@ export class Room {
     for (const [to, req] of this.greetRequests) if (req.from === id) this.greetRequests.delete(to);
     const p = this.players.get(id);
     if (p?.act) this.#endAct(p);
+    this.locks?.release(id); // kamar yang ditinggalkan pemiliknya kembali terbuka
     return this.players.delete(id);
   }
 
@@ -144,6 +149,7 @@ export class Room {
   expire(nowMs = Date.now()) {
     for (const [to, req] of this.greetRequests) if (req.expires < nowMs) this.greetRequests.delete(to);
     for (const p of this.players.values()) if (p.act && p.act.until <= nowMs) this.#endAct(p);
+    this.locks?.expire(nowMs);
   }
 
   setInput(id, msg) {
@@ -180,17 +186,44 @@ export class Room {
     p.x = seat.x;
     p.z = seat.z;
     p.rot = seat.rot;
+    if (seat.kind === 'sleep') this.locks?.lockOwned(p.id); // mulai tidur: kamar sendiri otomatis terkunci
     return true;
   }
 
-  step(dt) {
+  #isSleeping(p) {
+    const spot = p.sit !== null ? this.rules.world?.spots[p.sit] : null;
+    return spot?.kind === 'sleep';
+  }
+
+  /**
+   * Perintah kamar villa: checkin, checkout, lock, knock, knock-reply.
+   * Mengembalikan { ok:true, ... } atau { ok:false, reason }.
+   */
+  roomCommand(id, msg, nowMs = Date.now()) {
+    const p = this.players.get(id);
+    if (!p || !this.locks || !msg || typeof msg !== 'object') return { ok: false, reason: 'unavailable' };
+    const roomId = typeof msg.room === 'string' ? msg.room : '';
+    switch (msg.act) {
+      case 'checkin': return this.locks.checkIn(id, roomId, p, nowMs);
+      case 'checkout': return this.locks.checkOut(id);
+      case 'lock': return this.locks.setLocked(id, msg.locked === true, { sleeping: this.#isSleeping(p) });
+      case 'knock': return this.locks.knock(id, roomId, p, nowMs);
+      case 'knock-reply': return this.locks.respondKnock(id, typeof msg.from === 'string' ? msg.from : '', msg.accept === true, nowMs);
+      default: return { ok: false, reason: 'unknown-act' };
+    }
+  }
+
+  step(dt, nowMs = Date.now()) {
     if (!Number.isFinite(dt) || dt <= 0) return;
     const safeDt = Math.min(dt, 0.25);
     for (const p of this.players.values()) {
       if (p.sit !== null || p.act?.with) continue; // duduk atau sedang berpasangan: tidak bergerak
       const dx = p.input.x * this.rules.playerSpeed * safeDt;
       const dz = p.input.z * this.rules.playerSpeed * safeDt;
-      const next = this.rules.world ? this.rules.world.move(p, dx, dz) : resolveCollisions({ x: p.x + dx, z: p.z + dz });
+      const world = this.rules.world;
+      const next = world
+        ? (this.locks ? this.locks.move(p, dx, dz, nowMs) : world.move(p, dx, dz))
+        : resolveCollisions({ x: p.x + dx, z: p.z + dz });
       p.x = next.x;
       p.z = next.z;
       p.level = next.level ?? 0;
