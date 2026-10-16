@@ -4,7 +4,7 @@
 //
 // Vila bertingkat 3 lantai (level 0, 1, 2). Lantai atas dicapai lewat empat menara tangga
 // (dua lengan tangga lurus per menara). Status pemain: { x, z, level, stair, y }.
-import { GAME_DOORS, GAME_ROOMS, insideGameWing } from './villa-gamewing.js';
+import { GAME_DOORS, GAME_ROOMS, GAME_WING, insideGameWing } from './villa-gamewing.js';
 
 export const WALL_THICKNESS = 0.3;
 export const WALL_HEIGHT = 3.0;
@@ -128,6 +128,7 @@ export const ROOFS = Object.freeze([
   { id: 'hall', kind: 'gable', rect: [-14, -20, 14, -3], base: HALL_WALL_HEIGHT, rise: 2.6, overhang: 0.7 },
   { id: 'kitchen', kind: 'hip', rect: [-36, 20, -26, 30], base: WALL_HEIGHT, rise: 1.4, overhang: 0.6 },
   { id: 'presidential', kind: 'hip', rect: [26, -20, 38, -3], base: levelY(2) + WALL_HEIGHT, rise: 2.2, overhang: 0.6 },
+  { id: 'game_wing', kind: 'hip', rect: GAME_WING.rect, base: WALL_HEIGHT, rise: 1.8, overhang: 0.6 }, // sayap Ruang Game: satu atap limasan di atas tiga ruangan
   ...TOWERS.map((t) => ({ id: `${t.id}_roof`, kind: 'hip', rect: t.rect, base: levelY(2) + WALL_HEIGHT, rise: 1.8, overhang: 0.5 })),
 ]);
 
