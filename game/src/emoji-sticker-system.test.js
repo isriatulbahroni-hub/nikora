@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CATEGORIES, COMBO_MAX_DISTANCE, COMBO_WINDOW_MS, INTENSITY, PARTICLE_GLYPHS, STICKERS, STICKER_ACTS, comboFor, isIntensity, motionAt, nextIntensity } from './emoji-sticker-system.js';
+import { POSES } from './avatar-emotes.js';
 
 const indexOf = (id) => STICKERS.findIndex((s) => s.id === id);
 
@@ -49,6 +50,31 @@ test('katalog: setiap stiker punya label unik, kategori dikenal, dan gestur yang
     assert.ok(s.act === null || STICKER_ACTS.includes(s.act), s.id);
   }
   for (const c of CATEGORIES) assert.ok(STICKERS.some((s) => s.cat === c), c);
+});
+
+test('indeks jaringan: 12 stiker lama tidak bergeser (pesan lama tetap berarti sama)', () => {
+  const lama = ['love', 'clap', 'touched', 'laugh', 'party', 'flower', 'angry', 'cry', 'pray', 'heart', 'fire', 'wave'];
+  lama.forEach((id, i) => assert.equal(STICKERS[i].id, id, `indeks ${i}`));
+  assert.ok(STICKERS.length <= 100, 'decodeReaction hanya menerima indeks 1-2 digit');
+});
+
+test('gaya emoji Nikora: 32 stiker, setiap stiker punya pose tubuh, dan setiap pose dipakai stiker', () => {
+  assert.equal(STICKERS.length, 32);
+  const poseIds = new Set(STICKERS.map((s) => s.pose));
+  assert.equal(poseIds.size, STICKERS.length, 'satu pose per stiker');
+  for (const s of STICKERS) assert.ok(POSES[s.pose], `${s.id}: pose ${s.pose} tidak ada`);
+  for (const id of Object.keys(POSES)) assert.ok(poseIds.has(id), `pose ${id} tidak dipakai`);
+});
+
+test('enam kelompok seperti gambar Nikora dengan isi sesuai', () => {
+  assert.deepEqual([...CATEGORIES], ['Emosi', 'Sosial', 'Pesta', 'Majlis', 'Hormat', 'Animasi']);
+  const ids = (cat) => STICKERS.filter((s) => s.cat === cat).map((s) => s.id);
+  for (const id of ['laugh', 'cry', 'touched', 'shock', 'angry', 'sad']) assert.ok(ids('Emosi').includes(id), id);
+  for (const id of ['wave', 'clap', 'thumbs', 'heart', 'handshake']) assert.ok(ids('Sosial').includes(id), id);
+  for (const id of ['dance', 'party', 'great', 'awe', 'cheer']) assert.ok(ids('Pesta').includes(id), id);
+  for (const id of ['flower', 'ring', 'gift', 'toast', 'affection']) assert.ok(ids('Majlis').includes(id), id);
+  for (const id of ['pray', 'bow', 'calm', 'hug']) assert.ok(ids('Hormat').includes(id), id);
+  for (const id of ['salam', 'sit', 'point', 'heartsign', 'selfie']) assert.ok(ids('Animasi').includes(id), id);
 });
 
 test('intensitas: makin ringan makin sedikit efek; nextIntensity berputar dan memulihkan nama ngawur', () => {

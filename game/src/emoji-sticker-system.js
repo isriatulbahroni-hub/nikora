@@ -1,22 +1,44 @@
 // Katalog stiker bersama untuk semua dunia (aula ORBIT dan vila NIKORA). Murni: tanpa THREE/DOM.
 // Urutan = indeks yang dikirim lewat jaringan, jadi jangan menyisipkan di tengah (tambahkan di akhir).
+// `pose` = nama pose tubuh penuh di avatar-emotes.js (lengan, kepala, badan); `act` = gestur lama untuk model manusia (Michelle).
 export const STICKERS = Object.freeze([
-  { id: 'love', label: 'Suka', cat: 'Kasih', act: null, glyph: '😍', color: 0xff5c8a, motion: 'pulse', particles: 'hearts', sound: 'pop', face: 'love' },
-  { id: 'clap', label: 'Tepuk', cat: 'Perayaan', act: 'clap', glyph: '👏', color: 0xf3d58a, motion: 'shake', particles: 'sparks', sound: 'pop', face: null },
-  { id: 'touched', label: 'Terharu', cat: 'Emosi', act: null, glyph: '🥹', color: 0xa8d8ff, motion: 'sway', particles: 'sparks', sound: 'pop', face: 'touched' },
-  { id: 'laugh', label: 'Tertawa', cat: 'Emosi', act: 'bow', glyph: '😂', color: 0xffd23f, motion: 'bounce', particles: 'sparks', sound: 'laugh', face: 'laugh' },
-  { id: 'party', label: 'Pesta', cat: 'Perayaan', act: 'dance', glyph: '🎉', color: 0xc77dff, motion: 'bounce', particles: 'confetti', sound: 'horn', face: null },
-  { id: 'flower', label: 'Bunga', cat: 'Perayaan', act: null, glyph: '💐', color: 0xff9ecb, motion: 'sway', particles: 'petals', sound: 'pop', face: null },
-  { id: 'angry', label: 'Marah', cat: 'Emosi', act: null, glyph: '😡', color: 0xff3b30, motion: 'shake', particles: 'smoke', sound: 'growl', face: 'angry' },
-  { id: 'cry', label: 'Menangis', cat: 'Emosi', act: null, glyph: '😭', color: 0x4aa8ff, motion: 'droop', particles: 'tears', sound: 'sob', face: 'cry' },
-  { id: 'pray', label: 'Doa', cat: 'Hormat', act: 'bow', glyph: '🙏', color: 0xfff1b8, motion: 'sway', particles: 'sparks', sound: 'pop', face: null },
-  { id: 'heart', label: 'Hati', cat: 'Kasih', act: null, glyph: '❤️', color: 0xff2d55, motion: 'pulse', particles: 'hearts', sound: 'pop', face: 'love' },
-  { id: 'fire', label: 'Api', cat: 'Perayaan', act: null, glyph: '🔥', color: 0xff7a1a, motion: 'shake', particles: 'sparks', sound: 'growl', face: null },
-  { id: 'wave', label: 'Lambai', cat: 'Sapaan', act: 'wave', glyph: '👋', color: 0x9be7a5, motion: 'sway', particles: 'sparks', sound: 'pop', face: null },
+  { id: 'love', label: 'Suka', cat: 'Sosial', act: null, pose: 'love', glyph: '😍', color: 0xff5c8a, motion: 'pulse', particles: 'hearts', sound: 'pop', face: 'love' },
+  { id: 'clap', label: 'Tepuk', cat: 'Sosial', act: 'clap', pose: 'clap', glyph: '👏', color: 0xf3d58a, motion: 'shake', particles: 'sparks', sound: 'pop', face: null },
+  { id: 'touched', label: 'Terharu', cat: 'Emosi', act: null, pose: 'touched', glyph: '🥹', color: 0xa8d8ff, motion: 'sway', particles: 'sparks', sound: 'pop', face: 'touched' },
+  { id: 'laugh', label: 'Tertawa', cat: 'Emosi', act: 'bow', pose: 'laugh', glyph: '😂', color: 0xffd23f, motion: 'bounce', particles: 'sparks', sound: 'laugh', face: 'laugh' },
+  { id: 'party', label: 'Pesta', cat: 'Pesta', act: 'dance', pose: 'party', glyph: '🎉', color: 0xc77dff, motion: 'bounce', particles: 'confetti', sound: 'horn', face: null },
+  { id: 'flower', label: 'Bunga', cat: 'Majlis', act: null, pose: 'flower', glyph: '💐', color: 0xff9ecb, motion: 'sway', particles: 'petals', sound: 'pop', face: null },
+  { id: 'angry', label: 'Marah', cat: 'Emosi', act: null, pose: 'angry', glyph: '😡', color: 0xff3b30, motion: 'shake', particles: 'smoke', sound: 'growl', face: 'angry' },
+  { id: 'cry', label: 'Menangis', cat: 'Emosi', act: null, pose: 'cry', glyph: '😭', color: 0x4aa8ff, motion: 'droop', particles: 'tears', sound: 'sob', face: 'cry' },
+  { id: 'pray', label: 'Doa', cat: 'Hormat', act: 'bow', pose: 'pray', glyph: '🙏', color: 0xfff1b8, motion: 'sway', particles: 'sparks', sound: 'pop', face: null },
+  { id: 'heart', label: 'Hati', cat: 'Sosial', act: null, pose: 'heart', glyph: '❤️', color: 0xff2d55, motion: 'pulse', particles: 'hearts', sound: 'pop', face: 'love' },
+  { id: 'fire', label: 'Api', cat: 'Pesta', act: null, pose: 'fire', glyph: '🔥', color: 0xff7a1a, motion: 'shake', particles: 'sparks', sound: 'growl', face: null },
+  { id: 'wave', label: 'Lambai', cat: 'Sosial', act: 'wave', pose: 'wave', glyph: '👋', color: 0x9be7a5, motion: 'sway', particles: 'sparks', sound: 'pop', face: null },
+  // ---- ditambahkan: gaya emoji Nikora (30 emote berpose penuh) ----
+  { id: 'shock', label: 'Terkejut', cat: 'Emosi', act: null, pose: 'shock', glyph: '😲', color: 0xffd23f, motion: 'shake', particles: 'sparks', sound: 'pop', face: 'shock' },
+  { id: 'sad', label: 'Sedih', cat: 'Emosi', act: null, pose: 'sad', glyph: '😢', color: 0x7aa7d9, motion: 'sway', particles: 'tears', sound: 'sob', face: 'sad' },
+  { id: 'thumbs', label: 'Setuju', cat: 'Sosial', act: null, pose: 'thumbs', glyph: '👍', color: 0xf3d58a, motion: 'bounce', particles: 'sparks', sound: 'pop', face: 'smile' },
+  { id: 'handshake', label: 'Bersalaman', cat: 'Sosial', act: null, pose: 'handshake', glyph: '🤝', color: 0x9be7a5, motion: 'sway', particles: 'sparks', sound: 'pop', face: 'smile' },
+  { id: 'dance', label: 'Menari', cat: 'Pesta', act: null, pose: 'dance', glyph: '💃', color: 0xc77dff, motion: 'sway', particles: 'confetti', sound: 'horn', face: 'smile' },
+  { id: 'great', label: 'Hebat', cat: 'Pesta', act: null, pose: 'great', glyph: '💯', color: 0xff7a1a, motion: 'bounce', particles: 'sparks', sound: 'pop', face: 'smile' },
+  { id: 'awe', label: 'Kagum', cat: 'Pesta', act: null, pose: 'awe', glyph: '🤩', color: 0xffd23f, motion: 'pulse', particles: 'sparks', sound: 'pop', face: 'awe' },
+  { id: 'cheer', label: 'Bersorak', cat: 'Pesta', act: null, pose: 'cheer', glyph: '🙌', color: 0xc77dff, motion: 'bounce', particles: 'confetti', sound: 'horn', face: 'smile' },
+  { id: 'ring', label: 'Cincin', cat: 'Majlis', act: null, pose: 'ring', glyph: '💍', color: 0xa8d8ff, motion: 'pulse', particles: 'sparks', sound: 'coin', face: 'smile' },
+  { id: 'gift', label: 'Hadiah', cat: 'Majlis', act: null, pose: 'gift', glyph: '🎁', color: 0xff5c8a, motion: 'sway', particles: 'confetti', sound: 'pop', face: 'smile' },
+  { id: 'toast', label: 'Perayaan', cat: 'Majlis', act: null, pose: 'toast', glyph: '🥂', color: 0xf3d58a, motion: 'sway', particles: 'sparks', sound: 'coin', face: 'smile' },
+  { id: 'affection', label: 'Kasih sayang', cat: 'Majlis', act: null, pose: 'affection', glyph: '🥰', color: 0xff9ecb, motion: 'pulse', particles: 'hearts', sound: 'pop', face: 'love' },
+  { id: 'bow', label: 'Tunduk hormat', cat: 'Hormat', act: null, pose: 'bow', glyph: '🙇', color: 0xfff1b8, motion: 'sway', particles: 'sparks', sound: 'pop', face: null },
+  { id: 'calm', label: 'Tenang', cat: 'Hormat', act: null, pose: 'calm', glyph: '😌', color: 0xa8d8ff, motion: 'sway', particles: 'sparks', sound: 'pop', face: 'calm' },
+  { id: 'hug', label: 'Pelukan', cat: 'Hormat', act: null, pose: 'hug', glyph: '🤗', color: 0xff9ecb, motion: 'pulse', particles: 'hearts', sound: 'pop', face: 'smile' },
+  { id: 'salam', label: 'Salam', cat: 'Animasi', act: null, pose: 'salam', glyph: '🤚', color: 0x9be7a5, motion: 'sway', particles: 'sparks', sound: 'pop', face: 'smile' },
+  { id: 'sit', label: 'Duduk', cat: 'Animasi', act: null, pose: 'sit', glyph: '🧘', color: 0xfff1b8, motion: 'sway', particles: 'sparks', sound: 'pop', face: 'calm' },
+  { id: 'point', label: 'Tunjuk', cat: 'Animasi', act: null, pose: 'point', glyph: '👉', color: 0xf3d58a, motion: 'bounce', particles: 'sparks', sound: 'pop', face: null },
+  { id: 'heartsign', label: 'Salam hati', cat: 'Animasi', act: null, pose: 'heartsign', glyph: '💖', color: 0xff2d55, motion: 'pulse', particles: 'hearts', sound: 'pop', face: 'love' },
+  { id: 'selfie', label: 'Selfie', cat: 'Animasi', act: null, pose: 'selfie', glyph: '🤳', color: 0xa8d8ff, motion: 'sway', particles: 'sparks', sound: 'pop', face: 'smile' },
 ]);
 
-// Kategori panel (urutan tampil) dan gestur tubuh yang boleh dipaksakan ke avatar saat stiker diputar.
-export const CATEGORIES = Object.freeze(['Sapaan', 'Emosi', 'Perayaan', 'Kasih', 'Hormat']);
+// Kategori panel (urutan tampil, mengikuti gambar sistem avatar & emoji Nikora) dan gestur tubuh yang boleh dipaksakan ke model manusia.
+export const CATEGORIES = Object.freeze(['Emosi', 'Sosial', 'Pesta', 'Majlis', 'Hormat', 'Animasi']);
 export const STICKER_ACTS = Object.freeze(['clap', 'wave', 'bow', 'dance']);
 
 // Intensitas efek: pendar, jumlah partikel (pengali), batas efek serentak di layar, ukuran emoji di atas kepala.
