@@ -94,7 +94,10 @@ export const PROP_SPECS = Object.freeze({
   tree: { hx: 0.4, hz: 0.4, h: 7 },
 });
 // Properti yang cukup tinggi/besar untuk menghalangi kamera.
-const CAMERA_BLOCKERS = new Set(['pier', 'minbar', 'fountain', 'shelf', 'pelaminan']);
+// 'column' ditambahkan: dulu tiang tidak dihitung sehingga kamera bisa masuk ke dalam tiang (layar jadi putih/krem).
+const CAMERA_BLOCKERS = new Set(['column', 'pier', 'minbar', 'fountain', 'shelf', 'pelaminan']);
+// Tiang digambar dengan kepala (capital) selebar 2,2 m, lebih lebar dari kotak tabrakan pemain (1,6 m).
+const COLUMN_CAMERA_HALF = 1.1;
 
 // Tujuan "Jelajah": semua ruang utama. Diuji agar bisa diinjak dan terjangkau dari titik awal.
 export const PLACES = Object.freeze([
@@ -385,7 +388,10 @@ export function getMasjidWorld() {
   for (const p of props) {
     if (!CAMERA_BLOCKERS.has(p.type)) continue;
     const s = PROP_SPECS[p.type];
-    occluders.push(box(p.x - s.hx, p.x + s.hx, 0, s.h, p.z - s.hz, p.z + s.hz));
+    // Pakai tinggi tiang yang sebenarnya (p.h): tiang ruang rendah (9,5 m) tidak boleh menjadi penghalang setinggi 28 m.
+    const hx = p.type === 'column' ? COLUMN_CAMERA_HALF : s.hx;
+    const hz = p.type === 'column' ? COLUMN_CAMERA_HALF : s.hz;
+    occluders.push(box(p.x - hx, p.x + hx, 0, p.h ?? s.h, p.z - hz, p.z + hz));
   }
   for (const m of MINARETS) occluders.push(box(m.x - m.half, m.x + m.half, 0, m.height, m.z - m.half, m.z + m.half));
   for (const t of GATE_TOWERS) occluders.push(box(t.x - t.hx, t.x + t.hx, 0, t.height, t.z - t.hz, t.z + t.hz));

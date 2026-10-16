@@ -11,6 +11,13 @@ const PROP_LOOK = {
   pier: '#e8dcc0', minbar: '#6b4a2b', shelf: '#6b4a2b', glass: '#b8d4e0', rehal: '#8a5a2f', bench: '#d9d2c3',
   table: '#f4efe6', akadtable: '#f7f1e3', pelaminan: GOLD, row: '#7a2f3a',
 };
+const BOOK_COLORS = ['#7a2f3a', '#2f5f7a', '#3a6b4a', '#b8923f', '#5b3f2a', '#8a8a7a', '#a14a2f'];
+
+// Pengacak deterministik kecil (supaya isi rak selalu sama di setiap muat ulang).
+const makeRng = (seed) => () => {
+  seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+  return seed / 4294967296;
+};
 
 const tmp = new THREE.Object3D();
 const tint = new THREE.Color();
@@ -135,7 +142,10 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
   const hemi = new THREE.HemisphereLight(0xe6f1ff, 0x8f7e5e, 1.0);
   const sun = new THREE.DirectionalLight(0xfff0d2, 1.7);
   sun.position.set(-180, 300, 140);
-  scene.add(hemi, sun);
+  // Cahaya isi dalam ruangan: tanpa ini bagian bawah atap dan dinding hanya kena cahaya langit yang sudah dikurangi,
+  // sehingga langit-langit tampak seperti gradasi gelap dengan satu sorotan di bawah pemain.
+  const fill = new THREE.AmbientLight(0xfff0d6, 0);
+  scene.add(hemi, sun, fill);
 
   const root = new THREE.Group();
   scene.add(root);
@@ -211,6 +221,7 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
   }
 
   // ---------------------------------------------------------------- tiang, pilar, perabot
+  const bookRng = makeRng(20261016);
   for (const p of world.props) {
     const spec = PROP_SPECS[p.type];
     if (p.type === 'column') {
@@ -236,6 +247,32 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
         cyls.add(p.x + Math.cos(a) * 6.6, 3.9, p.z + Math.sin(a) * 6.6, 0.5, 7.5, 0.5, CREAM);
       }
       domes.add(p.x, 7.6, p.z, 7.6, 0.45 * 7.6, 7.6, GOLD);
+    } else if (p.type === 'shelf') {
+      // rak buku: badan, empat papan, dan deretan buku berwarna di kedua sisi (dulu hanya balok cokelat polos)
+      boxes.add(p.x, spec.h / 2, p.z, spec.hx * 2, spec.h, spec.hz * 2, PROP_LOOK.shelf);
+      for (let k = 0; k < 4; k++) {
+        const base = 0.3 + k * 0.58;
+        boxes.add(p.x, base - 0.03, p.z, spec.hx * 2, 0.06, spec.hz * 2 + 0.6, '#8a6a45');
+        for (const side of [-1, 1]) {
+          let x = p.x - spec.hx + 0.15;
+          const end = p.x + spec.hx - 0.15;
+          while (x < end - 0.15) {
+            const w = Math.min(0.45 + bookRng() * 0.5, end - x);
+            const h = 0.36 + bookRng() * 0.14;
+            const color = BOOK_COLORS[Math.floor(bookRng() * BOOK_COLORS.length)];
+            boxes.add(x + w / 2, base + h / 2, p.z + side * (spec.hz + 0.15), w * 0.9, h, 0.28, color);
+            x += w;
+          }
+        }
+      }
+    } else if (p.type === 'glass') {
+      // etalase museum: alas batu gelap, pelat emas, dan satu benda pajangan (bola emas, guci, atau obelisk)
+      boxes.add(p.x, 0.45, p.z, spec.hx * 2, 0.9, spec.hz * 2, '#4a4338');
+      boxes.add(p.x, 0.93, p.z, spec.hx * 2 + 0.1, 0.06, spec.hz * 2 + 0.1, GOLD);
+      const kind = (((Math.round(p.x) + Math.round(p.z)) % 3) + 3) % 3;
+      if (kind === 0) balls.add(p.x, 1.45, p.z, 0.45, 0.45, 0.45, GOLD);
+      else if (kind === 1) cyls.add(p.x, 1.35, p.z, 0.3, 0.8, 0.3, '#b9774a');
+      else cones.add(p.x, 1.5, p.z, 0.4, 1.1, 0.4, '#d6c08a');
     } else {
       boxes.add(p.x, spec.h / 2, p.z, spec.hx * 2, spec.h, spec.hz * 2, PROP_LOOK[p.type] ?? CREAM);
       if (p.type === 'pier') boxes.add(p.x, HALL_H - 2, p.z, spec.hx * 2 + 1, 1.2, spec.hz * 2 + 1, GOLD);
@@ -244,17 +281,44 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
 
   // ---------------------------------------------------------------- mihrab dan lampu gantung aula
   const north = ROOMS[0].rect[1];
-  boxes.add(0, 10, north + 0.9, 16, 20, 0.8, GOLD);
-  boxes.add(0, 8, north + 1.0, 11, 16, 0.9, '#2a2f2a');
+  const NICHE = '#1f6f68';
+  const NICHE_IN = '#2f8f86';
+  boxes.add(0, 10, north + 0.9, 16, 20, 0.8, GOLD); // bingkai emas
+  // Relung dulu '#2a2f2a' (hampir hitam, datar) sehingga tampak seperti lubang kosong; kini hijau toska berlengkung.
+  boxes.add(0, 5.25, north + 1.0, 11, 10.5, 0.9, NICHE);
+  boxes.add(0, 4.75, north + 1.5, 8.6, 9.5, 0.3, NICHE_IN);
+  const arch = (radius, y, z, depth, color) => {
+    // setengah silinder rebah: lengkung menghadap selatan (ke dalam aula)
+    const m = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius, radius, depth, 24, 1, false, Math.PI / 2, Math.PI),
+      new THREE.MeshStandardMaterial({ color, roughness: 0.7 }),
+    );
+    m.rotation.x = Math.PI / 2;
+    m.position.set(0, y, z);
+    root.add(m);
+  };
+  arch(5.5, 10.5, north + 1.0, 0.9, NICHE);
+  arch(4.3, 9.5, north + 1.5, 0.3, NICHE_IN);
+
+  // lampu gantung raksasa di bawah kubah: cincin emas, palang, delapan lampu, dan empat rantai ke kubah
+  const chandelierGold = new THREE.MeshStandardMaterial({ color: GOLD, roughness: 0.5, metalness: 0.2 });
+  const chandelierRing = new THREE.Mesh(new THREE.TorusGeometry(26, 0.2, 6, 72), chandelierGold);
+  chandelierRing.rotation.x = Math.PI / 2;
+  chandelierRing.position.set(CENTRAL_DOME.x, 23, CENTRAL_DOME.z);
+  root.add(chandelierRing);
+  boxes.add(CENTRAL_DOME.x, 23, CENTRAL_DOME.z, 52, 0.14, 0.14, GOLD);
+  boxes.add(CENTRAL_DOME.x, 23, CENTRAL_DOME.z, 0.14, 0.14, 52, GOLD);
+  for (const [dx, dz] of [[26, 0], [-26, 0], [0, 26], [0, -26]]) cyls.add(CENTRAL_DOME.x + dx, 48.4, CENTRAL_DOME.z + dz, 0.1, 50.4, 0.1, GOLD);
   for (let i = 0; i < 8; i++) {
     const a = (i / 8) * Math.PI * 2;
     glow.add(CENTRAL_DOME.x + Math.cos(a) * 26, 23, CENTRAL_DOME.z + Math.sin(a) * 26, 1.6, 1.6, 1.6, '#ffe2a0');
   }
-  glow.add(CENTRAL_DOME.x, 31, CENTRAL_DOME.z, 3.2, 3.2, 3.2, '#ffe2a0');
+  glow.add(CENTRAL_DOME.x, 23, CENTRAL_DOME.z, 2.2, 2.2, 2.2, '#ffe2a0'); // pusat (dulu melayang di y=31 tanpa penyangga)
   for (let x = -147; x <= 147; x += 42) {
     for (let z = -207; z <= -57; z += 50) {
       if (Math.abs(x) < 50 && z > -195 && z < -85) continue;
       glow.add(x, 22, z, 1.3, 1.3, 1.3, '#ffe2a0');
+      cyls.add(x, (22 + HALL_H) / 2, z, 0.06, HALL_H - 22, 0.06, GOLD); // rantai dari atap aula ke lampu
     }
   }
 
@@ -310,10 +374,11 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
 
   return {
     root,
-    /** k = 0 di luar, 1 di dalam bangunan: dalam ruangan cahaya langit dikurangi (lampu mengikuti pemain dari main). */
+    /** k = 0 di luar, 1 di dalam bangunan: dalam ruangan cahaya langit dikurangi dan cahaya isi dinaikkan (lampu mengikuti pemain dari main). */
     setIndoor(k) {
       hemi.intensity = 1.0 - 0.35 * k;
       sun.intensity = 1.7 - 1.15 * k;
+      fill.intensity = 0.55 * k;
     },
   };
 }
