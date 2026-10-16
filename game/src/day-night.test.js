@@ -88,23 +88,23 @@ test('blendSky mencampur keyframe siang, senja, dan malam', () => {
   assert.deepEqual(blendSky(frames, -3), frames.day);
 });
 
-test('pelacak fase bergerak halus dan melapor hanya saat berubah berarti', () => {
+test('pelacak fase bergerak halus (paling banyak 0,25 detik per langkah) dan melapor hanya saat berubah berarti', () => {
   const t = createPhaseTracker({ mode: 'day' });
   assert.equal(t.phase, -1);
   assert.equal(t.tick(0), true); // pemanggilan pertama selalu menerapkan
   assert.equal(t.tick(16), false);
   t.setMode('night');
   assert.equal(t.mode, 'night');
-  assert.equal(t.tick(1016), true);
-  near(t.phase, -0.75);
-  for (let i = 0; i < 100; i++) t.tick(1016 + (i + 1) * 250);
+  assert.equal(t.tick(266), true); // dt 0,25 detik x laju 0,25 = 0,0625
+  near(t.phase, -0.9375);
+  for (let i = 0; i < 100; i++) t.tick(266 + (i + 1) * 250);
   assert.equal(t.phase, 1);
 });
 
 test('parameter URL: zona waktu dan mode langit', () => {
   assert.equal(zoneFromSearch('?tz=WITA'), 'WITA');
   assert.equal(zoneFromSearch('?tz=wit'), 'WIT');
-  assert.equal(zoneFromSearch('?tz=+8'), 8);
+  assert.equal(zoneFromSearch('?tz=8'), 8);
   assert.equal(zoneFromSearch('?tz=99'), undefined);
   assert.equal(zoneFromSearch('?tz=abc'), undefined);
   assert.equal(zoneFromSearch(''), undefined);
