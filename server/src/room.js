@@ -36,8 +36,9 @@ export class Room {
     this.players = new Map();
     this.spawnCounter = 0;
     this.greetRequests = new Map(); // id penerima -> { from, kind, expires }
-    // Kunci kamar villa (check-in, kunci, ketuk). Hanya ada di dunia villa.
-    this.locks = this.rules.world ? new RoomLocks(this.rules.world) : null;
+    // Kunci kamar villa (check-in, kunci, ketuk). Hanya untuk dunia bertingkat seperti villa;
+    // dunia hasil proyek (editor) tidak punya `levels` sehingga tidak memakainya.
+    this.locks = this.rules.world?.levels ? new RoomLocks(this.rules.world) : null;
   }
 
   addPlayer(id, name) {
