@@ -5,6 +5,8 @@
 //  - Yang terlihat: tamu yang kameranya menyala dan berada dalam jangkauan (sama dengan jarak suara), paling banyak
 //    `maxTiles` sekaligus (lebih sedikit di HP lemah). Yang tidak terpilih TIDAK diunduh (setSubscribed(false)),
 //    jadi di acara ramai bandwidth tetap terkendali. Siapa yang terlihat = siapa yang terdengar.
+//  - Tombol 👁/🙈 menyembunyikan SEMUA kotak video (termasuk pratinjau kamera sendiri) dan berhenti mengunduh video
+//    tamu lain. Kamera sendiri tetap menyiarkan bila menyala; matikan lewat tombol 📷.
 //  - Video kamera diterbitkan dengan nama khusus (CAM_TRACK_NAME) dan source 'unknown', bukan source 'camera',
 //    karena LiveKitNet menganggap video ber-source 'camera' sebagai siaran Layar Tancap. Dengan cara ini
 //    panggilan video dan Layar Tancap tidak saling menimpa.
@@ -45,8 +47,9 @@ const toast = (doc, text, ms = 3500) => {
   setTimeout(() => el.remove(), ms);
 };
 
+// Posisi baris video bisa digeser per halaman lewat variabel CSS --vc-top (mis. di vila agar tidak menimpa label tempat).
 const CSS = `
-.vc-strip{position:fixed;left:8px;top:calc(64px + env(safe-area-inset-top));z-index:15;display:flex;align-items:flex-start;gap:6px;max-width:calc(100vw - 16px);overflow-x:auto;pointer-events:none}
+.vc-strip{position:fixed;left:8px;top:var(--vc-top,calc(64px + env(safe-area-inset-top)));z-index:15;display:flex;align-items:flex-start;gap:6px;max-width:calc(100vw - 16px);overflow-x:auto;pointer-events:none}
 .vc-strip[hidden]{display:none}
 .vc-ctls{display:flex;flex-direction:column;gap:6px;pointer-events:auto}
 .vc-ctl{width:34px;height:34px;border:0;border-radius:999px;background:rgba(14,18,24,.72);color:#fff;font-size:16px;line-height:1;cursor:pointer}
@@ -76,7 +79,7 @@ export class VideoCall {
     this.camOn = false;
     this.wantCam = false; // pengguna ingin kamera menyala (dipakai untuk memulihkan setelah putus)
     this.facing = 'user';
-    this.viewing = true; // false = mode hemat: tidak menampilkan/mengunduh video orang lain
+    this.viewing = true; // false = semua kotak video disembunyikan dan video orang lain tidak diunduh
     this.recovering = false;
     this.selected = new Set();
     this.lastSpoke = new Map();
@@ -210,11 +213,17 @@ export class VideoCall {
     }
   }
 
-  /** Mode hemat: false = jangan tampilkan dan jangan unduh video orang lain. */
-  setViewing(on) {
+  /** false = sembunyikan semua kotak video (juga pratinjau sendiri) dan jangan unduh video orang lain. */
+  setViewing(on, { notify = false } = {}) {
     this.viewing = Boolean(on);
     this.lastTick = 0;
+    // langsung lepas langganan video orang lain tanpa menunggu pembaruan berikutnya
+    if (!this.viewing && this.room) this.update({ x: 0, z: 0 }, [], Date.now());
     this.#syncUi();
+    if (notify) {
+      if (!this.viewing) this.onNotice(this.camOn ? 'Video disembunyikan. Kamera Anda tetap menyala; matikan lewat tombol 📷.' : 'Video disembunyikan (mode hemat).');
+      else this.onNotice('Video ditampilkan.');
+    }
   }
 
   // ---------- video orang lain ----------
@@ -239,10 +248,11 @@ export class VideoCall {
     const peers = [];
     for (const part of room.remoteParticipants?.values?.() ?? []) {
       const pub = camPublication(part);
+      // saat disembunyikan posisi tidak dibutuhkan: semua publikasi tetap dicatat agar bisa dilepas langgananannya
       const pos = byId.get(part.identity);
-      if (!pub || !pos) continue;
-      entries.set(part.identity, { pub, name: part.name || pos.name || 'Tamu' });
-      peers.push(pos);
+      if (!pub || (!pos && this.viewing)) continue;
+      entries.set(part.identity, { pub, name: part.name || pos?.name || 'Tamu' });
+      if (pos) peers.push(pos);
     }
     const selected = this.viewing
       ? pickVideoPeers({ peers, self, max: this.maxTiles, previous: this.selected, lastSpoke: this.lastSpoke, now: nowMs })
@@ -311,7 +321,8 @@ export class VideoCall {
 
   #syncUi() {
     if (!this.doc || !this.strip) return;
-    if (this.camOn && this.track) {
+    // pratinjau kamera sendiri ikut disembunyikan saat mode sembunyikan aktif (kamera tetap menyiarkan)
+    if (this.camOn && this.track && this.viewing) {
       if (!this.selfTile) {
         this.selfTile = this.#makeTile(true);
         this.selfTile.label.textContent = 'Anda';
@@ -331,7 +342,9 @@ export class VideoCall {
     this.strip.hidden = !(this.camOn || this.tiles.size > 0 || !this.viewing);
     this.flipBtn.hidden = !this.camOn;
     this.viewBtn.textContent = this.viewing ? '👁' : '🙈';
-    this.viewBtn.setAttribute('aria-label', this.viewing ? 'Sembunyikan video tamu lain (mode hemat)' : 'Tampilkan video tamu lain');
+    this.viewBtn.setAttribute('aria-pressed', this.viewing ? 'false' : 'true');
+    this.viewBtn.setAttribute('aria-label', this.viewing ? 'Sembunyikan semua video (mode hemat)' : 'Tampilkan video');
+    this.viewBtn.title = this.viewing ? 'Sembunyikan semua video' : 'Tampilkan video';
     if (this.toggle) {
       this.toggle.classList.toggle('is-on', this.camOn);
       this.toggle.setAttribute('aria-pressed', this.camOn ? 'true' : 'false');
@@ -364,7 +377,7 @@ export class VideoCall {
     };
     this.flipBtn = mkCtl('🔄', 'Balik kamera', () => this.flip());
     this.flipBtn.hidden = true;
-    this.viewBtn = mkCtl('👁', 'Sembunyikan video tamu lain (mode hemat)', () => this.setViewing(!this.viewing));
+    this.viewBtn = mkCtl('👁', 'Sembunyikan semua video (mode hemat)', () => this.setViewing(!this.viewing, { notify: true }));
     ctls.append(this.flipBtn, this.viewBtn);
     strip.append(ctls);
     doc.body.append(strip);
