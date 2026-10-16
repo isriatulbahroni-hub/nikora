@@ -222,6 +222,7 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
 
   // ---------------------------------------------------------------- tiang, pilar, perabot
   const bookRng = makeRng(20261016);
+  const exhibitHits = []; // bola tak kasat mata di sekitar etalase museum, dipakai untuk mendeteksi ketukan
   for (const p of world.props) {
     const spec = PROP_SPECS[p.type];
     if (p.type === 'column') {
@@ -273,6 +274,14 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
       if (kind === 0) balls.add(p.x, 1.45, p.z, 0.45, 0.45, 0.45, GOLD);
       else if (kind === 1) cyls.add(p.x, 1.35, p.z, 0.3, 0.8, 0.3, '#b9774a');
       else cones.add(p.x, 1.5, p.z, 0.4, 1.1, 0.4, '#d6c08a');
+      if (p.exhibit) {
+        glow.add(p.x, 2.35, p.z, 0.22, 0.22, 0.22, '#ffd77a'); // penanda "ketuk untuk info"
+        const hit = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+        hit.position.set(p.x, 1.3, p.z);
+        hit.userData.exhibit = p.exhibit;
+        exhibitHits.push(hit);
+        root.add(hit);
+      }
     } else {
       boxes.add(p.x, spec.h / 2, p.z, spec.hx * 2, spec.h, spec.hz * 2, PROP_LOOK[p.type] ?? CREAM);
       if (p.type === 'pier') boxes.add(p.x, HALL_H - 2, p.z, spec.hx * 2 + 1, 1.2, spec.hz * 2 + 1, GOLD);
@@ -374,6 +383,7 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
 
   return {
     root,
+    exhibitHits,
     /** k = 0 di luar, 1 di dalam bangunan: dalam ruangan cahaya langit dikurangi dan cahaya isi dinaikkan (lampu mengikuti pemain dari main). */
     setIndoor(k) {
       hemi.intensity = 1.0 - 0.35 * k;

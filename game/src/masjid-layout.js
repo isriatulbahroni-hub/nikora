@@ -5,6 +5,7 @@
 // empat menara setinggi 150 m. Ini rancangan orisinal (bukan replika bangunan nyata mana pun) yang berskala
 // sekelas masjid-masjid terbesar di dunia. Semua ruang di lantai dasar dan bisa dimasuki lewat pintu.
 import { isWalkable, resolveMove } from './villa-layout.js';
+import { EXHIBITS } from './masjid-exhibits.js';
 
 export const WALL_T = 1;
 export const HALL_H = 28;
@@ -99,26 +100,29 @@ const CAMERA_BLOCKERS = new Set(['column', 'pier', 'minbar', 'fountain', 'shelf'
 // Tiang digambar dengan kepala (capital) selebar 2,2 m, lebih lebar dari kotak tabrakan pemain (1,6 m).
 const COLUMN_CAMERA_HALF = 1.1;
 
+// Kelompok menu "Jelajah" (urutan tampil).
+export const PLACE_GROUPS = Object.freeze(['Halaman dan gerbang', 'Ibadah', 'Belajar dan budaya', 'Acara']);
+
 // Tujuan "Jelajah": semua ruang utama. Diuji agar bisa diinjak dan terjangkau dari titik awal.
 export const PLACES = Object.freeze([
-  { id: 'gate', name: 'Gerbang Utama', x: 0, z: 252 },
-  { id: 'forecourt', name: 'Halaman Selatan', x: 40, z: 190 },
-  { id: 'akad', name: 'Ruang Akad Nikah', x: 125, z: 190 },
-  { id: 'walimah', name: 'Gedung Walimah', x: -130, z: 190 },
-  { id: 'sahn', name: 'Sahn (Halaman Utama)', x: 30, z: 80 },
-  { id: 'fountain', name: 'Pancuran Tengah Sahn', x: 0, z: 62 },
-  { id: 'riwaq', name: 'Serambi Timur', x: 165, z: 55 },
-  { id: 'wudhu_e', name: 'Tempat Wudhu Putra', x: 236, z: 55 },
-  { id: 'wudhu_w', name: 'Tempat Wudhu Putri', x: -236, z: 55 },
-  { id: 'portal', name: 'Pintu Utama Aula Shalat', x: 0, z: -48 },
-  { id: 'hall', name: 'Aula Shalat Utama', x: 0, z: -80 },
-  { id: 'dome', name: 'Di Bawah Kubah Utama', x: 0, z: -140 },
-  { id: 'mihrab', name: 'Mihrab dan Mimbar', x: 0, z: -230 },
-  { id: 'women', name: 'Ruang Shalat Muslimah', x: 245, z: -180 },
-  { id: 'library', name: 'Perpustakaan Islam', x: 245, z: -80 },
-  { id: 'tahfidz', name: 'Ruang Tahfidz', x: -245, z: -180 },
-  { id: 'museum', name: 'Museum Peradaban Islam', x: -245, z: -80 },
-  { id: 'minaret', name: 'Kaki Menara Timur', x: 190, z: -62 },
+  { id: 'gate', name: 'Gerbang Utama', group: 'Halaman dan gerbang', x: 0, z: 252 },
+  { id: 'forecourt', name: 'Halaman Selatan', group: 'Halaman dan gerbang', x: 40, z: 190 },
+  { id: 'akad', name: 'Ruang Akad Nikah', group: 'Acara', x: 125, z: 190 },
+  { id: 'walimah', name: 'Gedung Walimah', group: 'Acara', x: -130, z: 190 },
+  { id: 'sahn', name: 'Sahn (Halaman Utama)', group: 'Halaman dan gerbang', x: 30, z: 80 },
+  { id: 'fountain', name: 'Pancuran Tengah Sahn', group: 'Halaman dan gerbang', x: 0, z: 62 },
+  { id: 'riwaq', name: 'Serambi Timur', group: 'Halaman dan gerbang', x: 165, z: 55 },
+  { id: 'wudhu_e', name: 'Tempat Wudhu Putra', group: 'Ibadah', x: 236, z: 55 },
+  { id: 'wudhu_w', name: 'Tempat Wudhu Putri', group: 'Ibadah', x: -236, z: 55 },
+  { id: 'portal', name: 'Pintu Utama Aula Shalat', group: 'Ibadah', x: 0, z: -48 },
+  { id: 'hall', name: 'Aula Shalat Utama', group: 'Ibadah', x: 0, z: -80 },
+  { id: 'dome', name: 'Di Bawah Kubah Utama', group: 'Ibadah', x: 0, z: -140 },
+  { id: 'mihrab', name: 'Mihrab dan Mimbar', group: 'Ibadah', x: 0, z: -230 },
+  { id: 'women', name: 'Ruang Shalat Muslimah', group: 'Ibadah', x: 245, z: -180 },
+  { id: 'library', name: 'Perpustakaan Islam', group: 'Belajar dan budaya', x: 245, z: -80 },
+  { id: 'tahfidz', name: 'Ruang Tahfidz', group: 'Belajar dan budaya', x: -245, z: -180 },
+  { id: 'museum', name: 'Museum Peradaban Islam', group: 'Belajar dan budaya', x: -245, z: -80 },
+  { id: 'minaret', name: 'Kaki Menara Timur', group: 'Halaman dan gerbang', x: 190, z: -62 },
 ]);
 
 function mulberry32(seed) {
@@ -165,7 +169,9 @@ function buildProps() {
 
   // perpustakaan dan museum
   for (const x of [210, 222, 234, 256, 268, 280]) for (const z of [-110, -102, -62, -54]) add('shelf', x, z);
-  for (const x of [-210, -222, -234, -256, -268, -280]) for (const z of [-108, -98, -62, -52]) add('glass', x, z);
+  // museum: dua baris etalase (di dekat dinding utara dan selatan, lorong tengah dibiarkan lapang); tiap etalase memuat satu info yang bisa diketuk
+  let exhibit = 0;
+  for (const z of [-108, -52]) for (const x of [-210, -222, -234, -256, -268, -280]) add('glass', x, z, { exhibit: EXHIBITS[exhibit++].id });
 
   // tempat wudhu
   for (const x of [212, 228, 244]) for (const z of [34, 44, 66, 76]) add('bench', x, z);
@@ -443,6 +449,7 @@ export function getMasjidWorld() {
     colliders,
     occluders,
     places: PLACES,
+    placeGroups: PLACE_GROUPS,
     move,
     constrain: (pos) => resolveMove(pos, R, near(pos.x, pos.z), WORLD_LIMIT),
     canStand: (x, z) => isWalkable(x, z, R, near(x, z), WORLD_LIMIT),
