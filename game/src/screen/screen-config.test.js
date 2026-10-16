@@ -23,6 +23,17 @@ test('layar mati secara bawaan dan hanya menyala dengan ?layar=1 (atau true/ya/o
   }
 });
 
+test('halaman bertanda data-layar-bawaan="on" (vila) menyalakan layar tanpa parameter; ?layar=0 tetap mematikan', () => {
+  const villa = new JSDOM('<!doctype html><html data-layar-bawaan="on"><body></body></html>').window.document;
+  assert.equal(isScreenEnabled('', villa), true);
+  assert.equal(isScreenEnabled('?acara=abc', villa), true);
+  assert.equal(isScreenEnabled('?layar=1', villa), true);
+  assert.equal(isScreenEnabled('?layar=0', villa), false);
+  assert.equal(isScreenEnabled('?layar=tidak', villa), false);
+  const plain = new JSDOM('<!doctype html><html data-layar-bawaan="off"><body></body></html>').window.document;
+  assert.equal(isScreenEnabled('', plain), false);
+});
+
 test('disabledScreen: tidak melakukan apa pun dan tidak melempar error', () => {
   const s = disabledScreen();
   assert.equal(s.enabled, false);
