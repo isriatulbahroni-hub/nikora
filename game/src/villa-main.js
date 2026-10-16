@@ -12,6 +12,10 @@ import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
 import { modeFor } from './event-mode.js';
+import { lockableRooms } from './villa-doors.js';
+import { createRoomDoors } from './room-doors.js';
+import { mountRoomDoorsUi } from './room-doors-ui.js';
+import { createDoorView } from './villa-door-view.js';
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
 function applyQuality(renderer, scene, q) {
@@ -327,6 +331,10 @@ async function start() {
 
   const scene = new THREE.Scene();
   const built = buildVillaWorld(scene, world, { renderer });
+  // Kunci kamar: dibuat setelah tersambung (null = offline, semua kamar terbuka). Daun pintu dan lampu status ikut kondisinya.
+  let doors = null;
+  let doorUi = null;
+  const doorView = createDoorView({ scene, rooms: lockableRooms(world), getDoors: () => doors });
   // Siang-malam otomatis (jam asli; ?sky= dan ?tz= untuk mengubahnya). Dibuat sebelum layar dan avatar supaya hanya dunia vila yang diatur.
   const sky = createVillaSky({ scene, renderer, search: window.location.search });
   if (lowQuality) applyQuality(renderer, scene, quality.settings()); // ?q=low: mulai langsung dengan kualitas hemat
@@ -562,6 +570,11 @@ async function start() {
       setupParty(session);
       setupEmojiReactions({ session, avatar }); // stiker emoji: gerak badan, efek, dan suara (online: terlihat semua tamu)
       screen.attach(session);
+      if (session) {
+        // kunci kamar: check-in, kunci, ketuk (LiveKit: status disiarkan pemilik kamar; ?server=: server yang memutuskan)
+        doors = createRoomDoors({ net: session.net, world, onNotice: toast, onKnock: (req) => doorUi?.addKnock(req) });
+        doorUi = mountRoomDoorsUi({ doors });
+      }
       if (session && roleKey && session.net.role === 'guest') {
         // kunci ada di tautan tetapi server tidak mengenalinya: jangan diam saja
         toast(
@@ -597,7 +610,9 @@ async function start() {
     let travelled = 0;
     if (moving) {
       const before = { x: me.x, z: me.z };
-      const next = world.move(me, move.x * PLAYER_SPEED * delta, move.z * PLAYER_SPEED * delta);
+      const stepX = move.x * PLAYER_SPEED * delta;
+      const stepZ = move.z * PLAYER_SPEED * delta;
+      const next = doors ? doors.move(me, stepX, stepZ) : world.move(me, stepX, stepZ); // pintu kamar terkunci menahan yang tidak berhak masuk
       me.x = next.x;
       me.z = next.z;
       me.level = next.level;
@@ -709,6 +724,15 @@ async function start() {
     if (qChange) applyQuality(renderer, scene, qChange);
     renderer.render(scene, camera);
     screen.render(scene, camera);
+
+    // kunci kamar: tidur = kamar sendiri terkunci; daun pintu, lampu, tombol, dan kartu ketukan mengikuti status terbaru
+    const sleeping = seat !== null && world.spots[seat]?.kind === 'sleep';
+    if (doors) {
+      doors.setSleeping(sleeping);
+      doors.tick();
+      doorUi?.update(me, sleeping);
+    }
+    doorView.update();
 
     const near = nearestSpot();
     setActLabel(seat !== null ? 'Berdiri' : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : '');
