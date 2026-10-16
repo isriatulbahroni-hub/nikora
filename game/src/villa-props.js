@@ -34,17 +34,21 @@ const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 const rbox = (w, h, d, r = 0.04, seg = 3) => new RoundedBoxGeometry(w, h, d, seg, r);
 const cyl = (rt, rb, h, seg = 10) => new THREE.CylinderGeometry(rt, rb, h, seg);
 
-/** Kursi tamu (depan = +z, sandaran di sisi -z). */
+/**
+ * Kursi tamu (depan = +z, sandaran di sisi -z). Dudukan 0,56 m dan sandaran setinggi 1,25 m (dulu 0,44 m dan 1,0 m)
+ * supaya sebanding dengan avatar dan ruangan. Tinggi permukaan dudukan tetap 0,545 m, jadi pose duduk avatar tidak bergeser.
+ */
 export function chairGeometry({ frame = '#cbb68a', cushion = '#f7f1e6' } = {}) {
   const parts = [];
+  const h = 0.25; // jarak kaki/tiang dari tengah kursi
   for (const sx of [-1, 1]) {
-    for (const sz of [-1, 1]) parts.push(part(box(0.034, 0.46, 0.034), frame, { x: sx * 0.19, y: 0.23, z: sz * 0.19 }));
-    parts.push(part(box(0.032, 0.5, 0.032), frame, { x: sx * 0.19, y: 0.7, z: -0.19 }));
+    for (const sz of [-1, 1]) parts.push(part(box(0.05, 0.46, 0.05), frame, { x: sx * h, y: 0.23, z: sz * h }));
+    parts.push(part(box(0.045, 0.78, 0.045), frame, { x: sx * h, y: 0.86, z: -h }));
   }
-  parts.push(part(box(0.44, 0.035, 0.44), frame, { y: 0.47 }));
-  parts.push(part(rbox(0.4, 0.06, 0.4, 0.022, 2), cushion, { y: 0.515 }));
-  parts.push(part(box(0.4, 0.05, 0.03), frame, { y: 0.94, z: -0.19 }));
-  for (const y of [0.64, 0.74, 0.84]) parts.push(part(box(0.35, 0.025, 0.02), frame, { y, z: -0.19 }));
+  parts.push(part(box(0.56, 0.04, 0.56), frame, { y: 0.47 }));
+  parts.push(part(rbox(0.52, 0.07, 0.52, 0.025, 2), cushion, { y: 0.51 }));
+  parts.push(part(box(0.56, 0.07, 0.045), frame, { y: 1.215, z: -h }));
+  for (const y of [0.74, 0.88, 1.02]) parts.push(part(box(0.46, 0.035, 0.03), frame, { y, z: -h }));
   return merge(parts);
 }
 
