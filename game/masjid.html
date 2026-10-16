@@ -19,6 +19,13 @@
       .rbs { display: flex; gap: 8px; }
       .rb { width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255,255,255,.28); background: rgba(18,44,34,.65); color: #fff; font-size: 19px; line-height: 1; display: grid; place-items: center; padding: 0; cursor: pointer; opacity: .85; }
       .rb[aria-pressed="true"] { background: #2e9e6b; opacity: 1; }
+      /* tombol duduk dan shalat di kanan bawah (dekat ibu jari kanan, jauh dari joystick di kiri) */
+      .posebar { position: fixed; z-index: 7; right: 12px; bottom: calc(max(28px, env(safe-area-inset-bottom)) + 4px); display: flex; flex-direction: column; gap: 8px; }
+      .prayerbar { position: fixed; z-index: 8; right: 12px; bottom: calc(max(28px, env(safe-area-inset-bottom)) + 112px); width: min(224px, 56vw); padding: 10px; border-radius: 14px; background: rgba(18,44,34,.92); border: 1px solid rgba(255,255,255,.2); font-size: 13px; text-align: center; }
+      .prayerbar[hidden] { display: none; }
+      .prayerbar .pb-label { display: block; font-weight: 600; margin-bottom: 8px; line-height: 1.3; }
+      .prayerbar button { display: block; width: 100%; margin-top: 6px; padding: 10px; border: 0; border-radius: 10px; background: #2e9e6b; color: #fff; font: 600 13px ui-sans-serif, sans-serif; cursor: pointer; }
+      .prayerbar .pb-stop { background: rgba(255,255,255,.14); font-weight: 500; }
       #minimap { position: fixed; z-index: 6; top: calc(max(10px, env(safe-area-inset-top)) + 56px); right: 10px; width: 176px; height: 147px; border-radius: 10px; background: rgba(18,44,34,.5); border: 1px solid rgba(255,255,255,.3); opacity: .92; pointer-events: none; }
       #minimap[hidden] { display: none; }
       .hint { bottom: max(10px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .9; white-space: nowrap; }
@@ -64,7 +71,16 @@
       <div class="panel-head"><strong>Jelajah ke ruangan</strong><button id="places-close" type="button" aria-label="Tutup">&#10005;</button></div>
       <div id="places-list"></div>
     </div>
-    <div class="hud hint">WASD: jalan · Shift/R: lari · seret: putar kamera · scroll: zoom · C: sudut · M: peta · J: jelajah</div>
+    <div class="posebar">
+      <button id="pray-button" class="rb" type="button" aria-label="Shalat" aria-pressed="false" title="Shalat (P)">&#129330;</button>
+      <button id="sit-button" class="rb" type="button" aria-label="Duduk bersila" aria-pressed="false" title="Duduk bersila (B)">&#129496;</button>
+    </div>
+    <div id="prayer-bar" class="prayerbar" hidden>
+      <span class="pb-label" id="prayer-label"></span>
+      <button id="prayer-next" type="button">Gerakan berikutnya &#9654;</button>
+      <button id="prayer-stop" class="pb-stop" type="button">Berhenti</button>
+    </div>
+    <div class="hud hint">WASD: jalan · Shift/R: lari · B: duduk · P: shalat (N: gerakan berikutnya) · seret: putar kamera · scroll: zoom · C: sudut · M: peta · J: jelajah</div>
     <div class="toast" id="toast"></div>
     <div class="joy-zone" id="joy-zone"><div class="joy-base" id="joy-base"><div class="joy-knob" id="joy-knob"></div></div></div>
     <div id="masjid-error"><div><h2>Tidak bisa memulai</h2><p id="masjid-error-text"></p><pre id="masjid-error-detail"></pre></div></div>

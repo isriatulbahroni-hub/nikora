@@ -5,6 +5,8 @@ import { createQualityGovernor } from './quality.js';
 import { chooseCameraPose, forwardLookBlend, resolveCameraDistance } from './villa-camera.js';
 import { getMasjidWorld } from './masjid-layout.js';
 import { buildMasjidWorld } from './masjid-world.js';
+import { createPostureController } from './masjid-posture-data.js';
+import { applyPosture } from './masjid-posture.js';
 
 // Masjid Agung NIKORA: kompleks sangat luas yang dijelajahi dengan avatar (mode offline, satu pemain).
 // Berjalan 5,2 m/s seperti di vila; tombol Lari (Shift / R) menaikkannya supaya jarak ratusan meter tetap nyaman.
@@ -35,7 +37,7 @@ const joystick = { x: 0, z: 0 };
 let shiftHeld = false;
 let runToggle = false;
 const KEYS = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
-const hooks = { map: () => {}, camera: () => {}, places: () => {}, run: () => {} };
+const hooks = { map: () => {}, camera: () => {}, places: () => {}, run: () => {}, sit: () => {}, pray: () => {}, next: () => {} };
 const CAM_LIMITS = Object.freeze({ minPitch: 0.06, maxPitch: 1.5, minDist: 1.5, maxDist: 140 });
 // Orang ketiga, lebar, udara, dan pandangan atas (skala masjid ratusan meter)
 const CAM_PRESETS = Object.freeze([{ pitch: 0.28, dist: 6 }, { pitch: 0.55, dist: 12 }, { pitch: 0.95, dist: 30 }, { pitch: 1.5, dist: 90 }]);
@@ -71,6 +73,9 @@ function setupInput(canvas, camState) {
     else if (!e.repeat && k === 'c') hooks.camera();
     else if (!e.repeat && k === 'j') hooks.places();
     else if (!e.repeat && k === 'r') hooks.run();
+    else if (!e.repeat && k === 'b') hooks.sit();
+    else if (!e.repeat && k === 'p') hooks.pray();
+    else if (!e.repeat && (k === 'n' || k === 'enter')) hooks.next();
     else if (k === '[') camState.yaw += 0.12;
     else if (k === ']') camState.yaw -= 0.12;
     else if (k === '-') camState.dist = clamp(camState.dist * 1.1, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
@@ -328,6 +333,51 @@ async function start() {
     }, 2600);
   };
 
+  // ---------- duduk bersila dan shalat (acara tazkirah, tarannum, akad, shalat berjamaah) ----------
+  const posture = createPostureController();
+  const sitBtn = $('sit-button');
+  const prayBtn = $('pray-button');
+  const prayerBar = $('prayer-bar');
+  const refreshPostureUi = () => {
+    const s = posture.state();
+    sitBtn.setAttribute('aria-pressed', String(s.sitting));
+    prayBtn.setAttribute('aria-pressed', String(s.praying));
+    prayerBar.hidden = !s.praying;
+    if (s.praying) {
+      $('prayer-label').textContent = s.label;
+      $('prayer-next').textContent = s.last ? 'Selesai' : 'Gerakan berikutnya \u25B6';
+    }
+  };
+  hooks.sit = () => {
+    posture.toggleSit();
+    refreshPostureUi();
+    toast(posture.state().sitting ? 'Duduk bersila. Gerakkan joystick untuk berdiri.' : 'Berdiri');
+  };
+  hooks.pray = () => {
+    if (posture.state().praying) {
+      posture.stop();
+      refreshPostureUi();
+      return;
+    }
+    facing = 0; // menghadap utara = kiblat
+    camState.yaw = 0;
+    posture.startPrayer(2);
+    refreshPostureUi();
+    toast('Shalat 2 rakaat. Tekan "Gerakan berikutnya" tiap berpindah gerakan.');
+  };
+  hooks.next = () => {
+    if (!posture.state().praying) return;
+    posture.next();
+    refreshPostureUi();
+  };
+  sitBtn.addEventListener('click', () => hooks.sit());
+  prayBtn.addEventListener('click', () => hooks.pray());
+  $('prayer-next').addEventListener('click', () => hooks.next());
+  $('prayer-stop').addEventListener('click', () => {
+    posture.stop();
+    refreshPostureUi();
+  });
+
   const mapBtn = $('map-button');
   const mapCanvas = $('minimap');
   const setMap = (on) => {
@@ -348,6 +398,8 @@ async function start() {
   runBtn.addEventListener('click', () => hooks.run());
 
   const teleport = (x, z) => {
+    posture.stop();
+    refreshPostureUi();
     const p = world.constrain({ x, z });
     me.x = p.x;
     me.z = p.z;
@@ -391,6 +443,11 @@ async function start() {
 
     const move = cameraRelative(readInput(), camNow.yaw);
     const moving = move.x !== 0 || move.z !== 0;
+    if (moving && posture.active()) {
+      // bergerak = berdiri lagi (membatalkan duduk atau shalat)
+      posture.stop();
+      refreshPostureUi();
+    }
     const running = shiftHeld || runToggle;
     if (moving) {
       const speed = running ? RUN_SPEED : WALK_SPEED;
@@ -403,9 +460,10 @@ async function start() {
 
     avatar.position.x = me.x;
     avatar.position.z = me.z;
-    avatar.position.y += ((moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0) - avatar.position.y) * Math.max(1 - Math.exp(-14 * delta), 0.5);
     avatar.rotation.y = facing;
     applyPose(avatar, moving ? 'walk' : null, time / 1000, delta);
+    const dropNow = applyPosture(avatar, posture.pose(), delta); // <= 0: panggul turun saat duduk/sujud
+    avatar.position.y += (((moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0) + dropNow) - avatar.position.y) * Math.max(1 - Math.exp(-14 * delta), 0.5);
     blob.position.set(me.x, 0.16, me.z);
 
     // kamera mengorbit pemain; bila terhalang dinding/atap, dinaikkan halus atau dipendekkan
@@ -418,7 +476,7 @@ async function start() {
     const wide = clamp((camNow.dist - 8) / 6, 0, 1);
     const fit = 1 + (Math.min(1.9, Math.max(1, 1.45 / camera.aspect)) - 1) * wide;
     const want = camNow.dist * fit;
-    const eye = { x: me.x, y: 1.45, z: me.z };
+    const eye = { x: me.x, y: 1.45 + dropNow * 0.8, z: me.z }; // mata kamera ikut turun saat duduk
     const boxes = world.occludersNear(eye.x, eye.z, want + 12);
     const camPose = chooseCameraPose(eye, camNow.yaw, camNow.pitch, want, boxes);
     camPitch = camPitch === null ? camPose.pitch : camPitch + (camPose.pitch - camPitch) * (1 - Math.exp(-6 * delta));
@@ -429,7 +487,8 @@ async function start() {
     camera.position.set(eye.x + dir.x * camArm, eye.y + dir.y * camArm, eye.z + dir.z * camArm);
     const look = forwardLookBlend(camArm);
     const ahead = { x: eye.x - Math.sin(camNow.yaw) * 6, y: eye.y - 0.3, z: eye.z - Math.cos(camNow.yaw) * 6 };
-    camera.lookAt(me.x + (ahead.x - me.x) * look, 1.2 + (ahead.y - 1.2) * look, me.z + (ahead.z - me.z) * look);
+    const lookY = 1.2 + dropNow * 0.8;
+    camera.lookAt(me.x + (ahead.x - me.x) * look, lookY + (ahead.y - lookY) * look, me.z + (ahead.z - me.z) * look);
     avatar.visible = camArm > 0.95;
     blob.visible = avatar.visible;
 
@@ -453,7 +512,7 @@ async function start() {
   requestAnimationFrame(frame);
 
   window.__masjid = {
-    state: () => ({ x: me.x, z: me.z, facing, place: world.roomAt(me.x, me.z), running: shiftHeld || runToggle }),
+    state: () => ({ x: me.x, z: me.z, facing, place: world.roomAt(me.x, me.z), running: shiftHeld || runToggle, posture: posture.pose() }),
     cam: () => ({ yaw: camState.yaw, pitch: camState.pitch, dist: camState.dist }),
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio() }),
     teleport, // hanya untuk pengujian dan tombol Jelajah
