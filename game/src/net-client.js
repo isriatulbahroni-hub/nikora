@@ -8,7 +8,8 @@ export class NetClient {
     this.id = null;
     this.seq = 0;
     this.players = [];
-    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [] };
+    this.rooms = []; // kamar villa yang sedang berpenghuni (dari server)
+    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [], rooms: [], knock: [], 'knock-result': [], 'room-error': [] };
     this.pingTimer = null;
   }
 
@@ -45,6 +46,7 @@ export class NetClient {
         if (msg.t === 'welcome') {
           this.id = msg.id;
           this.players = msg.players;
+          this.rooms = Array.isArray(msg.rooms) ? msg.rooms : [];
           this.pingTimer = setInterval(() => this.#send({ t: 'ping', ts: Date.now() }), this.pingMs);
           this.#emit('welcome', msg);
           resolve(msg);
@@ -61,6 +63,15 @@ export class NetClient {
           this.#emit('voice', msg);
         } else if (msg.t === 'greet-declined') {
           this.#emit('greet-declined', msg);
+        } else if (msg.t === 'rooms') {
+          this.rooms = Array.isArray(msg.rooms) ? msg.rooms : [];
+          this.#emit('rooms', msg);
+        } else if (msg.t === 'knock') {
+          this.#emit('knock', msg);
+        } else if (msg.t === 'knock-result') {
+          this.#emit('knock-result', msg);
+        } else if (msg.t === 'room-error') {
+          this.#emit('room-error', msg);
         }
       };
     });
@@ -84,6 +95,11 @@ export class NetClient {
   /** kind: 'handshake' | 'highfive' (butuh persetujuan) atau 'wave' | 'bow' (langsung). */
   sendGreet(to, kind) {
     this.#send({ t: 'greet', to, kind });
+  }
+
+  /** Kunci kamar villa: { act: 'checkin' | 'checkout' | 'lock' | 'knock' | 'knock-reply', room, locked, from, accept }. */
+  sendRoom(msg) {
+    this.#send({ ...msg, t: 'room' });
   }
 
   requestVoiceToken() {

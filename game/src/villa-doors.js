@@ -12,6 +12,7 @@ export const LOCK_RULES = Object.freeze({
   knockCooldownMs: 4000, // jeda minimum antar ketukan dari orang yang sama ke kamar yang sama
   doorRange: 2.6, // jarak maksimum ke pintu untuk check-in dan mengetuk
   maxPendingKnocks: 4, // ketukan yang menunggu jawaban per kamar
+  claimWindowMs: 3000, // P2P: dua check-in hampir bersamaan di kamar yang sama -> id lebih kecil menang
 });
 
 const LOCKABLE_KINDS = new Set(['guest', 'suite', 'bridal']);
@@ -61,7 +62,7 @@ export function lockableRooms(world) {
         if (!n) continue;
         doors.push({ id: `${room.id}#${doors.length}`, x: d.x, z: d.z, orient: d.orient, width: d.width, ...n, rect: doorRect(d) });
       }
-      if (doors.length) out.push({ id: room.id, name: room.name, kind: room.kind, level: L.level, doors });
+      if (doors.length) out.push({ id: room.id, name: room.name, kind: room.kind, level: L.level, rect: room.rect, doors });
     }
   }
   return out;
@@ -87,7 +88,7 @@ export class RoomLocks {
     this.world = world;
     this.rules = { ...LOCK_RULES, ...rules };
     this.state = new Map(
-      lockableRooms(world).map((r) => [r.id, { ...r, owner: null, locked: false, allowed: new Map(), knocks: new Map(), lastKnock: new Map() }]),
+      lockableRooms(world).map((r) => [r.id, { ...r, owner: null, since: 0, locked: false, allowed: new Map(), knocks: new Map(), lastKnock: new Map() }]),
     );
     this.byOwner = new Map(); // id pemain -> id kamar
     this.version = 0; // naik tiap kali kepemilikan/kunci berubah (dipakai server untuk menyiarkan)
@@ -114,6 +115,7 @@ export class RoomLocks {
     if (this.byOwner.has(playerId)) return fail('already-has-room');
     if (!this.#near(s, pos)) return fail('too-far');
     s.owner = playerId;
+    s.since = now;
     s.locked = true;
     s.allowed.clear();
     s.knocks.clear();
@@ -128,6 +130,7 @@ export class RoomLocks {
     if (!roomId) return null;
     const s = this.state.get(roomId);
     s.owner = null;
+    s.since = 0;
     s.locked = false;
     s.allowed.clear();
     s.knocks.clear();
@@ -198,6 +201,67 @@ export class RoomLocks {
       for (const [id, until] of s.knocks) if (until <= now) s.knocks.delete(id);
       for (const [id, at] of s.lastKnock) if (now - at > this.rules.knockCooldownMs) s.lastKnock.delete(id);
     }
+  }
+
+  /**
+   * Mode P2P (LiveKit, tanpa server otoritatif): terapkan status kamar yang disiarkan pemiliknya.
+   * Pemilik yang sudah mapan (lewat claimWindowMs) tidak bisa direbut; rebutan yang hampir bersamaan dimenangkan id lebih kecil,
+   * sehingga semua klien sampai pada hasil yang sama. allow = [{ id, ttl }] (ttl relatif dalam ms). Mengembalikan true bila diterapkan.
+   */
+  applyOwnerState(ownerId, roomId, locked, allow = [], now = Date.now()) {
+    const s = this.state.get(roomId);
+    if (!s || typeof ownerId !== 'string' || !ownerId) return false;
+    let changed = false;
+    if (s.owner !== ownerId) {
+      if (s.owner && (now - s.since > this.rules.claimWindowMs || s.owner < ownerId)) return false;
+      if (s.owner) this.release(s.owner);
+      const prev = this.byOwner.get(ownerId);
+      if (prev && prev !== roomId) this.release(ownerId);
+      s.owner = ownerId;
+      s.since = now;
+      this.byOwner.set(ownerId, roomId);
+      changed = true;
+    }
+    const isLocked = locked === true;
+    if (s.locked !== isLocked) {
+      s.locked = isLocked;
+      changed = true;
+    }
+    s.allowed = new Map();
+    for (const a of allow) {
+      if (a && typeof a.id === 'string' && Number.isFinite(a.ttl) && a.ttl > 0) s.allowed.set(a.id, now + Math.min(a.ttl, this.rules.allowTtlMs * 2));
+    }
+    if (changed) this.version++;
+    return true;
+  }
+
+  /** Mode server: samakan salinan lokal dengan daftar kamar berpemilik dari server. */
+  applySnapshot(list = [], now = Date.now()) {
+    const seen = new Set();
+    for (const r of list) {
+      const s = this.state.get(r?.id);
+      if (!s || typeof r.owner !== 'string') continue;
+      seen.add(s.id);
+      if (s.owner !== r.owner) {
+        if (s.owner) this.byOwner.delete(s.owner);
+        s.owner = r.owner;
+        s.since = now;
+        s.allowed.clear();
+        s.knocks.clear();
+        this.byOwner.set(r.owner, s.id);
+        this.version++;
+      }
+      if (s.locked !== (r.locked === true)) {
+        s.locked = r.locked === true;
+        this.version++;
+      }
+    }
+    for (const s of this.state.values()) if (s.owner && !seen.has(s.id)) this.release(s.owner);
+  }
+
+  /** Izin masuk untuk pemain (dipakai klien setelah ketukannya diterima). */
+  allowSelf(playerId, roomId, ttlMs = this.rules.allowTtlMs, now = Date.now()) {
+    this.state.get(roomId)?.allowed.set(playerId, now + ttlMs);
   }
 
   /** Daftar kamar yang sedang dipakai: dikirim ke klien supaya pintu tampil terkunci/terbuka. */
