@@ -10,7 +10,7 @@ export const WALL_THICKNESS = 0.3;
 export const WALL_HEIGHT = 3.0;
 export const LEVEL_HEIGHT = 3.4; // jarak antar lantai (tinggi permukaan lantai)
 export const LEVEL_COUNT = 3;
-export const DOOR_HEIGHT = 2.45; // tinggi bukaan pintu; di atasnya dinding utuh (ambang)
+export const DOOR_HEIGHT = 2.1; // tinggi bukaan pintu (avatar 1,75 m); di atasnya dinding utuh (ambang)
 export const HALL_WALL_HEIGHT = 6.6; // aula setinggi dua lantai (langit-langit tepat di bawah pelat lantai 3)
 export const levelY = (level) => (level ?? 0) * LEVEL_HEIGHT;
 export const PLAYER_RADIUS = 0.4;
@@ -140,19 +140,19 @@ export const roomsAtLevel = (level) => (level === 0 ? [...ROOMS, ...towerRooms(0
 // orient 'v': pintu pada dinding yang membentang sepanjang z (di koordinat x).
 const guestDoorXs = [0, 1, 2, 3].map((i) => (GUEST_COLS[i] + GUEST_COLS[i + 1]) / 2);
 const GROUND_DOORS = [
-  { x: 0, z: -3, orient: 'h', width: 5, tall: true }, // pintu utama aula
-  { x: 14, z: -11, orient: 'v', width: 3, tall: true }, // aula <-> lobby
-  { x: -14, z: -11, orient: 'v', width: 3, tall: true }, // aula <-> main suite
-  { x: 26, z: -11, orient: 'v', width: 3 }, // lobby <-> bridal
-  { x: -26, z: -11, orient: 'v', width: 3 }, // main suite <-> spa
-  { x: 20, z: -3, orient: 'h', width: 3 }, // lobby ke luar
-  { x: 32, z: -3, orient: 'h', width: 3 }, // bridal ke luar
-  { x: -20, z: -3, orient: 'h', width: 3 }, // main suite ke luar
-  { x: -32, z: -3, orient: 'h', width: 3 }, // spa ke luar
-  { x: -16, z: 12, orient: 'v', width: 4 }, // restoran ke taman kolam
-  { x: -26, z: 4, orient: 'h', width: 3 }, // restoran ke teras
-  { x: -20, z: 20, orient: 'h', width: 3 }, // restoran ke taman selatan
-  { x: -31, z: 20, orient: 'h', width: 2.5 }, // restoran <-> dapur
+  { x: 0, z: -3, orient: 'h', width: 2.6, tall: true }, // pintu utama aula
+  { x: 14, z: -11, orient: 'v', width: 2.4, tall: true }, // aula <-> lobby
+  { x: -14, z: -11, orient: 'v', width: 2.4, tall: true }, // aula <-> main suite
+  { x: 26, z: -11, orient: 'v', width: 2.2 }, // lobby <-> bridal
+  { x: -26, z: -11, orient: 'v', width: 2.2 }, // main suite <-> spa
+  { x: 20, z: -3, orient: 'h', width: 2.2 }, // lobby ke luar
+  { x: 32, z: -3, orient: 'h', width: 2.2 }, // bridal ke luar
+  { x: -20, z: -3, orient: 'h', width: 2.2 }, // main suite ke luar
+  { x: -32, z: -3, orient: 'h', width: 2.2 }, // spa ke luar
+  { x: -16, z: 12, orient: 'v', width: 2.6 }, // restoran ke taman kolam
+  { x: -26, z: 4, orient: 'h', width: 2.2 }, // restoran ke teras
+  { x: -20, z: 20, orient: 'h', width: 2.2 }, // restoran ke taman selatan
+  { x: -31, z: 20, orient: 'h', width: 2.2 }, // restoran <-> dapur
   { x: 16, z: 13, orient: 'v', width: 2 }, // koridor kamar tamu ke luar
   ...guestDoorXs.map((x) => ({ x, z: 12, orient: 'h', width: 1.6 })),
   ...guestDoorXs.map((x) => ({ x, z: 14, orient: 'h', width: 1.6 })),
@@ -162,13 +162,13 @@ export const DOORS = Object.freeze(GROUND_DOORS);
 
 export const UPPER_DOORS = Object.freeze([
   // lantai 1
-  { level: 1, x: -26, z: -11, orient: 'v', width: 3 }, // yoga <-> suite
-  { level: 1, x: 26, z: -11, orient: 'v', width: 3 }, // library <-> honeymoon
+  { level: 1, x: -26, z: -11, orient: 'v', width: 2.2 }, // yoga <-> suite
+  { level: 1, x: 26, z: -11, orient: 'v', width: 2.2 }, // library <-> honeymoon
   ...guestDoorXs.map((x) => ({ level: 1, x, z: 12, orient: 'h', width: 1.6 })),
   ...guestDoorXs.map((x) => ({ level: 1, x, z: 14, orient: 'h', width: 1.6 })),
   ...TOWERS.map((t) => ({ level: 1, ...t.doors[1] })),
   // lantai 2
-  { level: 2, x: 26, z: -11, orient: 'v', width: 3 }, // presidential <-> teras timur
+  { level: 2, x: 26, z: -11, orient: 'v', width: 2.2 }, // presidential <-> teras timur
   ...TOWERS.map((t) => ({ level: 2, ...t.doors[2] })),
 ]);
 
