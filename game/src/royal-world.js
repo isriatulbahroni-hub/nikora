@@ -55,11 +55,13 @@ function gableGeometry(width, rise, length) {
 const surfaceY = (x, z) => mainHeight(Math.abs(x) <= 3.3 ? Math.max(-3, Math.min(3, x)) : x, z);
 
 // ---- geometri perabot (warna lewat vertex color; rotasi 0 = menghadap utara, sandaran di +z untuk sofa/bangku)
+// Kursi diperbesar (dudukan 0,56 m, sandaran setinggi 1,25 m; dulu 0,44 m dan 1,0 m) agar sebanding dengan avatar.
+// Permukaan dudukan tetap 0,555 m supaya pose duduk avatar tidak bergeser.
 function liteChair(frame = '#d9b25a', cushion = '#f7f1e6') {
   return merge([
-    part(box(0.44, 0.05, 0.44), frame, { y: 0.46 }), part(box(0.4, 0.07, 0.4), cushion, { y: 0.52 }),
-    part(box(0.44, 0.5, 0.05), frame, { y: 0.75, z: -0.2 }), part(box(0.38, 0.4, 0.03), cushion, { y: 0.76, z: -0.17 }),
-    ...[[-0.19, -0.19], [0.19, -0.19], [-0.19, 0.19], [0.19, 0.19]].map(([x, z]) => part(box(0.04, 0.44, 0.04), frame, { x, y: 0.22, z })),
+    part(box(0.56, 0.05, 0.56), frame, { y: 0.46 }), part(box(0.5, 0.07, 0.5), cushion, { y: 0.52 }),
+    part(box(0.56, 0.7, 0.06), frame, { y: 0.9, z: -0.25 }), part(box(0.48, 0.56, 0.035), cushion, { y: 0.92, z: -0.21 }),
+    ...[[-0.24, -0.24], [0.24, -0.24], [-0.24, 0.24], [0.24, 0.24]].map(([x, z]) => part(box(0.05, 0.44, 0.05), frame, { x, y: 0.22, z })),
   ]);
 }
 const tableGeometry = () => merge([
