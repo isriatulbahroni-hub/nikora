@@ -2,6 +2,7 @@
 // InstancedMesh supaya seluruh kompleks hanya butuh belasan draw call dan tetap ringan di HP.
 import * as THREE from 'three';
 import { BOUNDS, CENTRAL_DOME, GATE_TOWERS, HALL_H, MINARETS, PROP_SPECS, ROOMS } from './masjid-layout.js';
+import { createMasjidSky } from './masjid-sky.js';
 
 const CREAM = '#efe6d0';
 const GOLD = '#d8b04a';
@@ -12,6 +13,8 @@ const PROP_LOOK = {
   table: '#f4efe6', akadtable: '#f7f1e3', pelaminan: GOLD, row: '#7a2f3a',
 };
 const BOOK_COLORS = ['#7a2f3a', '#2f5f7a', '#3a6b4a', '#b8923f', '#5b3f2a', '#8a8a7a', '#a14a2f'];
+// Di dalam bangunan cahaya matahari dikurangi dari 1,7 menjadi 0,55 (dulu nilai tetap); kini sebagai pecahan supaya berlaku siang dan malam.
+const SUN_INDOOR_CUT = 1.15 / 1.7;
 
 // Pengacak deterministik kecil (supaya isi rak selalu sama di setiap muat ulang).
 const makeRng = (seed) => () => {
@@ -146,6 +149,8 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
   // sehingga langit-langit tampak seperti gradasi gelap dengan satu sorotan di bawah pemain.
   const fill = new THREE.AmbientLight(0xfff0d6, 0);
   scene.add(hemi, sun, fill);
+  // Langit otomatis: siang, senja, malam mengikuti jam asli (?sky= dan ?tz= untuk mengubahnya).
+  const sky = createMasjidSky({ scene, hemi, sun, renderer, search: typeof window !== 'undefined' ? window.location.search : '' });
 
   const root = new THREE.Group();
   scene.add(root);
@@ -384,11 +389,16 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
   return {
     root,
     exhibitHits,
-    /** k = 0 di luar, 1 di dalam bangunan: dalam ruangan cahaya langit dikurangi dan cahaya isi dinaikkan (lampu mengikuti pemain dari main). */
+    sky,
+    /**
+     * k = 0 di luar, 1 di dalam bangunan: dalam ruangan cahaya langit dikurangi dan cahaya isi dinaikkan (lampu mengikuti pemain dari main).
+     * Dipanggil tiap frame oleh masjid-main, jadi di sinilah langit siang-malam ikut diperbarui.
+     */
     setIndoor(k) {
-      hemi.intensity = 1.0 - 0.35 * k;
-      sun.intensity = 1.7 - 1.15 * k;
-      fill.intensity = 0.55 * k;
+      const atm = sky.update();
+      hemi.intensity = atm.hemiI * (1 - 0.35 * k);
+      sun.intensity = atm.sunI * (1 - SUN_INDOOR_CUT * k);
+      fill.intensity = (0.55 + 0.3 * atm.night) * k;
     },
   };
 }
