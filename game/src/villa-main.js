@@ -31,6 +31,7 @@ import { takeRoleKey } from './role-key.js';
 import { renderPartyPanel } from './party-panel.js';
 import { VOICE_CROWD, VoiceChat } from './voice.js';
 import { buildVillaWorld } from './villa-world.js';
+import { createVillaSky } from './villa-sky.js';
 import './emoji-reactions.css';
 import { setupEmojiReactions } from './emoji-reactions-ui.js';
 
@@ -328,8 +329,10 @@ async function start() {
 
   const scene = new THREE.Scene();
   const built = buildVillaWorld(scene, world, { renderer });
-  const court = buildBadmintonCourt(scene); // lapangan bulu tangkis (letak + net penghalang ada di villa-layout.js)
+  // Siang-malam otomatis (jam asli; ?sky= dan ?tz= untuk mengubahnya). Dibuat sebelum layar dan avatar supaya hanya dunia vila yang diatur.
+  const sky = createVillaSky({ scene, renderer, search: window.location.search });
   if (lowQuality) applyQuality(renderer, scene, quality.settings()); // ?q=low: mulai langsung dengan kualitas hemat
+  const court = buildBadmintonCourt(scene); // lapangan bulu tangkis (letak + net penghalang ada di villa-layout.js)
   const camera = new THREE.PerspectiveCamera(48, 1, 0.12, 320);
   // penghalang kamera diperbesar sebesar CAM_PAD: kamera diperlakukan sebagai bola, bukan titik
   const occluders = inflateBoxes([...buildCameraOccluders(world), ...extraCameraOccluders(world)], CAM_PAD);
@@ -817,6 +820,7 @@ async function start() {
     const actors = [{ x: me.x, z: me.z, y: me.y }];
     if (multiplayer) for (const p of multiplayer.net.players) if (p.id !== multiplayer.net.id) actors.push({ x: p.x, z: p.z, y: p.y ?? 0 });
     built.update(me.x, me.z, delta, actors, camera.position);
+    sky.update(me.x, me.z); // sesudah built.update: arah matahari/bulan mengikuti jam menimpa arah tetap dari dunia
     const qChange = quality.setFloor(lowQuality ? 2 : screen?.controller?.state?.src ? 1 : 0) ?? quality.tick(performance.now());
     if (qChange) applyQuality(renderer, scene, qChange);
     renderer.render(scene, camera);
@@ -839,10 +843,11 @@ async function start() {
 
   window.__villa = {
     state: () => ({
-      x: me.x, z: me.z, y: me.y, level: me.level, stair: me.stair, place: roomAt(me.x, me.z, me.level), online: !!multiplayer, others: multiplayer ? multiplayer.view.count : 0,
-      seat, action: actBtn.hidden ? '' : actBtn.textContent, mapVisible: !mapCanvas.hidden,
       badminton: { phase: practice.phase, score: practice.score },
+      x: me.x, z: me.z, y: me.y, level: me.level, stair: me.stair, place: roomAt(me.x, me.z, me.level), online: !!multiplayer, others: multiplayer ? multiplayer.view.count : 0,
+      seat, action: actBtn.hidden ? '' : actBtn.textContent, mapVisible: !mapCanvas.hidden, skyPhase: sky.phase(),
     }),
+    sky: () => sky.info(),
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio(), canvas: [renderer.domElement.width, renderer.domElement.height] }),
     cam: () => ({ yaw: camState.yaw, pitch: camState.pitch, dist: camState.dist, nowYaw: camNow.yaw }),
     remotes: () => (multiplayer ? multiplayer.view.avatarGroups().map((g) => ({ y: g.position.y, rx: g.rotation.x, ry: g.rotation.y })) : []),
