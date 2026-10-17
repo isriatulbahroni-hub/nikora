@@ -104,3 +104,20 @@ test('jumlah objek wajar untuk perangkat seluler', () => {
   assert.equal(BOUNDS.maxZ, 240);
   assert.ok(PLAYER_RADIUS < 0.5);
 });
+
+test('Taman Perenungan: zona, tujuan Jelajah, kolam menghalangi, gazebo dan jalan setapak bisa dimasuki', () => {
+  assert.equal(world.roomAt(30, 202).name, 'Taman Perenungan');
+  assert.ok(PLACES.some((p) => p.id === 'taman'));
+  assert.ok(!world.canStand(52, 202), 'tidak boleh berjalan di atas kolam');
+  assert.ok(world.canStand(70, 202), 'bagian dalam gazebo harus bisa dimasuki');
+  assert.ok(world.canStand(-70, 202));
+  assert.ok(world.canStand(30, 202), 'jalan setapak dari jalan tengah ke kolam');
+  const garden = world.props.filter((p) => p.garden);
+  assert.ok(garden.length > 20 && garden.length < 100, `jumlah properti taman wajar: ${garden.length}`);
+  for (const p of garden) {
+    assert.ok(p.x > -80 && p.x < 80 && p.z > 165 && p.z < 240, `${p.type} di luar taman (${p.x}, ${p.z})`);
+    assert.ok(!ROOMS.some((r) => p.x > r.rect[0] - 1 && p.x < r.rect[2] + 1 && p.z > r.rect[1] - 1 && p.z < r.rect[3] + 1), `${p.type} menempel ruangan`);
+  }
+  // pohon palem acak tidak boleh tumbuh di dalam taman
+  assert.ok(!world.props.some((p) => p.type === 'palm' && Math.abs(p.x) < 80 && p.z > 165 && Math.abs(p.x) > 16));
+});

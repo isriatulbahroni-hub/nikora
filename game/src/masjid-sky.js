@@ -8,7 +8,7 @@ import { createNightDecor } from './night-sky.js';
 const FRAMES = Object.freeze({
   day: { bg: [0.663, 0.831, 0.933], fog: [0.812, 0.894, 0.949], hemiSky: [0.902, 0.945, 1], hemiGround: [0.561, 0.494, 0.369], sunColor: [1, 0.941, 0.824], hemiI: 1.0, sunI: 1.7, sunPos: [-180, 300, 140], exposure: 1 },
   sunset: { bg: [0.95, 0.62, 0.42], fog: [0.93, 0.66, 0.5], hemiSky: [1, 0.8, 0.62], hemiGround: [0.4, 0.33, 0.3], sunColor: [1, 0.68, 0.38], hemiI: 0.8, sunI: 1.3, sunPos: [-300, 90, 120], exposure: 1 },
-  night: { bg: [0.03, 0.05, 0.14], fog: [0.05, 0.08, 0.18], hemiSky: [0.3, 0.36, 0.62], hemiGround: [0.08, 0.09, 0.14], sunColor: [0.55, 0.66, 1], hemiI: 0.55, sunI: 0.55, sunPos: [150, 260, -120], exposure: 1.15 },
+  night: { bg: [0.03, 0.05, 0.14], fog: [0.05, 0.08, 0.18], hemiSky: [0.32, 0.4, 0.68], hemiGround: [0.08, 0.1, 0.16], sunColor: [0.66, 0.76, 1], hemiI: 0.62, sunI: 0.85, sunPos: [150, 260, -120], exposure: 1.15 },
 });
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -50,6 +50,7 @@ export function createMasjidSky({ scene, hemi, sun, renderer, search = '' }) {
     /** Dipanggil tiap frame: bergerak halus menuju fase target dan menerapkan atmosfer hanya saat nilainya berubah. */
     update(perfMs = performance.now()) {
       if (tracker.tick(perfMs)) apply(tracker.phase);
+      decor.twinkle(perfMs / 1000);
       return atm;
     },
   };

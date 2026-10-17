@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Batch, canvasTexture } from './masjid-batch.js';
 import { createInteriors } from './masjid-decor.js';
 import { BOUNDS, CENTRAL_DOME, GATE_TOWERS, HALL_H, MINARETS, PROP_SPECS, ROOMS } from './masjid-layout.js';
+import { createGarden } from './masjid-garden.js';
 import { createMasjidSky } from './masjid-sky.js';
 
 const CREAM = '#efe6d0';
@@ -201,6 +202,7 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
     }
   };
   for (const p of world.props) {
+    if (p.garden) continue; // digambar oleh Taman Perenungan (masjid-garden.js)
     if (drawDecor(p)) continue;
     const spec = PROP_SPECS[p.type];
     if (p.type === 'column') {
@@ -335,6 +337,14 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
   boxes.add(BOUNDS.maxX, 24, 60, 3, 4, 26, '#d9cba8');
   boxes.add(BOUNDS.minX, 24, 60, 3, 4, 26, '#d9cba8');
 
+  // Taman Perenungan: kolam pantul, bangku, lentera, pohon bunga, gazebo. Bila gagal, kompleks tetap tampil tanpa taman.
+  let garden = null;
+  try {
+    garden = createGarden({ root, boxes, cyls, cones, balls, glow, props: world.props.filter((p) => p.garden), renderer });
+  } catch (error) {
+    console.warn('[masjid] taman tidak bisa dibuat', error);
+  }
+
   for (const b of [boxes, cyls, cones, balls, domes, glow, glowBox]) b.build(root);
 
   // ---------------------------------------------------------------- kubah utama (bagian dalamnya terlihat dari aula)
@@ -374,6 +384,7 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
      */
     setIndoor(k) {
       const atm = sky.update();
+      if (garden) garden.update(atm.night, performance.now() / 1000);
       hemi.intensity = atm.hemiI * (1 - 0.35 * k);
       sun.intensity = atm.sunI * (1 - SUN_INDOOR_CUT * k);
       fill.intensity = (0.55 + 0.3 * atm.night) * k;
