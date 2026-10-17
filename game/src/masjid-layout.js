@@ -6,6 +6,7 @@
 // sekelas masjid-masjid terbesar di dunia. Semua ruang di lantai dasar dan bisa dimasuki lewat pintu.
 import { isWalkable, resolveMove } from './villa-layout.js';
 import { EXHIBITS } from './masjid-exhibits.js';
+import { GARDEN, GARDEN_PROP_SPECS, gardenProps } from './masjid-garden-data.js';
 
 export const WALL_T = 1;
 export const HALL_H = 28;
@@ -55,6 +56,7 @@ export const ZONES = Object.freeze([
   zone('plaza_e', 'Plaza Timur', 'plaza', [180, -40, 300, 160]),
   zone('plaza_w', 'Plaza Barat', 'plaza', [-300, -40, -180, 160]),
   zone('rear', 'Taman Belakang', 'garden', [-300, -260, 300, -240]),
+  zone(GARDEN.id, GARDEN.name, 'garden', [...GARDEN.rect]),
   zone('forecourt', 'Halaman Selatan', 'garden', [-300, 160, 300, 240]),
 ]);
 
@@ -96,6 +98,7 @@ export const PROP_SPECS = Object.freeze({
   armchair: { hx: 0.45, hz: 0.45, h: 1 }, // kursi mempelai di panggung akad
   palm: { hx: 0.35, hz: 0.35, h: 9 },
   tree: { hx: 0.4, hz: 0.4, h: 7 },
+  ...GARDEN_PROP_SPECS, // Taman Perenungan
 });
 // Properti yang cukup tinggi/besar untuk menghalangi kamera.
 // 'column' ditambahkan: dulu tiang tidak dihitung sehingga kamera bisa masuk ke dalam tiang (layar jadi putih/krem).
@@ -109,7 +112,8 @@ export const PLACE_GROUPS = Object.freeze(['Halaman dan gerbang', 'Ibadah', 'Bel
 // Tujuan "Jelajah": semua ruang utama. Diuji agar bisa diinjak dan terjangkau dari titik awal.
 export const PLACES = Object.freeze([
   { id: 'gate', name: 'Gerbang Utama', group: 'Halaman dan gerbang', x: 0, z: 252 },
-  { id: 'forecourt', name: 'Halaman Selatan', group: 'Halaman dan gerbang', x: 40, z: 190 },
+  { id: 'forecourt', name: 'Halaman Selatan', group: 'Halaman dan gerbang', x: 30, z: 188 },
+  { id: 'taman', name: 'Taman Perenungan', group: 'Halaman dan gerbang', x: 30, z: 202 },
   { id: 'akad', name: 'Ruang Akad Nikah', group: 'Acara', x: 125, z: 190 },
   { id: 'walimah', name: 'Gedung Walimah', group: 'Acara', x: -130, z: 190 },
   { id: 'sahn', name: 'Sahn (Halaman Utama)', group: 'Halaman dan gerbang', x: 30, z: 80 },
@@ -198,11 +202,14 @@ function buildProps() {
   for (let z = -30; z <= 150; z += 10) for (const x of [156, 174, -156, -174]) add('column', x, z, { h: RIWAQ_H - 0.2 });
   for (let x = -145; x <= 145; x += 10) for (const z of [136, 154]) add('column', x, z, { h: RIWAQ_H - 0.2 });
 
+  // Taman Perenungan (kolam pantul, bangku, lentera, pohon bunga, gazebo) di Halaman Selatan
+  props.push(...gardenProps());
+
   // pepohonan: jalan raya berpalem, taman plaza, taman belakang
   const palms = [];
   for (let z = 168; z <= 228; z += 12) palms.push([-14, z], [14, z]);
   for (let x = -280; x <= 280; x += 15) palms.push([x, -250]);
-  const rects = [...ROOMS.map((r) => inflate(r.rect, 6)), ...ZONES.filter((s) => s.kind === 'riwaq').map((s) => inflate(s.rect, 4))];
+  const rects = [[...GARDEN.rect], ...ROOMS.map((r) => inflate(r.rect, 6)), ...ZONES.filter((s) => s.kind === 'riwaq').map((s) => inflate(s.rect, 4))];
   const rand = mulberry32(20261015);
   const scatter = (rect, n, ok) => {
     let placed = 0;
