@@ -6,7 +6,7 @@
 // (dua lengan tangga lurus per menara). Status pemain: { x, z, level, stair, y }.
 import { GAME_DOORS, GAME_ROOFS, GAME_ROOMS, GAME_ZONES, gameEdgeHeight, insideGameWing } from './villa-gamewing.js';
 
-import { VILLA_COURT, createCourtFrame } from './activities/court-frame.js';
+import { COURT_MARGIN, VILLA_COURT, createCourtFrame } from './activities/court-frame.js';
 // Ukuran dasar denah
 export const WALL_THICKNESS = 0.3;
 export const WALL_HEIGHT = 3.0;
@@ -215,8 +215,12 @@ function buildProps() {
     [-14, 24], [-22, 26], [-30, 34], [-36, 36], [-26, 38], [-18, 33], [-12, 38], [14, 24], [13, 36], [12, 30],
     [-40, -23.5], [-40, 28], [40, -23.5], [40, 26], [-40, 33], [-2.8, 40], [2.8, 40],
   ];
-  // palem yang jatuh di dalam arena Game Center dilewati
-  for (const [x, z] of palms) if (!insideGameWing(x, z, 0.9)) props.push({ type: 'palm', x, z });
+  // palem yang jatuh di dalam arena Game Center atau di area lapangan bulu tangkis dilewati
+  for (const [x, z] of palms) {
+    if (insideGameWing(x, z, 0.9)) continue;
+    if (COURT_FRAME.contains({ x, z }, COURT_MARGIN)) continue;
+    props.push({ type: 'palm', x, z });
+  }
 
   // lantai 1
   for (const r of guestRooms(1)) {
