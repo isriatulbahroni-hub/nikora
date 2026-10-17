@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="id">
+<html lang="id" data-layar-bawaan="on">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#2c4a3a" />
     <title>NIKORA Wedding Villa | ORBIT</title>
     <style>
-      :root { font-family: ui-sans-serif, 'Segoe UI', sans-serif; color: #fff; }
+      :root { font-family: ui-sans-serif, 'Segoe UI', sans-serif; color: #fff; --dock: 68px; --vc-top: calc(max(12px, env(safe-area-inset-top)) + 92px); }
       * { box-sizing: border-box; }
       html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #a9d4ee; touch-action: none; user-select: none; -webkit-user-select: none; }
       #villa-root, #villa-root canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
@@ -15,31 +15,54 @@
       .title strong { display: block; font-size: 18px; letter-spacing: .12em; font-weight: 600; }
       .title span { font-size: 11px; opacity: .85; }
       .place { top: calc(max(12px, env(safe-area-inset-top)) + 46px); left: 14px; padding: 5px 12px; border-radius: 999px; background: rgba(20,32,26,.55); font-size: 13px; white-space: nowrap; text-shadow: none; }
-      .topbar { position: fixed; z-index: 7; top: max(10px, env(safe-area-inset-top)); right: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-      .rbs { display: flex; gap: 8px; }
-      .topbar small { padding: 4px 10px; border-radius: 999px; background: rgba(20,32,26,.55); font-size: 12px; max-width: min(62vw, 340px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .rb { width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255,255,255,.28); background: rgba(20,32,26,.6); color: #fff; font-size: 19px; line-height: 1; display: grid; place-items: center; padding: 0; cursor: pointer; opacity: .8; }
+      /* pojok kanan atas: hanya pil jumlah tamu; semua tombol ada di dock bawah */
+      .topbar { position: fixed; z-index: 7; top: max(10px, env(safe-area-inset-top)); right: 10px; display: flex; flex-direction: column; align-items: flex-end; pointer-events: none; }
+      .topbar small { padding: 5px 12px; border-radius: 999px; background: rgba(20,32,26,.55); font-size: 13px; font-weight: 600; max-width: min(62vw, 340px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      /* dock bawah: tombol yang sering dipakai (sudut kamera, peta, mikrofon, emoji, menu) */
+      .dock { position: fixed; z-index: 7; left: 50%; transform: translateX(-50%); bottom: calc(10px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 10px; padding: 8px 12px; max-width: calc(100vw - 16px); border: 1px solid rgba(255,255,255,.18); border-radius: 30px; background: rgba(20,32,26,.82); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+      .rb { position: relative; flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%; border: 0; background: rgba(255,255,255,.1); color: #fff; font-size: 21px; line-height: 1; display: grid; place-items: center; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
       .rb[hidden] { display: none; }
-      .rb[aria-pressed="true"] { background: #2e9e6b; opacity: 1; }
+      .rb[aria-pressed="true"] { background: #2e9e6b; }
+      .rb[aria-expanded="true"] { background: #e8c46e; color: #2d210a; }
+      #mic-button[aria-pressed="false"] { opacity: .7; }
       .rb.is-speaking { box-shadow: 0 0 0 3px rgba(61,220,132,.55); }
-      #minimap { position: fixed; z-index: 6; top: calc(max(10px, env(safe-area-inset-top)) + 86px); right: 10px; width: 118px; height: 96px; border-radius: 10px; background: rgba(20,32,26,.5); border: 1px solid rgba(255,255,255,.25); opacity: .88; pointer-events: none; }
+      #menu-button { order: 10; font-size: 24px; } /* tombol yang dipasang belakangan (😊) tetap berada sebelum ≡ */
+      #minimap { position: fixed; z-index: 6; top: calc(max(10px, env(safe-area-inset-top)) + 40px); right: 10px; width: 118px; height: 96px; border-radius: 10px; background: rgba(20,32,26,.5); border: 1px solid rgba(255,255,255,.25); opacity: .88; pointer-events: none; }
       #minimap[hidden] { display: none; }
-      .hint { bottom: max(10px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .9; white-space: nowrap; }
-      .act { position: fixed; z-index: 8; right: 22px; bottom: max(34px, calc(env(safe-area-inset-bottom) + 20px)); width: 92px; height: 92px; border-radius: 50%; border: 3px solid #f6e3a6; background: radial-gradient(circle at 35% 30%, #f2d58c, #c9993a); color: #3a2a0c; font: 700 15px ui-sans-serif, sans-serif; letter-spacing: .06em; text-transform: uppercase; box-shadow: 0 4px 14px rgba(0,0,0,.4); cursor: pointer; touch-action: manipulation; }
+      .hint { bottom: calc(var(--dock) + 18px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .9; white-space: nowrap; }
+      .act { position: fixed; z-index: 8; right: 22px; bottom: calc(var(--dock) + 26px + env(safe-area-inset-bottom)); width: 92px; height: 92px; border-radius: 50%; border: 3px solid #f6e3a6; background: radial-gradient(circle at 35% 30%, #f2d58c, #c9993a); color: #3a2a0c; font: 700 15px ui-sans-serif, sans-serif; letter-spacing: .06em; text-transform: uppercase; box-shadow: 0 4px 14px rgba(0,0,0,.4); cursor: pointer; touch-action: manipulation; }
       .act[hidden] { display: none; }
       .act:active { transform: scale(.96); }
       .panel { position: fixed; z-index: 10; top: calc(max(10px, env(safe-area-inset-top)) + 90px); right: 10px; width: min(280px, 86vw); max-height: 60vh; overflow: auto; padding: 12px; border-radius: 14px; background: rgba(20,32,26,.92); border: 1px solid rgba(255,255,255,.2); font-size: 13px; }
       .panel[hidden] { display: none; }
+      /* panel emoji muncul tepat di atas dock, seperti di aula */
+      #emoji-panel { top: auto; right: auto; left: 50%; transform: translateX(-50%); bottom: calc(var(--dock) + 14px + env(safe-area-inset-bottom)); }
       .panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
       .panel-head button { background: none; border: 0; color: #fff; font-size: 16px; cursor: pointer; }
       .panel h4 { margin: 10px 0 4px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; opacity: .7; }
       .party-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; }
       .party-btn { margin-top: 6px; padding: 7px 12px; border-radius: 10px; border: 0; background: #e8c46e; color: #2d210a; font: 600 13px ui-sans-serif, sans-serif; cursor: pointer; }
       .party-btn.is-ghost { background: rgba(255,255,255,.14); color: #fff; }
-      .toast { position: fixed; z-index: 9; left: 50%; bottom: 140px; transform: translateX(-50%); padding: 8px 14px; border-radius: 12px; background: rgba(20,32,26,.85); font-size: 13px; max-width: 86vw; text-align: center; display: none; }
-      .joy-zone { position: fixed; z-index: 6; left: 0; bottom: 0; width: 55%; height: 45%; touch-action: none; display: none; }
+      /* lembar menu ≡ (Kamera video, Layar, Panggung MC) */
+      .sheet { position: fixed; z-index: 9; left: 0; right: 0; bottom: 0; max-height: 72%; overflow: auto; padding: 14px 16px calc(18px + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; border: 1px solid rgba(255,255,255,.16); background: #1b2a22; box-shadow: 0 -8px 30px rgba(0,0,0,.45); font: 500 14px ui-sans-serif, sans-serif; animation: sheet-up .18s ease-out; }
+      .sheet[hidden] { display: none; }
+      .sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+      .sheet-close { background: none; border: 0; color: #fff; opacity: .7; font-size: 18px; cursor: pointer; }
+      .sheet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 10px; }
+      .sheet-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 72px; padding: 12px 6px 10px; border: 0; border-radius: 14px; background: rgba(255,255,255,.09); color: #fff; font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+      .sheet-tile[hidden] { display: none; }
+      .sheet-tile:active { background: rgba(255,255,255,.2); }
+      .sheet-tile .tile-ico { font-size: 26px; line-height: 1; }
+      .sheet-tile .tile-label { font-size: 11px; opacity: .75; text-align: center; }
+      .sheet-tile.is-active { box-shadow: 0 0 0 2px rgba(255,120,120,.85); }
+      #party-button[data-count]:not([data-count="0"])::after { content: attr(data-count); position: absolute; top: 4px; right: 8px; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: #d4515f; color: #fff; font: 700 11px/18px ui-sans-serif, sans-serif; text-align: center; }
+      @keyframes sheet-up { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+      @media (prefers-reduced-motion: reduce) { .sheet { animation: none; } }
+      .toast { position: fixed; z-index: 9; left: 50%; bottom: calc(var(--dock) + 24px + env(safe-area-inset-bottom)); transform: translateX(-50%); padding: 8px 14px; border-radius: 12px; background: rgba(20,32,26,.85); font-size: 13px; max-width: 86vw; text-align: center; display: none; }
+      /* joystick di atas dock supaya tidak bertumpuk dengan tombol */
+      .joy-zone { position: fixed; z-index: 6; left: 0; bottom: calc(var(--dock) + env(safe-area-inset-bottom)); width: 55%; height: 42%; touch-action: none; display: none; }
       @media (pointer: coarse) { .joy-zone { display: block; } .hint { display: none; } }
-      .joy-base { position: absolute; left: 28px; bottom: max(28px, env(safe-area-inset-bottom)); width: 124px; height: 124px; border-radius: 50%; background: rgba(255,255,255,.18); border: 2px solid rgba(255,255,255,.4); }
+      .joy-base { position: absolute; left: 28px; bottom: 24px; width: 124px; height: 124px; border-radius: 50%; background: rgba(255,255,255,.18); border: 2px solid rgba(255,255,255,.4); }
       .joy-knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(255,255,255,.75); box-shadow: 0 2px 8px rgba(0,0,0,.35); }
       #villa-error { position: fixed; z-index: 20; inset: 0; display: none; place-items: center; padding: 24px; background: rgba(20,32,26,.9); text-align: center; }
       #villa-error pre { white-space: pre-wrap; font-size: 12px; opacity: .8; }
@@ -49,16 +72,22 @@
     <div id="villa-root"></div>
     <div class="hud title"><strong>NIKORA</strong><span>Wedding Villa</span></div>
     <div class="hud place" id="place">Villa Grounds</div>
-    <div class="topbar">
-      <div class="rbs">
+    <div class="topbar"><small id="online">Menyambung…</small></div>
+    <canvas id="minimap" width="168" height="136" hidden></canvas>
+    <!-- class "rbs": tombol 😊 (emoji-reactions-ui.js) dipasang di sini -->
+    <nav class="dock rbs" id="dock" aria-label="Menu utama">
       <button id="cam-button" class="rb" type="button" aria-label="Ganti sudut kamera" title="Sudut kamera (C)">🎥</button>
       <button id="map-button" class="rb" type="button" aria-label="Tampilkan peta" aria-pressed="false" title="Peta (M)">🗺</button>
-      <button id="party-button" class="rb" type="button" aria-label="Panggung MC" title="Panggung MC" hidden>🎤</button>
       <button id="mic-button" class="rb" type="button" aria-label="Nyalakan mikrofon" aria-pressed="false" title="Suara dekat (V)" hidden>🎙</button>
+      <button id="menu-button" class="rb" type="button" aria-label="Menu" aria-expanded="false" aria-controls="menu-sheet" title="Menu">≡</button>
+    </nav>
+    <div id="menu-sheet" class="sheet" hidden role="dialog" aria-label="Menu">
+      <div class="sheet-head"><strong>Menu</strong><button id="menu-close" class="sheet-close" type="button" aria-label="Tutup menu">✕</button></div>
+      <!-- video-call.js menambah ubin 📷 Kamera dan screen-ui.js menambah ubin 🎬 Layar ke sini -->
+      <div id="menu-grid" class="sheet-grid">
+        <button id="party-button" class="sheet-tile" type="button" aria-label="Panggung MC" title="Panggung MC" hidden><span class="tile-ico">🎤</span><span class="tile-label">Panggung MC</span></button>
       </div>
-      <small id="online">Menyambung…</small>
     </div>
-    <canvas id="minimap" width="168" height="136" hidden></canvas>
     <div id="party-panel" class="panel" hidden>
       <div class="panel-head"><strong>Panggung MC</strong><button id="party-close" type="button" aria-label="Tutup">✕</button></div>
       <div id="party-body"></div>
@@ -69,5 +98,6 @@
     <div class="joy-zone" id="joy-zone"><div class="joy-base" id="joy-base"><div class="joy-knob" id="joy-knob"></div></div></div>
     <div id="villa-error"><div><h2>Tidak bisa memulai</h2><p id="villa-error-text"></p><pre id="villa-error-detail"></pre></div></div>
     <script type="module" src="/src/villa-main.js"></script>
+    <script type="module" src="/src/villa-hud.js"></script>
   </body>
 </html>

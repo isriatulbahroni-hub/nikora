@@ -7,6 +7,7 @@ import { getMasjidWorld } from './masjid-layout.js';
 import { buildMasjidWorld } from './masjid-world.js';
 import { createPostureController } from './masjid-posture-data.js';
 import { applyPosture } from './masjid-posture.js';
+import { exhibitById, nearestExhibit } from './masjid-exhibits.js';
 
 // Masjid Agung NIKORA: kompleks sangat luas yang dijelajahi dengan avatar (mode offline, satu pemain).
 // Berjalan 5,2 m/s seperti di vila; tombol Lari (Shift / R) menaikkannya supaya jarak ratusan meter tetap nyaman.
@@ -37,7 +38,7 @@ const joystick = { x: 0, z: 0 };
 let shiftHeld = false;
 let runToggle = false;
 const KEYS = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
-const hooks = { map: () => {}, camera: () => {}, places: () => {}, run: () => {}, sit: () => {}, pray: () => {}, next: () => {} };
+const hooks = { map: () => {}, camera: () => {}, places: () => {}, run: () => {}, sit: () => {}, pray: () => {}, next: () => {}, tap: () => {} };
 const CAM_LIMITS = Object.freeze({ minPitch: 0.06, maxPitch: 1.5, minDist: 1.5, maxDist: 140 });
 // Orang ketiga, lebar, udara, dan pandangan atas (skala masjid ratusan meter)
 const CAM_PRESETS = Object.freeze([{ pitch: 0.28, dist: 6 }, { pitch: 0.55, dist: 12 }, { pitch: 0.95, dist: 30 }, { pitch: 1.5, dist: 90 }]);
@@ -96,8 +97,10 @@ function setupInput(canvas, camState) {
   }, { passive: false });
 
   // Seret = putar dan miringkan kamera (satu jari/mouse); cubit dua jari = zoom, putar dua jari = putar kamera.
+  // Ketukan singkat tanpa geser = memilih benda di dunia (mis. etalase museum).
   const pointers = new Map();
   let pinch = null;
+  let tap = null;
   const twoFingers = () => {
     const [a, b] = [...pointers.values()];
     return { d: Math.hypot(a.x - b.x, a.y - b.y), angle: Math.atan2(b.y - a.y, b.x - a.x) };
@@ -105,11 +108,13 @@ function setupInput(canvas, camState) {
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    tap = pointers.size === 1 ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() } : null;
     if (pointers.size === 2) pinch = twoFingers();
   });
   canvas.addEventListener('pointermove', (e) => {
     const p = pointers.get(e.pointerId);
     if (!p) return;
+    if (tap && Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 8) tap = null;
     const dx = e.clientX - p.x;
     const dy = e.clientY - p.y;
     p.x = e.clientX;
@@ -128,6 +133,8 @@ function setupInput(canvas, camState) {
     }
   });
   const release = (e) => {
+    if (tap && tap.id === e.pointerId && e.type === 'pointerup' && performance.now() - tap.t < 450) hooks.tap(e.clientX, e.clientY);
+    tap = null;
     pointers.delete(e.pointerId);
     pinch = pointers.size === 2 ? twoFingers() : null;
   };
@@ -324,13 +331,53 @@ async function start() {
   // ---------- toast, peta, lari, jelajah ----------
   const toastEl = $('toast');
   let toastTimer = 0;
-  const toast = (text) => {
+  const toast = (text, ms = 2600) => {
     toastEl.textContent = text;
     toastEl.style.display = 'block';
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => {
       toastEl.style.display = 'none';
-    }, 2600);
+    }, ms);
+  };
+
+  // Petunjuk sekali saja untuk layar sentuh: sebelumnya petunjuk "seret untuk memutar kamera" disembunyikan di HP,
+  // sehingga pengguna sentuh tidak tahu kamera bisa diputar dan di-zoom.
+  if (window.matchMedia?.('(pointer: coarse)').matches && store('masjid-hint') !== '1') {
+    store('masjid-hint', '1');
+    setTimeout(() => toast('Geser joystick untuk berjalan. Seret layar di luar joystick untuk memutar kamera, cubit dua jari untuk zoom.', 7000), 1200);
+  }
+
+  // ---------- info etalase museum (ketuk etalase, atau tombol yang muncul saat berdekatan) ----------
+  const exhibitSpots = world.props.filter((p) => p.type === 'glass' && p.exhibit).map((p) => ({ x: p.x, z: p.z, id: p.exhibit }));
+  const exhibitCard = $('exhibit-card');
+  const exhibitPrompt = $('exhibit-prompt');
+  let promptId = null;
+  const openExhibit = (id) => {
+    const ex = exhibitById(id);
+    if (!ex) return;
+    $('exhibit-title').textContent = ex.title;
+    $('exhibit-era').textContent = ex.era;
+    $('exhibit-text').textContent = ex.text;
+    exhibitCard.hidden = false;
+  };
+  $('exhibit-close').addEventListener('click', () => {
+    exhibitCard.hidden = true;
+  });
+  exhibitPrompt.addEventListener('click', () => {
+    if (promptId) openExhibit(promptId);
+  });
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  hooks.tap = (cx, cy) => {
+    if (!built.exhibitHits.length) return;
+    ndc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
+    raycaster.setFromCamera(ndc, camera);
+    const hit = raycaster.intersectObjects(built.exhibitHits, false)[0];
+    if (!hit) return;
+    const id = hit.object.userData.exhibit;
+    const spot = exhibitSpots.find((s) => s.id === id);
+    if (spot && Math.hypot(spot.x - me.x, spot.z - me.z) > 14) toast('Dekati etalase ini untuk membuka infonya.');
+    else openExhibit(id);
   };
 
   // ---------- duduk bersila dan shalat (acara tazkirah, tarannum, akad, shalat berjamaah) ----------
@@ -411,17 +458,26 @@ async function start() {
   };
   const panel = $('places-panel');
   const list = $('places-list');
-  for (const p of world.places) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'place-btn';
-    b.textContent = p.name;
-    b.addEventListener('click', () => {
-      teleport(p.x, p.z);
-      panel.hidden = true;
-      toast(p.name);
-    });
-    list.appendChild(b);
+  // menu Jelajah dikelompokkan (Halaman dan gerbang, Ibadah, Belajar dan budaya, Acara)
+  for (const group of world.placeGroups) {
+    const items = world.places.filter((p) => p.group === group);
+    if (!items.length) continue;
+    const heading = document.createElement('div');
+    heading.className = 'place-group';
+    heading.textContent = group;
+    list.appendChild(heading);
+    for (const p of items) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'place-btn';
+      b.textContent = p.name;
+      b.addEventListener('click', () => {
+        teleport(p.x, p.z);
+        panel.hidden = true;
+        toast(p.name);
+      });
+      list.appendChild(b);
+    }
   }
   hooks.places = () => {
     panel.hidden = !panel.hidden;
@@ -508,6 +564,20 @@ async function start() {
       $('place').textContent = place.name;
     }
     if (!mapCanvas.hidden) drawMap(me, facing);
+
+    // tombol info muncul saat berdekatan dengan etalase museum; kartu info menutup sendiri bila pemain menjauh
+    const nearEx = nearestExhibit(exhibitSpots, me.x, me.z);
+    const nearId = nearEx ? nearEx.id : null;
+    if (nearId !== promptId) {
+      promptId = nearId;
+      if (nearId) {
+        exhibitPrompt.textContent = `\u24D8 ${exhibitById(nearId).title}`;
+        exhibitPrompt.hidden = false;
+      } else {
+        exhibitPrompt.hidden = true;
+        exhibitCard.hidden = true;
+      }
+    }
   }
   requestAnimationFrame(frame);
 

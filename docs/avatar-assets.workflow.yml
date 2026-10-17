@@ -1,0 +1,94 @@
+name: Siapkan aset avatar
+
+# Menyematkan (vendoring) TalkingHead dan HeadAudio pada versi terkunci, mengambil avatar dasar CC0 (mpfb.glb)
+# bila belum ada, lalu mengompres setiap GLB di game/avatars-src/ ke game/public/avatars/.
+# Hasilnya di-commit ke branch yang sama.
+# Berjalan otomatis saat berkas ini dibuat atau diubah di branch fitur/avatar-talkinghead (tanpa tombol Run workflow),
+# atau saat ada GLB baru di game/avatars-src/ pada branch itu.
+# Salin berkas ini ke .github/workflows/avatar-assets.yml agar aktif.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fitur/avatar-talkinghead
+    paths:
+      - '.github/workflows/avatar-assets.yml'
+      - 'game/avatars-src/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: avatar-assets-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Commit TalkingHead yang memuat mpfb.glb dan kodenya (MIT).
+  TALKINGHEAD_REF: 6318ff8c798e4a661fcd70c9373c4ab789c822bb
+  # Commit HeadAudio (MIT).
+  HEADAUDIO_REF: d3af5f9ff86ab6b2b1913d411a4e1922ec101953
+  GLTF_TRANSFORM_VERSION: 4.1.0
+
+jobs:
+  siapkan:
+    name: Sematkan pustaka dan kompres avatar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Sematkan TalkingHead
+        run: |
+          set -euo pipefail
+          dir=game/src/vendor/talkinghead
+          mkdir -p "$dir"
+          base="https://raw.githubusercontent.com/met4citizen/TalkingHead/${TALKINGHEAD_REF}"
+          for f in talkinghead.mjs dynamicbones.mjs lipsync-en.mjs playback-worklet.js; do
+            curl -fsSL "$base/modules/$f" -o "$dir/$f"
+          done
+          curl -fsSL "$base/LICENSE" -o "$dir/LICENSE"
+
+      - name: Sematkan HeadAudio
+        run: |
+          set -euo pipefail
+          mkdir -p game/src/vendor/headaudio game/public/headaudio
+          base="https://raw.githubusercontent.com/met4citizen/HeadAudio/${HEADAUDIO_REF}"
+          curl -fsSL "$base/dist/headaudio.min.mjs" -o game/src/vendor/headaudio/headaudio.min.mjs
+          curl -fsSL "$base/dist/headworklet.min.mjs" -o game/public/headaudio/headworklet.min.mjs
+          curl -fsSL "$base/dist/model-en-mixed.bin" -o game/public/headaudio/model-en-mixed.bin
+          curl -fsSL "$base/LICENSE" -o game/public/headaudio/LICENSE
+
+      - name: Ambil dan kompres avatar dasar (mpfb.glb, CC0) bila belum ada
+        if: hashFiles('game/public/avatars/mpfb.glb') == ''
+        run: |
+          set -euo pipefail
+          mkdir -p game/public/avatars
+          curl -fsSL "https://raw.githubusercontent.com/met4citizen/TalkingHead/${TALKINGHEAD_REF}/avatars/mpfb.glb" -o /tmp/mpfb.glb
+          test "$(stat -c%s /tmp/mpfb.glb)" -gt 1000000
+          npx --yes "@gltf-transform/cli@${GLTF_TRANSFORM_VERSION}" optimize /tmp/mpfb.glb game/public/avatars/mpfb.glb \
+            --compress meshopt --texture-compress webp --texture-size 1024
+
+      - name: Kompres avatar buatan sendiri (game/avatars-src)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p game/public/avatars
+          for f in game/avatars-src/*.glb; do
+            npx --yes "@gltf-transform/cli@${GLTF_TRANSFORM_VERSION}" optimize "$f" "game/public/avatars/$(basename "$f")" \
+              --compress meshopt --texture-compress webp --texture-size 1024
+          done
+
+      - name: Commit hasil
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add game/src/vendor game/public/headaudio game/public/avatars
+          if git diff --cached --quiet; then
+            echo "Tidak ada perubahan."
+          else
+            git commit -m "chore(avatar): sematkan TalkingHead/HeadAudio dan kompres avatar"
+            git push
+          fi

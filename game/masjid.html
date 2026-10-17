@@ -17,25 +17,48 @@
       .place { top: calc(max(12px, env(safe-area-inset-top)) + 46px); left: 14px; padding: 5px 12px; border-radius: 999px; background: rgba(18,44,34,.6); font-size: 13px; white-space: nowrap; text-shadow: none; }
       .topbar { position: fixed; z-index: 7; top: max(10px, env(safe-area-inset-top)); right: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
       .rbs { display: flex; gap: 8px; }
-      .rb { width: 42px; height: 42px; border-radius: 50%; border: 1px solid rgba(255,255,255,.28); background: rgba(18,44,34,.65); color: #fff; font-size: 19px; line-height: 1; display: grid; place-items: center; padding: 0; cursor: pointer; opacity: .85; }
+      /* tombol bulat berikon, kini dengan label teks di bawah ikon supaya fungsinya jelas tanpa menekan satu per satu */
+      .rb { width: 48px; height: 52px; border-radius: 14px; border: 1px solid rgba(255,255,255,.28); background: rgba(18,44,34,.65); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; cursor: pointer; opacity: .9; }
+      .rb .ic { font-size: 19px; line-height: 1; }
+      .rb .lb { font-size: 10px; font-weight: 600; line-height: 1; letter-spacing: 0; }
       .rb[aria-pressed="true"] { background: #2e9e6b; opacity: 1; }
       /* tombol duduk dan shalat di kanan bawah (dekat ibu jari kanan, jauh dari joystick di kiri) */
       .posebar { position: fixed; z-index: 7; right: 12px; bottom: calc(max(28px, env(safe-area-inset-bottom)) + 4px); display: flex; flex-direction: column; gap: 8px; }
-      .prayerbar { position: fixed; z-index: 8; right: 12px; bottom: calc(max(28px, env(safe-area-inset-bottom)) + 112px); width: min(224px, 56vw); padding: 10px; border-radius: 14px; background: rgba(18,44,34,.92); border: 1px solid rgba(255,255,255,.2); font-size: 13px; text-align: center; }
+      .prayerbar { position: fixed; z-index: 8; right: 12px; bottom: calc(max(28px, env(safe-area-inset-bottom)) + 124px); width: min(224px, 56vw); padding: 10px; border-radius: 14px; background: rgba(18,44,34,.92); border: 1px solid rgba(255,255,255,.2); font-size: 13px; text-align: center; }
       .prayerbar[hidden] { display: none; }
       .prayerbar .pb-label { display: block; font-weight: 600; margin-bottom: 8px; line-height: 1.3; }
       .prayerbar button { display: block; width: 100%; margin-top: 6px; padding: 10px; border: 0; border-radius: 10px; background: #2e9e6b; color: #fff; font: 600 13px ui-sans-serif, sans-serif; cursor: pointer; }
       .prayerbar .pb-stop { background: rgba(255,255,255,.14); font-weight: 500; }
-      #minimap { position: fixed; z-index: 6; top: calc(max(10px, env(safe-area-inset-top)) + 56px); right: 10px; width: 176px; height: 147px; border-radius: 10px; background: rgba(18,44,34,.5); border: 1px solid rgba(255,255,255,.3); opacity: .92; pointer-events: none; }
+      /* tombol aksi per ruangan (mis. Baca Qur'an dan Belajar di Ruang Tahfidz), di kiri tombol Shalat dan Duduk */
+      .ctxbar { position: fixed; z-index: 7; right: 72px; bottom: calc(max(28px, env(safe-area-inset-bottom)) + 4px); display: flex; gap: 8px; }
+      .ctxbar[hidden] { display: none; }
+      .ctxbar .rb { width: 62px; }
+      .ctxbar .lb { text-align: center; line-height: 1.1; white-space: normal; }
+      /* papan nama ruangan yang muncul sebentar saat masuk */
+      .plaque { position: fixed; z-index: 8; left: 50%; top: 30%; transform: translate(-50%, -8px); display: flex; align-items: center; gap: 12px; padding: 10px 24px; border-radius: 10px; border: 2px solid #d8b04a; background: linear-gradient(#134f46, #0d3a34); box-shadow: 0 0 0 3px #0d3a34, 0 0 0 4px #d8b04a, 0 8px 24px rgba(0,0,0,.35); color: #f4e6b8; font: 600 14px ui-sans-serif, 'Segoe UI', sans-serif; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .5s, transform .5s; }
+      .plaque.show { opacity: 1; transform: translate(-50%, 0); }
+      .plaque i { font-style: normal; color: #d8b04a; }
+      #minimap { position: fixed; z-index: 6; top: calc(max(10px, env(safe-area-inset-top)) + 66px); right: 10px; width: 176px; height: 147px; border-radius: 10px; background: rgba(18,44,34,.5); border: 1px solid rgba(255,255,255,.3); opacity: .92; pointer-events: none; }
       #minimap[hidden] { display: none; }
       .hint { bottom: max(10px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .9; white-space: nowrap; }
-      .panel { position: fixed; z-index: 10; top: calc(max(10px, env(safe-area-inset-top)) + 56px); left: 10px; width: min(300px, 86vw); max-height: 70vh; overflow: auto; padding: 0 12px 12px; border-radius: 14px; background: rgba(18,44,34,.94); border: 1px solid rgba(255,255,255,.2); font-size: 13px; }
+      .panel { position: fixed; z-index: 10; top: calc(max(10px, env(safe-area-inset-top)) + 66px); left: 10px; width: min(300px, 86vw); max-height: 70vh; overflow: auto; padding: 0 12px 12px; border-radius: 14px; background: rgba(18,44,34,.94); border: 1px solid rgba(255,255,255,.2); font-size: 13px; }
       .panel[hidden] { display: none; }
       /* judul panel menempel di atas saat daftar digulir (dulu ikut tergulir sehingga panel tampak tanpa judul dan tombol tutup) */
       .panel-head { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center; margin: 0 -12px 8px; padding: 12px; background: rgba(18,44,34,.98); }
       .panel-head button { background: none; border: 0; color: #fff; font-size: 16px; cursor: pointer; }
+      .place-group { margin: 12px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #e9cf85; }
+      .place-group:first-child { margin-top: 2px; }
       .place-btn { display: block; width: 100%; text-align: left; margin: 0 0 6px; padding: 9px 12px; border-radius: 10px; border: 0; background: rgba(255,255,255,.12); color: #fff; font: 500 13px ui-sans-serif, sans-serif; cursor: pointer; }
       .place-btn:hover, .place-btn:active { background: #d8b04a; color: #2d210a; }
+      /* info etalase museum */
+      .exhibit-prompt { position: fixed; z-index: 7; bottom: calc(max(28px, env(safe-area-inset-bottom)) + 6px); left: 164px; right: 72px; padding: 9px 12px; border-radius: 999px; border: 1px solid #d8b04a; background: rgba(18,44,34,.9); color: #ffe9a8; font: 600 13px ui-sans-serif, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; cursor: pointer; }
+      .exhibit-prompt[hidden] { display: none; }
+      #exhibit-card { left: 50%; top: calc(max(10px, env(safe-area-inset-top)) + 96px); transform: translateX(-50%); width: min(340px, 92vw); max-height: 60vh; padding-top: 0; z-index: 11; }
+      .exhibit-era { margin: -2px 0 8px; font-size: 12px; color: #e9cf85; }
+      #exhibit-text { margin: 0; line-height: 1.5; font-size: 14px; }
+      /* kartu bacaan Al-Fatihah (Ruang Tahfidz) */
+      #quran-card { left: 50%; top: calc(max(10px, env(safe-area-inset-top)) + 96px); transform: translateX(-50%); width: min(360px, 92vw); max-height: 62vh; z-index: 11; }
+      .ayah { margin: 0 0 8px; text-align: right; direction: rtl; font: 26px/1.9 Amiri, 'Noto Naskh Arabic', serif; }
       .toast { position: fixed; z-index: 9; left: 50%; bottom: 140px; transform: translateX(-50%); padding: 8px 14px; border-radius: 12px; background: rgba(18,44,34,.88); font-size: 13px; max-width: 86vw; text-align: center; display: none; }
       .joy-zone { position: fixed; z-index: 6; left: 0; bottom: 0; width: 55%; height: 45%; touch-action: none; display: none; }
       @media (pointer: coarse) { .joy-zone { display: block; } .hint { display: none; } }
@@ -44,9 +67,10 @@
       /* layar sempit: judul dan tombol atas tidak lagi saling menimpa (dulu huruf G pada AGUNG tertutup tombol pin) */
       @media (max-width: 460px) {
         .title strong { font-size: 15px; letter-spacing: .08em; white-space: nowrap; }
-        .rbs { gap: 6px; }
-        .rb { width: 38px; height: 38px; font-size: 17px; }
-        #minimap, .panel { top: calc(max(10px, env(safe-area-inset-top)) + 52px); }
+        .rbs { gap: 5px; }
+        .rb { width: 44px; height: 50px; }
+        .ctxbar .rb { width: 60px; }
+        #minimap, .panel { top: calc(max(10px, env(safe-area-inset-top)) + 62px); }
       }
       .joy-base { position: absolute; left: 28px; bottom: max(28px, env(safe-area-inset-bottom)); width: 124px; height: 124px; border-radius: 50%; background: rgba(255,255,255,.18); border: 2px solid rgba(255,255,255,.4); }
       .joy-knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(255,255,255,.75); box-shadow: 0 2px 8px rgba(0,0,0,.35); }
@@ -58,12 +82,13 @@
     <div id="masjid-root"></div>
     <div class="hud title"><strong>MASJID AGUNG</strong><span>NIKORA</span></div>
     <div class="hud place" id="place">Di luar kompleks</div>
+    <div class="plaque" id="plaque"><i>&#10086;</i><span id="plaque-text"></span><i>&#10086;</i></div>
     <div class="topbar">
       <div class="rbs">
-        <button id="places-button" class="rb" type="button" aria-label="Jelajah ke ruangan" title="Jelajah (J)">&#128205;</button>
-        <button id="run-button" class="rb" type="button" aria-label="Lari" aria-pressed="false" title="Lari (Shift / R)">&#127939;</button>
-        <button id="cam-button" class="rb" type="button" aria-label="Ganti sudut kamera" title="Sudut kamera (C)">&#127909;</button>
-        <button id="map-button" class="rb" type="button" aria-label="Tampilkan peta" aria-pressed="true" title="Peta (M)">&#128506;</button>
+        <button id="places-button" class="rb" type="button" aria-label="Jelajah ke ruangan" title="Jelajah (J)"><span class="ic">&#128205;</span><span class="lb">Jelajah</span></button>
+        <button id="run-button" class="rb" type="button" aria-label="Lari" aria-pressed="false" title="Lari (Shift / R)"><span class="ic">&#127939;</span><span class="lb">Lari</span></button>
+        <button id="cam-button" class="rb" type="button" aria-label="Ganti sudut kamera" title="Sudut kamera (C)"><span class="ic">&#127909;</span><span class="lb">Kamera</span></button>
+        <button id="map-button" class="rb" type="button" aria-label="Tampilkan peta" aria-pressed="true" title="Peta (M)"><span class="ic">&#128506;</span><span class="lb">Peta</span></button>
       </div>
     </div>
     <canvas id="minimap" width="220" height="184"></canvas>
@@ -71,9 +96,20 @@
       <div class="panel-head"><strong>Jelajah ke ruangan</strong><button id="places-close" type="button" aria-label="Tutup">&#10005;</button></div>
       <div id="places-list"></div>
     </div>
+    <div id="exhibit-card" class="panel" hidden>
+      <div class="panel-head"><strong id="exhibit-title"></strong><button id="exhibit-close" type="button" aria-label="Tutup">&#10005;</button></div>
+      <div class="exhibit-era" id="exhibit-era"></div>
+      <p id="exhibit-text"></p>
+    </div>
+    <div id="quran-card" class="panel" hidden>
+      <div class="panel-head"><strong>Surat Al-Fatihah</strong><button id="quran-close" type="button" aria-label="Tutup">&#10005;</button></div>
+      <div id="quran-text"></div>
+    </div>
+    <button id="exhibit-prompt" class="exhibit-prompt" type="button" hidden></button>
+    <div id="ctxbar" class="ctxbar" hidden></div>
     <div class="posebar">
-      <button id="pray-button" class="rb" type="button" aria-label="Shalat" aria-pressed="false" title="Shalat (P)">&#129330;</button>
-      <button id="sit-button" class="rb" type="button" aria-label="Duduk bersila" aria-pressed="false" title="Duduk bersila (B)">&#129496;</button>
+      <button id="pray-button" class="rb" type="button" aria-label="Shalat" aria-pressed="false" title="Shalat (P)"><span class="ic">&#129330;</span><span class="lb">Shalat</span></button>
+      <button id="sit-button" class="rb" type="button" aria-label="Duduk bersila" aria-pressed="false" title="Duduk bersila (B)"><span class="ic">&#129496;</span><span class="lb">Duduk</span></button>
     </div>
     <div id="prayer-bar" class="prayerbar" hidden>
       <span class="pb-label" id="prayer-label"></span>
@@ -85,5 +121,6 @@
     <div class="joy-zone" id="joy-zone"><div class="joy-base" id="joy-base"><div class="joy-knob" id="joy-knob"></div></div></div>
     <div id="masjid-error"><div><h2>Tidak bisa memulai</h2><p id="masjid-error-text"></p><pre id="masjid-error-detail"></pre></div></div>
     <script type="module" src="/src/masjid-main.js"></script>
+    <script type="module" src="/src/masjid-room-ui.js"></script>
   </body>
 </html>

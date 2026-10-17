@@ -14,6 +14,10 @@ import { createQualityGovernor } from './quality.js';
 import { modeFor } from './event-mode.js';
 import { buildBadmintonCourt, createRacketMesh, createShuttleMesh, placeShuttle } from './villa-court.js';
 import { createPractice } from './activities/badminton-practice.js';
+import { placeTvs } from './room-tv.js';
+import { createTvView } from './room-tv-view.js';
+import { mountRoomTvUi } from './room-tv-ui.js';
+import { createVillaGames } from './villa-gameui.js';
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
 function applyQuality(renderer, scene, q) {
@@ -29,6 +33,10 @@ function applyQuality(renderer, scene, q) {
 import { createPartyController, stageIds } from './party.js';
 import { takeRoleKey } from './role-key.js';
 import { renderPartyPanel } from './party-panel.js';
+import { lockableRooms } from './villa-doors.js';
+import { createRoomDoors } from './room-doors.js';
+import { mountRoomDoorsUi } from './room-doors-ui.js';
+import { createDoorView } from './villa-door-view.js';
 import { VOICE_CROWD, VoiceChat } from './voice.js';
 import { buildVillaWorld } from './villa-world.js';
 import { createVillaSky } from './villa-sky.js';
@@ -73,7 +81,7 @@ function readInput() {
   return len > 1 ? { x: x / len, z: z / len } : { x, z };
 }
 
-const hooks = { action: () => {}, map: () => {}, mic: () => {}, camera: () => {} };
+const hooks = { action: () => {}, map: () => {}, mic: () => {}, camera: () => {}, locked: () => false };
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const CAM_LIMITS = Object.freeze({ minPitch: 0.06, maxPitch: 1.5, minDist: 1.5, maxDist: 70 });
 // Sudut kamera siap pakai: Orang ketiga (setinggi manusia), Lebar, Udara, dan Atas
@@ -111,6 +119,7 @@ function choosePose(eye, yaw, pitch, want, boxes) {
 
 function setupInput(canvas, camState) {
   addEventListener('keydown', (e) => {
+    if (hooks.locked()) return; // permainan di ruang game sedang terbuka: tombol milik permainan, bukan villa
     const k = e.key.toLowerCase();
     if (k in KEYS) {
       held.add(k);
@@ -329,6 +338,14 @@ async function start() {
 
   const scene = new THREE.Scene();
   const built = buildVillaWorld(scene, world, { renderer });
+  // Kunci kamar: dibuat setelah tersambung (null = offline, semua kamar terbuka). Daun pintu dan lampu status ikut kondisinya.
+  let doors = null;
+  let doorUi = null;
+  const doorView = createDoorView({ scene, rooms: lockableRooms(world), getDoors: () => doors });
+  // TV pribadi di tiap ruangan: tiap tamu memutar videonya sendiri (link atau berkas HP), tidak terkait layar utama; jalan juga saat offline.
+  const tvs = placeTvs(world);
+  const tvView = createTvView({ scene, tvs });
+  const tvUi = mountRoomTvUi({ tvs, onActive: (id) => tvView.setActive(id) });
   // Siang-malam otomatis (jam asli; ?sky= dan ?tz= untuk mengubahnya). Dibuat sebelum layar dan avatar supaya hanya dunia vila yang diatur.
   const sky = createVillaSky({ scene, renderer, search: window.location.search });
   if (lowQuality) applyQuality(renderer, scene, quality.settings()); // ?q=low: mulai langsung dengan kualitas hemat
@@ -432,9 +449,12 @@ async function start() {
     return true;
   };
   hooks.action = () => {
+    if (games.locksInput) return;
     if (seat !== null) return standUp();
+    const terminal = games.nearTerminal(me); // mesin permainan di ruang game
+    if (terminal) return games.open(terminal, me);
     if (nearestSpot()) return sitDown(performance.now());
-    return practiceAction(); // jauh dari kursi/kasur: tombol dipakai untuk bulu tangkis bila dekat lapangan
+    return practiceAction(); // jauh dari kursi/kasur/mesin: tombol dipakai untuk bulu tangkis bila dekat lapangan
   };
   actBtn.addEventListener('click', () => hooks.action());
   const setActLabel = (() => {
@@ -533,6 +553,9 @@ async function start() {
       toastEl.style.display = 'none';
     }, Math.max(3500, text.length * 70)); // pesan panjang tampil lebih lama
   };
+  // ---------- ruang game (villa-gamewing.js): dekor, terminal, dan GameHost ----------
+  const games = createVillaGames({ scene, toast, getNet: () => multiplayer?.net ?? null, services: { quality } });
+  hooks.locked = () => games.locksInput;
   const micBtn = $('mic-button');
   const toggleMic = async () => {
     if (voiceBusy || !voice?.room) return;
@@ -629,6 +652,11 @@ async function start() {
       setupParty(session);
       setupEmojiReactions({ session, avatar }); // stiker emoji: gerak badan, efek, dan suara (online: terlihat semua tamu)
       screen.attach(session);
+      if (session) {
+        // kunci kamar: check-in, kunci, ketuk (LiveKit: status disiarkan pemilik kamar; ?server=: server yang memutuskan)
+        doors = createRoomDoors({ net: session.net, world, onNotice: toast, onKnock: (req) => doorUi?.addKnock(req) });
+        doorUi = mountRoomDoorsUi({ doors });
+      }
       if (session && roleKey && session.net.role === 'guest') {
         // kunci ada di tautan tetapi server tidak mengenalinya: jangan diam saja
         toast(
@@ -655,7 +683,8 @@ async function start() {
     const delta = Math.min(rawMs / 1000, 0.05);
     last = time;
 
-    const input = readInput();
+    const input = games.locksInput ? { x: 0, z: 0 } : readInput(); // permainan terbuka: avatar diam
+    games.tick(me); // menutup permainan bila pemain keluar ruangan atau ruang ditutup
     if (seat !== null && Math.hypot(input.x, input.z) > 0.35) standUp(); // bergerak = berdiri
     let move = cameraRelative(input, camNow.yaw); // relatif terhadap arah kamera
     // bantuan pintu: bila melaju ke arah bukaan pintu, digeser halus ke garis tengahnya (vektor yang sama dikirim ke server)
@@ -664,7 +693,9 @@ async function start() {
     let travelled = 0;
     if (moving) {
       const before = { x: me.x, z: me.z };
-      const next = world.move(me, move.x * PLAYER_SPEED * delta, move.z * PLAYER_SPEED * delta);
+      const stepX = move.x * PLAYER_SPEED * delta;
+      const stepZ = move.z * PLAYER_SPEED * delta;
+      const next = doors ? doors.move(me, stepX, stepZ) : world.move(me, stepX, stepZ); // pintu kamar terkunci menahan yang tidak berhak masuk
       me.x = next.x;
       me.z = next.z;
       me.level = next.level;
@@ -823,17 +854,32 @@ async function start() {
     sky.update(me.x, me.z); // sesudah built.update: arah matahari/bulan mengikuti jam menimpa arah tetap dari dunia
     const qChange = quality.setFloor(lowQuality ? 2 : screen?.controller?.state?.src ? 1 : 0) ?? quality.tick(performance.now());
     if (qChange) applyQuality(renderer, scene, qChange);
-    renderer.render(scene, camera);
-    screen.render(scene, camera);
+    if (!games.covering) {
+      renderer.render(scene, camera);
+      screen.render(scene, camera);
+    }
+
+    // kunci kamar: tidur = kamar sendiri terkunci; daun pintu, lampu, tombol, dan kartu ketukan mengikuti status terbaru
+    const sleeping = seat !== null && world.spots[seat]?.kind === 'sleep';
+    if (doors) {
+      doors.setSleeping(sleeping);
+      doors.tick();
+      doorUi?.update(me, sleeping);
+    }
+    doorView.update();
+    tvUi.update(me); // tombol "Tonton TV" muncul saat dekat TV ruangan
 
     const near = nearestSpot();
-    setActLabel(seat !== null ? 'Berdiri' : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : practiceLabel());
+    const terminal = seat === null && !games.locksInput ? games.nearTerminal(me) : null;
+    setActLabel(games.locksInput ? '' : seat !== null ? 'Berdiri' : terminal ? terminal.label : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : practiceLabel());
 
     const place = me.stair ? { id: 'stair', name: 'Tangga' } : roomAt(me.x, me.z, me.level);
     const placeKey = `${place.id}@${me.level}`;
     if (placeKey !== placeId) {
       placeId = placeKey;
       $('place').textContent = me.level > 0 ? `Lantai ${me.level + 1} · ${place.name}` : place.name;
+      const warn = games.entered(place.id);
+      if (warn) toast(warn);
     }
     const others = multiplayer ? multiplayer.net.players.filter((p) => p.id !== multiplayer.net.id) : [];
     if (!mapCanvas.hidden) drawMap(me, others, me.level);
@@ -845,7 +891,7 @@ async function start() {
     state: () => ({
       badminton: { phase: practice.phase, score: practice.score },
       x: me.x, z: me.z, y: me.y, level: me.level, stair: me.stair, place: roomAt(me.x, me.z, me.level), online: !!multiplayer, others: multiplayer ? multiplayer.view.count : 0,
-      seat, action: actBtn.hidden ? '' : actBtn.textContent, mapVisible: !mapCanvas.hidden, skyPhase: sky.phase(),
+      seat, game: games.state(), action: actBtn.hidden ? '' : actBtn.textContent, mapVisible: !mapCanvas.hidden, skyPhase: sky.phase(),
     }),
     sky: () => sky.info(),
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio(), canvas: [renderer.domElement.width, renderer.domElement.height] }),

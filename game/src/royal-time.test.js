@@ -2,9 +2,18 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CYCLE_MS, approach, nightAt } from './royal-time.js';
 
-test('mode tetap: senja selalu 0, malam selalu 1', () => {
+const utc = (h) => Date.UTC(2026, 9, 16, h);
+
+test('mode tetap: senja selalu 0, malam selalu 1, siang selalu -1', () => {
   assert.equal(nightAt('sunset', 123456), 0);
   assert.equal(nightAt('night', 123456), 1);
+  assert.equal(nightAt('day', 123456), -1);
+});
+
+test('mode otomatis tanpa epoch mengikuti jam asli: siang negatif, malam 1', () => {
+  assert.equal(nightAt('auto', utc(5), undefined, undefined, 'WIB'), -1); // 12.00 WIB
+  assert.equal(nightAt('auto', utc(15), undefined, undefined, 'WIB'), 1); // 22.00 WIB
+  assert.equal(nightAt('auto', utc(11), undefined, undefined, 'WIB'), 0); // 18.00 WIB: senja keemasan
 });
 
 test('siklus otomatis: senja, peralihan naik, malam, peralihan turun, dan berulang', () => {

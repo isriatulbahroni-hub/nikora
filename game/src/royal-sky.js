@@ -1,14 +1,16 @@
 import * as THREE from 'three';
 import { cloudTexture } from './royal-textures.js';
 
-// Langit dinamis Istana Cinta: kubah bergradasi (senja keemasan → malam bertabur bintang dan galaksi), matahari/bulan,
+// Langit dinamis Istana Cinta: kubah bergradasi (siang biru → senja keemasan → malam bertabur bintang dan galaksi), matahari/bulan,
 // awan berwarna mengikuti cahaya, dan "atmosfer" (warna cahaya, kabut, paparan) yang dipakai dunia 3D.
-// Masukan tunggal: night 0..1 (lihat royal-time.js).
+// Masukan tunggal: fase -1..1 (lihat day-night.js): -1 siang, 0 senja, 1 malam. Nilai 0..1 lama (senja → malam) tetap berlaku.
 const KEYS = [
   { zenith: [0.17, 0.24, 0.52], mid: [0.78, 0.42, 0.52], horizon: [1.0, 0.66, 0.32], sunColor: [1.0, 0.72, 0.42], sunI: 2.6, dir: [-0.85, 0.16, 0.35], hemiSky: [1.0, 0.82, 0.66], hemiGround: [0.35, 0.3, 0.32], hemiI: 0.8, fog: [0.95, 0.62, 0.45], exposure: 1.0, env: 0.5, stars: 0 },
   { zenith: [0.07, 0.08, 0.26], mid: [0.45, 0.2, 0.42], horizon: [0.9, 0.4, 0.33], sunColor: [0.9, 0.45, 0.4], sunI: 0.9, dir: [-0.9, 0.05, 0.3], hemiSky: [0.5, 0.45, 0.7], hemiGround: [0.2, 0.18, 0.25], hemiI: 0.6, fog: [0.35, 0.2, 0.35], exposure: 0.95, env: 0.3, stars: 0.35 },
   { zenith: [0.01, 0.02, 0.07], mid: [0.03, 0.05, 0.14], horizon: [0.06, 0.09, 0.2], sunColor: [0.55, 0.66, 1.0], sunI: 0.7, dir: [0.35, 0.65, 0.4], hemiSky: [0.25, 0.3, 0.55], hemiGround: [0.08, 0.09, 0.14], hemiI: 0.55, fog: [0.05, 0.07, 0.16], exposure: 1.1, env: 0.16, stars: 1 },
 ];
+// Siang hari (fase -1): langit biru terang, matahari tinggi, tanpa bintang.
+const DAY = { zenith: [0.18, 0.42, 0.85], mid: [0.45, 0.68, 0.95], horizon: [0.78, 0.88, 0.97], sunColor: [1.0, 0.96, 0.86], sunI: 3.0, dir: [-0.45, 0.78, 0.25], hemiSky: [0.75, 0.85, 1.0], hemiGround: [0.42, 0.4, 0.36], hemiI: 0.9, fog: [0.72, 0.84, 0.95], exposure: 0.95, env: 0.7, stars: 0 };
 const mix = (a, b, t) => (Array.isArray(a) ? a.map((v, i) => v + (b[i] - v) * t) : a + (b - a) * t);
 const blend = (night) => {
   const first = night <= 0.5;
@@ -17,6 +19,7 @@ const blend = (night) => {
   const b = first ? KEYS[1] : KEYS[2];
   return Object.fromEntries(Object.keys(a).map((k) => [k, mix(a[k], b[k], t)]));
 };
+const blendDay = (s, day) => (day <= 0 ? s : Object.fromEntries(Object.keys(s).map((k) => [k, mix(s[k], DAY[k], day)])));
 
 const VERT = 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }';
 const FRAG = `
@@ -81,9 +84,11 @@ export function createSky(scene) {
 
   return {
     dome,
-    /** Memperbarui langit dan mengembalikan atmosfer untuk pencahayaan dunia. */
-    update(night, camPos, time) {
-      const s = blend(night);
+    /** Memperbarui langit dan mengembalikan atmosfer untuk pencahayaan dunia. `phase`: -1 siang, 0 senja, 1 malam. */
+    update(phase, camPos, time) {
+      const night = Math.max(0, phase); // atm.night tetap 0..1 untuk dunia 3D (lampu dsb.)
+      const day = Math.max(0, -phase);
+      const s = blendDay(blend(night), day);
       atm.night = night;
       atm.sunDir.set(...s.dir).normalize();
       atm.sunColor.setRGB(...s.sunColor);

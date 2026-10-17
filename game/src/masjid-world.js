@@ -1,7 +1,10 @@
 // Renderer Masjid Agung NIKORA. Semua benda berulang (dinding, tiang, kubah, pohon, perabot) digambar dengan
 // InstancedMesh supaya seluruh kompleks hanya butuh belasan draw call dan tetap ringan di HP.
 import * as THREE from 'three';
+import { Batch, canvasTexture } from './masjid-batch.js';
+import { createInteriors } from './masjid-decor.js';
 import { BOUNDS, CENTRAL_DOME, GATE_TOWERS, HALL_H, MINARETS, PROP_SPECS, ROOMS } from './masjid-layout.js';
+import { createMasjidSky } from './masjid-sky.js';
 
 const CREAM = '#efe6d0';
 const GOLD = '#d8b04a';
@@ -9,64 +12,17 @@ const TEAL = '#2f8f86';
 const FLOOR_COLORS = { hall: '#cdbf9f', women: '#cdbf9f', study: '#b9a07a', library: '#8a6a45', museum: '#d6d2c8', wudhu: '#9cc7d4', akad: '#efe6d2', walimah: '#f1e3d8' };
 const PROP_LOOK = {
   pier: '#e8dcc0', minbar: '#6b4a2b', shelf: '#6b4a2b', glass: '#b8d4e0', rehal: '#8a5a2f', bench: '#d9d2c3',
-  table: '#f4efe6', akadtable: '#f7f1e3', pelaminan: GOLD, row: '#7a2f3a',
+  table: '#f4efe6', akadtable: '#f7f1e3', pelaminan: GOLD, row: '#7a2f3a', counter: '#efe6d2', basin: '#efe6d2', armchair: '#efe6d2',
 };
 const BOOK_COLORS = ['#7a2f3a', '#2f5f7a', '#3a6b4a', '#b8923f', '#5b3f2a', '#8a8a7a', '#a14a2f'];
+// Di dalam bangunan cahaya matahari dikurangi dari 1,7 menjadi 0,55 (dulu nilai tetap); kini sebagai pecahan supaya berlaku siang dan malam.
+const SUN_INDOOR_CUT = 1.15 / 1.7;
 
 // Pengacak deterministik kecil (supaya isi rak selalu sama di setiap muat ulang).
 const makeRng = (seed) => () => {
   seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
   return seed / 4294967296;
 };
-
-const tmp = new THREE.Object3D();
-const tint = new THREE.Color();
-
-/** Kumpulan benda berbentuk sama (satu geometri) yang digambar dalam satu draw call, dengan warna per benda. */
-class Batch {
-  constructor(geometry, material) {
-    this.geometry = geometry;
-    this.material = material;
-    this.items = [];
-  }
-
-  add(x, y, z, sx, sy, sz, color, ry = 0) {
-    this.items.push([x, y, z, sx, sy, sz, color, ry]);
-  }
-
-  build(parent) {
-    if (!this.items.length) return null;
-    const mesh = new THREE.InstancedMesh(this.geometry, this.material, this.items.length);
-    this.items.forEach(([x, y, z, sx, sy, sz, color, ry], i) => {
-      tmp.position.set(x, y, z);
-      tmp.rotation.set(0, ry, 0);
-      tmp.scale.set(sx, sy, sz);
-      tmp.updateMatrix();
-      mesh.setMatrixAt(i, tmp.matrix);
-      mesh.setColorAt(i, tint.set(color));
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.frustumCulled = false; // jumlah draw call kecil; hindari bola batas yang salah untuk benda tersebar
-    parent.add(mesh);
-    return mesh;
-  }
-}
-
-function canvasTexture(size, draw, renderer, repeat) {
-  const [w, h] = size;
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  draw(canvas.getContext('2d'), w, h);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = renderer?.capabilities?.getMaxAnisotropy?.() ?? 4;
-  if (repeat) tex.repeat.set(repeat[0], repeat[1]);
-  return tex;
-}
 
 const pavingDraw = (g) => {
   g.fillStyle = '#dccfb2';
@@ -146,6 +102,8 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
   // sehingga langit-langit tampak seperti gradasi gelap dengan satu sorotan di bawah pemain.
   const fill = new THREE.AmbientLight(0xfff0d6, 0);
   scene.add(hemi, sun, fill);
+  // Langit otomatis: siang, senja, malam mengikuti jam asli (?sky= dan ?tz= untuk mengubahnya).
+  const sky = createMasjidSky({ scene, hemi, sun, renderer, search: typeof window !== 'undefined' ? window.location.search : '' });
 
   const root = new THREE.Group();
   scene.add(root);
@@ -158,6 +116,16 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
   const balls = new Batch(new THREE.SphereGeometry(1, 14, 10), lit);
   const domes = new Batch(new THREE.SphereGeometry(1, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), lit);
   const glow = new Batch(new THREE.SphereGeometry(1, 10, 8), glowMat);
+  const glowBox = new Batch(new THREE.BoxGeometry(1, 1, 1), glowMat);
+  const exhibitHits = []; // bola tak kasat mata di sekitar etalase museum, dipakai untuk mendeteksi ketukan
+
+  // Dekor ruangan (marmer, panel hijau-emas, lampu lentera, jendela, perabot). Bila gagal dibuat, tampilan dasar tetap dipakai.
+  let interiors = null;
+  try {
+    interiors = createInteriors({ root, boxes, cyls, cones, balls, domes, glow, glowBox, exhibitHits });
+  } catch (error) {
+    console.warn('[masjid] dekor ruangan tidak bisa dibuat, memakai tampilan dasar', error);
+  }
 
   // ---------------------------------------------------------------- tanah, jalan, lantai
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(3200, 3200), new THREE.MeshStandardMaterial({ color: 0x6f9a52, roughness: 1 }));
@@ -186,7 +154,8 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
   for (const r of ROOMS) {
     const [x1, z1, x2, z2] = r.rect;
     boxes.add((x1 + x2) / 2, 0.04, (z1 + z2) / 2, x2 - x1, 0.08, z2 - z1, FLOOR_COLORS[r.kind] ?? CREAM);
-    if (r.kind === 'hall' || r.kind === 'women' || r.kind === 'study') {
+    // Ruang Tahfidz memakai karpet hijau berhias dari dekor ruangan; sajadah polos hanya sebagai cadangan
+    if (r.kind === 'hall' || r.kind === 'women' || (r.kind === 'study' && !interiors)) {
       const carpet = new THREE.Mesh(new THREE.PlaneGeometry(x2 - x1 - 2, z2 - z1 - 2), carpetMat(x2 - x1 - 2, z2 - z1 - 2));
       carpet.rotation.x = -Math.PI / 2;
       carpet.position.set((x1 + x2) / 2, 0.14, (z1 + z2) / 2);
@@ -222,7 +191,17 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
 
   // ---------------------------------------------------------------- tiang, pilar, perabot
   const bookRng = makeRng(20261016);
+  const drawDecor = (p) => {
+    if (!interiors) return false;
+    try {
+      return interiors.drawProp(p);
+    } catch (error) {
+      console.warn('[masjid] gagal menggambar', p.type, error);
+      return false;
+    }
+  };
   for (const p of world.props) {
+    if (drawDecor(p)) continue;
     const spec = PROP_SPECS[p.type];
     if (p.type === 'column') {
       const h = p.h;
@@ -266,17 +245,30 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
         }
       }
     } else if (p.type === 'glass') {
-      // etalase museum: alas batu gelap, pelat emas, dan satu benda pajangan (bola emas, guci, atau obelisk)
+      // cadangan bila dekor ruangan gagal: alas batu gelap, pelat emas, dan satu benda pajangan
       boxes.add(p.x, 0.45, p.z, spec.hx * 2, 0.9, spec.hz * 2, '#4a4338');
       boxes.add(p.x, 0.93, p.z, spec.hx * 2 + 0.1, 0.06, spec.hz * 2 + 0.1, GOLD);
       const kind = (((Math.round(p.x) + Math.round(p.z)) % 3) + 3) % 3;
       if (kind === 0) balls.add(p.x, 1.45, p.z, 0.45, 0.45, 0.45, GOLD);
       else if (kind === 1) cyls.add(p.x, 1.35, p.z, 0.3, 0.8, 0.3, '#b9774a');
       else cones.add(p.x, 1.5, p.z, 0.4, 1.1, 0.4, '#d6c08a');
+      if (p.exhibit) {
+        glow.add(p.x, 2.35, p.z, 0.22, 0.22, 0.22, '#ffd77a'); // penanda ketuk untuk info
+        const hit = new THREE.Mesh(new THREE.SphereGeometry(1.5, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+        hit.position.set(p.x, 1.3, p.z);
+        hit.userData.exhibit = p.exhibit;
+        exhibitHits.push(hit);
+        root.add(hit);
+      }
     } else {
       boxes.add(p.x, spec.h / 2, p.z, spec.hx * 2, spec.h, spec.hz * 2, PROP_LOOK[p.type] ?? CREAM);
       if (p.type === 'pier') boxes.add(p.x, HALL_H - 2, p.z, spec.hx * 2 + 1, 1.2, spec.hz * 2 + 1, GOLD);
     }
+  }
+  try {
+    interiors?.buildRooms();
+  } catch (error) {
+    console.warn('[masjid] sebagian dekor ruangan gagal dibuat', error);
   }
 
   // ---------------------------------------------------------------- mihrab dan lampu gantung aula
@@ -343,7 +335,7 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
   boxes.add(BOUNDS.maxX, 24, 60, 3, 4, 26, '#d9cba8');
   boxes.add(BOUNDS.minX, 24, 60, 3, 4, 26, '#d9cba8');
 
-  for (const b of [boxes, cyls, cones, balls, domes, glow]) b.build(root);
+  for (const b of [boxes, cyls, cones, balls, domes, glow, glowBox]) b.build(root);
 
   // ---------------------------------------------------------------- kubah utama (bagian dalamnya terlihat dari aula)
   const cd = CENTRAL_DOME;
@@ -374,11 +366,17 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
 
   return {
     root,
-    /** k = 0 di luar, 1 di dalam bangunan: dalam ruangan cahaya langit dikurangi dan cahaya isi dinaikkan (lampu mengikuti pemain dari main). */
+    exhibitHits,
+    sky,
+    /**
+     * k = 0 di luar, 1 di dalam bangunan: dalam ruangan cahaya langit dikurangi dan cahaya isi dinaikkan (lampu mengikuti pemain dari main).
+     * Dipanggil tiap frame oleh masjid-main, jadi di sinilah langit siang-malam ikut diperbarui.
+     */
     setIndoor(k) {
-      hemi.intensity = 1.0 - 0.35 * k;
-      sun.intensity = 1.7 - 1.15 * k;
-      fill.intensity = 0.55 * k;
+      const atm = sky.update();
+      hemi.intensity = atm.hemiI * (1 - 0.35 * k);
+      sun.intensity = atm.sunI * (1 - SUN_INDOOR_CUT * k);
+      fill.intensity = (0.55 + 0.3 * atm.night) * k;
     },
   };
 }
