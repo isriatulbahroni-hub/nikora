@@ -14,7 +14,8 @@ import { loadConfig, saveConfig, toWire } from './avatar-config.js';
 import { createAvatarEditor } from './avatar-editor.js';
 import { applyFacePhoto } from './avatar-face.js';
 import { GAME_RULES, cameraRelativeMovement, normalizeMovement } from './game-rules.js';
-import { HALL, SEATS, TABLES, facingAngle, findNearestSeat, resolveCollisions } from './hall-layout.js';
+import { HALL, SEATS, facingAngle, findNearestSeat, resolveCollisions } from './hall-layout.js';
+import { buildHallWorld } from './hall-world.js';
 import { resolveServerUrl, startMultiplayer } from './multiplayer-view.js';
 import { dayPartIndex } from './avatar-aura.js';
 import { requestSensorPermission, sensorAvailable, startMirror } from './motion-mirror.js';
@@ -144,12 +145,14 @@ let playerAvatar;
 let npcs = [];
 let netError = '';
 let hallScreen = null;
+let hallWorld = null; // NIKORA Royal Wedding World (hall-world.js)
 let quality = null;
 let eventMode = modeFor();
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
 function applyQuality(renderer, scene, q) {
   renderer.setPixelRatio(q.ratio);
+  hallWorld?.setShadows(q.shadows);
   if (renderer.shadowMap.enabled !== q.shadows) {
     renderer.shadowMap.enabled = q.shadows;
     scene.traverse((o) => {
@@ -241,75 +244,12 @@ function hasWebGL2() {
   }
 }
 
-// ---- Dunia: aula resepsi ----
-const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...extra });
-
-function box(w, h, d, material, x, y, z, { cast = true } = {}) {
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-  mesh.position.set(x, y, z);
-  mesh.castShadow = cast;
-  mesh.receiveShadow = true;
-  scene.add(mesh);
-  return mesh;
-}
-
-function buildTable(table) {
-  const cloth = mat(0xf4efe6, { roughness: 0.9 });
-  const top = new THREE.Mesh(new THREE.CylinderGeometry(HALL.tableRadius, HALL.tableRadius, 0.78, 28), cloth);
-  top.position.set(table.x, 0.39, table.z);
-  top.castShadow = true;
-  top.receiveShadow = true;
-  scene.add(top);
-  const flowers = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), mat(0xe58fa8));
-  flowers.position.set(table.x, 0.98, table.z);
-  scene.add(flowers);
-  const candle = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), new THREE.MeshBasicMaterial({ color: 0xffd98a }));
-  candle.position.set(table.x + 0.45, 0.84, table.z);
-  scene.add(candle);
-}
-
-function buildChair(seat) {
-  const wood = mat(0x8a6a4a);
-  const chair = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.08, 0.5), wood);
-  base.position.y = 0.44;
-  const back = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.07), wood);
-  back.position.set(0, 0.72, 0.23); // sandaran di belakang pemain (+z lokal)
-  base.castShadow = true;
-  chair.add(base, back);
-  chair.position.set(seat.x, 0, seat.z);
-  chair.rotation.y = seat.rot;
-  scene.add(chair);
-}
-
-function buildStage() {
-  const gold = mat(0xd4a84b, { metalness: 0.4, roughness: 0.4 });
-  box(HALL.stage.halfWidth * 2, 0.4, 3.4, mat(0xb9a07a), 0, 0.2, -9.3);
-  box(2.6, 0.05, 1.4, mat(0x8c2f39), 0, 0.43, -9.2, { cast: false }); // karpet pelaminan
-  // sofa pelaminan
-  for (const x of [-0.8, 0.8]) {
-    box(1.1, 0.4, 0.8, mat(0xf2e4cf), x, 0.6, -10.2);
-    box(1.1, 0.8, 0.2, mat(0xf2e4cf), x, 1.0, -10.55);
-  }
-  // gapura bunga
-  box(0.25, 3.4, 0.25, gold, -2.4, 2.1, -10.9);
-  box(0.25, 3.4, 0.25, gold, 2.4, 2.1, -10.9);
-  box(5.05, 0.25, 0.25, gold, 0, 3.9, -10.9);
-  const bloom = new THREE.SphereGeometry(0.28, 10, 8);
-  for (let i = 0; i < 9; i += 1) {
-    const flower = new THREE.Mesh(bloom, mat(i % 2 ? 0xe58fa8 : 0xf6e8ee));
-    flower.position.set(-2.4 + i * 0.6, 3.75 - Math.sin((i / 8) * Math.PI) * 0.1, -10.8);
-    scene.add(flower);
-  }
-}
-
+// ---- Dunia: NIKORA Royal Wedding World (istana, kolam, jembatan, gazebo; lihat hall-world.js) ----
 function createScene() {
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1d1722);
-  scene.fog = new THREE.Fog(0x1d1722, 26, 48);
 
   const size = root.getBoundingClientRect();
-  camera = new THREE.PerspectiveCamera(46, size.width / size.height, 0.1, 90);
+  camera = new THREE.PerspectiveCamera(46, size.width / size.height, 0.1, 700); // far lebar: langit, laut, dan pegunungan jauh
   camera.position.set(0, 12, 20);
 
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -326,39 +266,11 @@ function createScene() {
   renderer.domElement.setAttribute('aria-label', 'Tampilan aula resepsi 3D ORBIT');
   root.append(renderer.domElement);
 
-  scene.add(new THREE.HemisphereLight(0xfff0dc, 0x3a2f3f, 1.7));
-  const key = new THREE.DirectionalLight(0xffe2b8, 2.4);
-  key.position.set(-6, 14, 10);
-  key.castShadow = true;
-  key.shadow.mapSize.set(1024, 1024);
-  Object.assign(key.shadow.camera, { left: -15, right: 15, top: 15, bottom: -15 });
-  scene.add(key);
-  for (const [x, z] of [[0, -8], [-6, 2], [6, 2]]) {
-    const lamp = new THREE.PointLight(0xffc98a, 18, 14, 2);
-    lamp.position.set(x, 4.2, z);
-    scene.add(lamp);
-  }
-
-  // lantai kayu, karpet merah menuju pelaminan, dinding
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(24, 24), mat(0x7a5a3c, { roughness: 0.8 }));
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  scene.add(floor);
-  box(2.2, 0.02, 19, mat(0x8c2f39, { roughness: 0.95 }), 0, 0.012, 1.6, { cast: false });
-  box(0.08, 0.025, 19, mat(0xd4a84b, { metalness: 0.4 }), -1.15, 0.015, 1.6, { cast: false });
-  box(0.08, 0.025, 19, mat(0xd4a84b, { metalness: 0.4 }), 1.15, 0.015, 1.6, { cast: false });
-
-  const wall = mat(0xe8dcc4, { roughness: 0.9 });
-  box(24, 6, 0.35, wall, 0, 3, -11.65); // dinding belakang
-  box(0.35, 1.1, 23, wall, -11.65, 0.55, 0);
-  box(0.35, 1.1, 23, wall, 11.65, 0.55, 0);
-  box(24, 0.7, 0.35, wall, 0, 0.35, 11.65);
-  hallScreen = createScreen({ scene, renderer, host: root, spec: { x: 0, y: 4.3, z: -11.45, width: 8, height: 4.5 } });
-  hallScreen.resize(size.width, size.height); // layar tancap aula
-
-  buildStage();
-  for (const table of TABLES) buildTable(table);
-  for (const seat of SEATS) buildChair(seat);
+  // Dunia mengatur sendiri langit, kabut, cahaya, meja, kursi, dan pelaminan (tata letak dari hall-layout.js).
+  hallWorld = buildHallWorld({ scene, renderer });
+  hallScreen = createScreen({ scene, renderer, host: root, spec: hallWorld.screenSpec });
+  hallScreen.resize(size.width, size.height); // layar acara di dalam gerbang istana
+  if (lowQuality) hallWorld.setShadows(false);
 }
 
 function addSeatedNpc(seatId, color, name, { x, y, z, rot } = {}) {
@@ -384,8 +296,9 @@ function populateOfflineGuests() {
   const colors = [0xf2a65a, 0x6ab8e8, 0xc77dff, 0xf25f5c, 0x70c1b3, 0xffe066];
   const seats = [0, 2, 3, 7, 10, 14, 15, 19, 26, 28];
   seats.forEach((id, i) => addSeatedNpc(id, colors[i % colors.length], null));
-  addSeatedNpc(null, 0xf6e8ee, 'Mempelai', { x: -0.8, y: 0.4 + HALL.seatedDrop, z: -10.2, rot: facingAngle(0, 1) });
-  addSeatedNpc(null, 0x2f3a55, 'Mempelai', { x: 0.8, y: 0.4 + HALL.seatedDrop, z: -10.2, rot: facingAngle(0, 1) });
+  // sofa pelaminan ada di x = +-1,2, z = -22,9 (hall-world.js); duduk di dudukan sofa, bukan di lantai
+  addSeatedNpc(null, 0xf6e8ee, 'Mempelai', { x: -1.2, y: HALL.stage.height + 0.1 + HALL.seatedDrop, z: -22.9, rot: facingAngle(0, 1) });
+  addSeatedNpc(null, 0x2f3a55, 'Mempelai', { x: 1.2, y: HALL.stage.height + 0.1 + HALL.seatedDrop, z: -22.9, rot: facingAngle(0, 1) });
 }
 
 // ---- Input dan aksi ----
@@ -811,8 +724,8 @@ function updateCamera(delta, now) {
   const fit = Math.min(1.9, Math.max(1, 1.45 / camera.aspect));
   if (!joined) {
     idleAngle += delta * 0.12;
-    camera.position.set(Math.sin(idleAngle) * 19, 11, Math.cos(idleAngle) * 19);
-    camera.lookAt(0, 1, 0);
+    camera.position.set(Math.sin(idleAngle) * 46, 20, -8 + Math.cos(idleAngle) * 46); // orbit lebar: dunia kini seluas ±28 m
+    camera.lookAt(0, 4, -8);
     return;
   }
   const smoothing = 1 - Math.exp(-5 * delta);
@@ -855,6 +768,7 @@ function renderFrame(time) {
 
   multiplayer?.view.update(delta, now);
   hallScreen?.tick(now * 1000);
+  hallWorld?.update(now, focus, camera);
   if (voice && multiplayer && Math.floor(now * 10) !== lastVoiceTick) {
     lastVoiceTick = Math.floor(now * 10);
     voice.update(me, multiplayer.net.players, stageIds(party?.state, multiplayer.net.players), { ...VOICE_CROWD, duck: eventMode.duck, selfId: multiplayer.net.id });
