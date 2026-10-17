@@ -38,6 +38,22 @@ export const GAME_DOORS = Object.freeze([
   { x: -22, z: 35.25, orient: 'v', width: 2.2 }, // lobi <-> horor
 ]);
 
+// Terminal (mesin arcade) tiap permainan: berdiri rapat di dinding selatan ruangannya, menghadap utara.
+// Belum punya tabrakan (klien dan server memakai denah yang sama, jadi tabrakan baru ditambah di villa-layout.js).
+export const TERMINAL_RANGE = 1.9;
+export const GAME_TERMINALS = Object.freeze([
+  { id: 'term_badminton', game: 'badminton', x: -34, z: 38.7 },
+  { id: 'term_horror', game: 'horror', x: -18, z: 38.7 },
+]);
+
+// Papan nama. ry = putaran sumbu y bidang (depan bidang menghadap +z saat ry = 0). Tinggi 2,25..2,85 m: di atas bukaan
+// pintu (2,1 m) dan di bawah puncak dinding (3,0 m).
+export const GAME_SIGNS = Object.freeze([
+  { id: 'sign_entrance', text: 'RUANG GAME', sub: 'Bulu Tangkis · Mansion Horor', x: -24, y: 2.55, z: 30.78, ry: Math.PI, w: 3.0, h: 0.6 },
+  { id: 'sign_badminton', game: 'badminton', text: 'BULU TANGKIS', sub: '', x: -29.8, y: 2.55, z: 35.25, ry: Math.PI / 2, w: 1.8, h: 0.55 },
+  { id: 'sign_horror', game: 'horror', text: 'MANSION HOROR', sub: 'Seram', x: -22.2, y: 2.55, z: 35.25, ry: -Math.PI / 2, w: 1.8, h: 0.55, scary: true },
+]);
+
 /** Apakah titik (x,z) berada di dalam sayap ruang game, diperluas `margin` meter? */
 export function insideGameWing(x, z, margin = 0) {
   const [x1, z1, x2, z2] = GAME_WING.rect;
@@ -46,3 +62,18 @@ export function insideGameWing(x, z, margin = 0) {
 
 /** Ruang game yang memuat permainan `gameId`, atau null. */
 export const gameRoomFor = (gameId) => GAME_ROOMS.find((r) => r.game === gameId) ?? null;
+
+/** Terminal terdekat dalam jangkauan, atau null. Hanya di lantai dasar dan tidak saat di tangga. */
+export function nearestTerminal(pos, range = TERMINAL_RANGE) {
+  if (!pos || pos.stair != null || (pos.level ?? 0) !== 0) return null;
+  let best = null;
+  let bestDistance = range;
+  for (const t of GAME_TERMINALS) {
+    const d = Math.hypot(t.x - pos.x, t.z - pos.z);
+    if (d <= bestDistance) {
+      best = t;
+      bestDistance = d;
+    }
+  }
+  return best;
+}

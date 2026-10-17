@@ -91,6 +91,9 @@ export const PROP_SPECS = Object.freeze({
   akadtable: { hx: 1, hz: 3, h: 0.9 },
   pelaminan: { hx: 1.5, hz: 9, h: 5 },
   row: { hx: 0.5, hz: 5, h: 0.9 },
+  counter: { hx: 10, hz: 0.6, h: 0.95 }, // meja cuci wudhu (kran emas, bangku hijau)
+  basin: { hx: 3.5, hz: 8, h: 0.95 }, // kolam wudhu di tengah ruangan
+  armchair: { hx: 0.45, hz: 0.45, h: 1 }, // kursi mempelai di panggung akad
   palm: { hx: 0.35, hz: 0.35, h: 9 },
   tree: { hx: 0.4, hz: 0.4, h: 7 },
 });
@@ -167,19 +170,23 @@ function buildProps() {
   }
   for (const x of [-221, -249, -277]) for (const z of [-214, -198, -166, -150, -134]) add('rehal', x, z);
 
-  // perpustakaan dan museum
+  // perpustakaan
   for (const x of [210, 222, 234, 256, 268, 280]) for (const z of [-110, -102, -62, -54]) add('shelf', x, z);
   // museum: dua baris etalase (di dekat dinding utara dan selatan, lorong tengah dibiarkan lapang); tiap etalase memuat satu info yang bisa diketuk
   let exhibit = 0;
   for (const z of [-108, -52]) for (const x of [-210, -222, -234, -256, -268, -280]) add('glass', x, z, { exhibit: EXHIBITS[exhibit++].id });
 
-  // tempat wudhu
-  for (const x of [212, 228, 244]) for (const z of [34, 44, 66, 76]) add('bench', x, z);
-  for (const x of [-212, -228, -244]) for (const z of [34, 44, 66, 76]) add('bench', x, z);
+  // tempat wudhu: meja cuci berderet di dinding utara dan selatan (celah di depan pintu), kolam wudhu di tengah
+  for (const sign of [1, -1]) {
+    const mid = 230 * sign;
+    for (const dx of [-16, 16]) for (const z of [22, 88]) add('counter', mid + dx, z);
+    add('basin', mid, 55);
+  }
 
-  // gedung akad (meja akad, kursi, pelaminan) dan walimah (meja bundar)
-  add('pelaminan', 176, 190);
+  // gedung akad (meja akad, dua kursi mempelai, kursi tamu) dan walimah (meja bundar, pelaminan)
   add('akadtable', 166, 190);
+  add('armchair', 170, 187.5);
+  add('armchair', 170, 192.5);
   for (const x of [100, 110, 120, 130, 140, 150]) for (const z of [177, 203]) add('row', x, z);
   add('pelaminan', -176, 190);
   for (const x of [-165, -151, -137, -123, -109]) for (const z of [176, 190, 204]) add('table', x, z);
