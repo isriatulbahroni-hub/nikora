@@ -84,13 +84,13 @@ test('dunia terbuka: pemain boleh keluar lewat gerbang dan berjalan jauh di luar
   assert.ok(Math.abs(p.x) < 3.3, 'lewat bukaan gerbang');
   assert.equal(roomAt(p.x, p.z).id, 'outside');
   // berjalan ke timur di luar: bebas, tidak ada tembok tak terlihat
-  let q = { x: 0, z: 80 };
+  let q = { x: 0, z: BOUNDS.maxZ + 20 }; // sudah di luar pagar selatan
   for (let i = 0; i < 40; i++) q = world.move(q, 5.2, 0);
   assert.ok(q.x > 100, `tidak terkurung di luar, x=${q.x}`);
 });
 
 test('pagar keliling padat: tidak bisa menembus pagar di luar bukaan gerbang', () => {
-  let p = { x: 20, z: 38 };
+  let p = { x: 20, z: BOUNDS.maxZ - 4 }; // di selatan arena Game Center, dekat pagar
   for (let i = 0; i < 30; i++) p = world.move(p, 0, 1);
   assert.ok(p.z < BOUNDS.maxZ, `menembus pagar selatan, z=${p.z}`);
   let q = { x: 30, z: 0 };

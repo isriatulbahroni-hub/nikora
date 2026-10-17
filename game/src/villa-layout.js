@@ -4,6 +4,7 @@
 //
 // Vila bertingkat 3 lantai (level 0, 1, 2). Lantai atas dicapai lewat empat menara tangga
 // (dua lengan tangga lurus per menara). Status pemain: { x, z, level, stair, y }.
+import { GAME_DOORS, GAME_ROOFS, GAME_ROOMS, GAME_ZONES, gameEdgeHeight, insideGameWing } from './villa-gamewing.js';
 
 export const WALL_THICKNESS = 0.3;
 export const WALL_HEIGHT = 3.0;
@@ -15,7 +16,8 @@ export const levelY = (level) => (level ?? 0) * LEVEL_HEIGHT;
 export const PLAYER_RADIUS = 0.4;
 // BOUNDS = kompleks vila (pagar keliling, peta mini). Pemain TIDAK terkurung di sini: boleh keluar lewat gerbang
 // dan menjelajah di luar. WORLD_LIMIT hanya pengaman jarak (angka tak terbatas/ulah klien), bukan tembok.
-export const BOUNDS = Object.freeze({ minX: -42, maxX: 42, minZ: -26, maxZ: 42 });
+// maxZ = 84: kompleks diperluas ke selatan untuk Game Center (arena bulu tangkis dan horor berukuran sungguhan).
+export const BOUNDS = Object.freeze({ minX: -42, maxX: 42, minZ: -26, maxZ: 84 });
 export const WORLD_LIMIT = Object.freeze({ minX: -600, maxX: 600, minZ: -600, maxZ: 600 });
 export const GATE_HALF_WIDTH = 3.2; // bukaan gerbang di pagar selatan
 export const SPAWN = Object.freeze({ x: 0, z: 37 });
@@ -26,10 +28,11 @@ export const SEATED_DROP = -0.3; // avatar duduk sedikit lebih rendah
 
 const GUEST_COLS = [16, 21.5, 27, 32.5, 38];
 
+// Lorong kamar tamu selebar 4 m (z 11..15): dua orang bisa berpapasan dengan lega. Kamar tamu 7 m dalamnya (z 4..11 dan 15..22).
 function guestRooms(level = 0) {
   const rooms = [];
   let n = level === 0 ? 1 : 9;
-  for (const [z1, z2] of [[4, 12], [14, 22]]) {
+  for (const [z1, z2] of [[4, 11], [15, 22]]) {
     for (let i = 0; i < 4; i++) {
       rooms.push({ id: `guest_${n}`, name: `Guest Room ${n}`, kind: 'guest', level, rect: [GUEST_COLS[i], z1, GUEST_COLS[i + 1], z2] });
       n++;
@@ -46,8 +49,9 @@ export const ROOMS = Object.freeze([
   { id: 'bridal_room', name: 'Bridal Room', kind: 'bridal', rect: [26, -20, 38, -3] },
   { id: 'restaurant', name: 'Restaurant & Cafe', kind: 'restaurant', rect: [-36, 4, -16, 20] },
   { id: 'kitchen', name: 'Kitchen', kind: 'kitchen', rect: [-36, 20, -26, 30] },
-  { id: 'corridor', name: 'Guest Corridor', kind: 'corridor', rect: [16, 12, 38, 14] },
+  { id: 'corridor', name: 'Guest Corridor', kind: 'corridor', rect: [16, 11, 38, 15] },
   ...guestRooms(0),
+  ...GAME_ROOMS, // arena Game Center (villa-gamewing.js): bulu tangkis dan horor
 ]);
 
 // Area terbuka (dipakai untuk label lokasi dan lantai paving).
@@ -56,6 +60,7 @@ export const ZONES = Object.freeze([
   { id: 'fountain_garden', name: 'Pool & Garden', kind: 'garden', rect: [-12, 16, 12, 42] },
   { id: 'parking', name: 'Parking Area', kind: 'parking', rect: [18, 24, 42, 42] },
   { id: 'courtyard', name: 'Main Courtyard', kind: 'courtyard', rect: [-42, -3, 42, 4] },
+  ...GAME_ZONES, // plaza Game Center di antara dua arena
 ]);
 
 // ---------------------------------------------------------------- menara tangga
@@ -93,7 +98,7 @@ function makeTower({ id, name, x1, x2, stairX, dz1, zMin, zMax, groundDoorX, adj
 export const TOWERS = Object.freeze([
   makeTower({ id: 'tower_w', name: 'Stair Tower West', x1: -41.6, x2: -38, stairX: [-41.2, -39.2], dz1: -10.4, zMin: -20, zMax: -3, groundDoorX: -39.8, adj: -38, l1DoorZ: -10.4, l2DoorZ: -18.8, l1DoorW: 1.6, l2DoorW: 1.4 }),
   makeTower({ id: 'tower_e', name: 'Stair Tower East', x1: 38, x2: 41.6, stairX: [39.2, 41.2], dz1: -10.4, zMin: -20, zMax: -3, groundDoorX: 39.8, adj: 38, l1DoorZ: -10.4, l2DoorZ: -18.8, l1DoorW: 1.6, l2DoorW: 1.4 }),
-  makeTower({ id: 'tower_g', name: 'Stair Tower Guest Wing', x1: 38, x2: 41.6, stairX: [39.2, 41.2], dz1: 13, zMin: 4, zMax: 22, groundDoorX: 39.8, adj: 38, l1DoorZ: 13, l2DoorZ: 4.9, l1DoorW: 1.4, l2DoorW: 1.4 }),
+  makeTower({ id: 'tower_g', name: 'Stair Tower Guest Wing', x1: 38, x2: 41.6, stairX: [39.2, 41.2], dz1: 13, zMin: 4, zMax: 22, groundDoorX: 39.8, adj: 38, l1DoorZ: 13, l2DoorZ: 4.9, l1DoorW: 2.4, l2DoorW: 1.4 }),
   makeTower({ id: 'tower_r', name: 'Stair Tower Restaurant', x1: -41.6, x2: -36, stairX: [-41.2, -39.2], dz1: 14, zMin: 4, zMax: 22, groundDoorX: -39.8, adj: -36, l1DoorZ: 14, l2DoorZ: 5.4, l1DoorW: 1.6, l2DoorW: 1.4 }),
 ]);
 export const STAIRS = Object.freeze(TOWERS.flatMap((t) => t.stairs));
@@ -110,7 +115,7 @@ export const UPPER_ROOMS = Object.freeze([
   { id: 'library', name: 'Library Lounge', kind: 'library', level: 1, rect: [14, -20, 26, -3] },
   { id: 'honeymoon', name: 'Honeymoon Suite', kind: 'bridal', level: 1, rect: [26, -20, 38, -3] },
   { id: 'sky_cafe', name: 'Sky Cafe', kind: 'restaurant', level: 1, rect: [-36, 4, -16, 20] },
-  { id: 'corridor_1', name: 'Guest Corridor', kind: 'corridor', level: 1, rect: [16, 12, 38, 14] },
+  { id: 'corridor_1', name: 'Guest Corridor', kind: 'corridor', level: 1, rect: [16, 11, 38, 15] },
   ...guestRooms(1),
   // lantai 2
   { id: 'terrace_w', name: 'Sky Terrace West', kind: 'terrace', level: 2, rect: [-38, -20, -14, -3] },
@@ -126,6 +131,7 @@ export const ROOFS = Object.freeze([
   { id: 'hall', kind: 'gable', rect: [-14, -20, 14, -3], base: HALL_WALL_HEIGHT, rise: 2.6, overhang: 0.7 },
   { id: 'kitchen', kind: 'hip', rect: [-36, 20, -26, 30], base: WALL_HEIGHT, rise: 1.4, overhang: 0.6 },
   { id: 'presidential', kind: 'hip', rect: [26, -20, 38, -3], base: levelY(2) + WALL_HEIGHT, rise: 2.2, overhang: 0.6 },
+  ...GAME_ROOFS, // atap limasan tiap arena Game Center
   ...TOWERS.map((t) => ({ id: `${t.id}_roof`, kind: 'hip', rect: t.rect, base: levelY(2) + WALL_HEIGHT, rise: 1.8, overhang: 0.5 })),
 ]);
 
@@ -148,10 +154,11 @@ const GROUND_DOORS = [
   { x: -26, z: 4, orient: 'h', width: 2.2 }, // restoran ke teras
   { x: -20, z: 20, orient: 'h', width: 2.2 }, // restoran ke taman selatan
   { x: -31, z: 20, orient: 'h', width: 2.2 }, // restoran <-> dapur
-  { x: 16, z: 13, orient: 'v', width: 2 }, // koridor kamar tamu ke luar
-  ...guestDoorXs.map((x) => ({ x, z: 12, orient: 'h', width: 1.6 })),
-  ...guestDoorXs.map((x) => ({ x, z: 14, orient: 'h', width: 1.6 })),
+  { x: 16, z: 13, orient: 'v', width: 3 }, // koridor kamar tamu ke luar (lebar)
+  ...guestDoorXs.map((x) => ({ x, z: 11, orient: 'h', width: 1.6 })),
+  ...guestDoorXs.map((x) => ({ x, z: 15, orient: 'h', width: 1.6 })),
   ...TOWERS.map((t) => t.groundDoor), // pintu masuk menara tangga
+  ...GAME_DOORS, // pintu arena Game Center (menghadap plaza)
 ];
 export const DOORS = Object.freeze(GROUND_DOORS);
 
@@ -159,8 +166,8 @@ export const UPPER_DOORS = Object.freeze([
   // lantai 1
   { level: 1, x: -26, z: -11, orient: 'v', width: 2.2 }, // yoga <-> suite
   { level: 1, x: 26, z: -11, orient: 'v', width: 2.2 }, // library <-> honeymoon
-  ...guestDoorXs.map((x) => ({ level: 1, x, z: 12, orient: 'h', width: 1.6 })),
-  ...guestDoorXs.map((x) => ({ level: 1, x, z: 14, orient: 'h', width: 1.6 })),
+  ...guestDoorXs.map((x) => ({ level: 1, x, z: 11, orient: 'h', width: 1.6 })),
+  ...guestDoorXs.map((x) => ({ level: 1, x, z: 15, orient: 'h', width: 1.6 })),
   ...TOWERS.map((t) => ({ level: 1, ...t.doors[1] })),
   // lantai 2
   { level: 2, x: 26, z: -11, orient: 'v', width: 2.2 }, // presidential <-> teras timur
@@ -202,7 +209,8 @@ function buildProps() {
     [-14, 24], [-22, 26], [-30, 34], [-36, 36], [-26, 38], [-18, 33], [-12, 38], [14, 24], [13, 36], [12, 30],
     [-40, -23.5], [-40, 28], [40, -23.5], [40, 26], [-40, 33], [-2.8, 40], [2.8, 40],
   ];
-  for (const [x, z] of palms) props.push({ type: 'palm', x, z });
+  // palem yang jatuh di dalam arena Game Center dilewati
+  for (const [x, z] of palms) if (!insideGameWing(x, z, 0.9)) props.push({ type: 'palm', x, z });
 
   // lantai 1
   for (const r of guestRooms(1)) {
@@ -518,7 +526,10 @@ export function getVillaWorld() {
       return (Math.abs(w.coord - hallRect[0]) < 1e-6 || Math.abs(w.coord - hallRect[2]) < 1e-6) && mid > hallRect[1] && mid < hallRect[3];
     };
     const walls = buildWallSegments(walled, doors).map((w) => {
-      if (!hallEdge(w)) return w;
+      if (!hallEdge(w)) {
+        const gh = level === 0 ? gameEdgeHeight(w) : null; // dinding arena Game Center lebih tinggi
+        return gh ? { ...w, h: gh } : w;
+      }
       // lantai 0: dinding aula setinggi dua lantai; lantai atas: dinding duplikat disembunyikan (tetap menjadi tabrakan)
       return level === 0 ? { ...w, h: HALL_WALL_HEIGHT } : { ...w, dup: true };
     });

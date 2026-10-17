@@ -63,7 +63,7 @@ test('di dalam kamar kamera tidak pernah berada di dalam benda padat ke segala a
 });
 
 test('di kamar tertutup tanpa jalan keluar kamera tetap di dalam ruangan', () => {
-  // guest_8 pintunya di z=14 (sisi utara); kamera mengarah ke sisi selatan/timur/barat tidak boleh keluar
+  // guest_8 pintunya di z=15 (sisi utara); kamera mengarah ke sisi selatan/timur/barat tidak boleh keluar
   const room = ROOMS.find((r) => r.id === 'guest_8').rect;
   const x = (room[0] + room[2]) / 2;
   const z = room[3] - 1.5;
@@ -156,7 +156,7 @@ test('chooseCameraPose: dinaikkan hanya bila hasilnya memberi jarak orang ketiga
 });
 
 test('chooseCameraPose: menempel dinding belakang tidak dipaksa menjadi pandangan dari atas', () => {
-  const eye = { x: 20.6, y: 1.45, z: 11.2 }; // 0,55 m dari dinding selatan
+  const eye = { x: 20.6, y: 1.45, z: 10.45 }; // 0,55 m dari dinding selatan kamar (z = 11)
   const pose = chooseCameraPose(eye, 0, 0.28, 5.6, boxes);
   assert.equal(pose.pitch, 0.28);
   assert.equal(pose.raised, false);

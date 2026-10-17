@@ -6,7 +6,7 @@ import { Room } from './room.js';
 
 const world = getVillaWorld();
 const T0 = 1_000_000;
-const DOOR_G1 = { x: 18.75, z: 12 }; // pintu Guest Room 1 (lantai 0), kamar di sisi utara (z mengecil)
+const DOOR_G1 = { x: 18.75, z: 11 }; // pintu Guest Room 1 (lantai 0), kamar di sisi utara (z mengecil)
 
 function setup() {
   const room = new Room({ world });
@@ -46,7 +46,7 @@ test('kamar yang sudah di-check-in terkunci: penyusup tidak bisa masuk, pemilik 
   const { room, owner, intruder } = setup();
   assert.equal(room.roomCommand('own', { act: 'checkin', room: 'guest_1' }, T0).ok, true);
   walk(room, 'int', 0, -1, 3);
-  assert.ok(intruder.z > 12.3, `harus tertahan di pintu, z=${intruder.z}`);
+  assert.ok(intruder.z > 11.3, `harus tertahan di pintu, z=${intruder.z}`);
   walk(room, 'own', 0, -1, 2);
   assert.ok(owner.z < 10, `pemilik harus bisa masuk, z=${owner.z}`);
 });
@@ -56,7 +56,7 @@ test('langkah server besar tidak bisa menembus pintu terkunci', () => {
   room.roomCommand('own', { act: 'checkin', room: 'guest_1' }, T0);
   room.setInput('int', { x: 0, z: -1, rot: 0, seq: ++seq });
   for (let i = 0; i < 10; i++) room.step(0.25, T0); // dt maksimum
-  assert.ok(intruder.z > 12.3, `z=${intruder.z}`);
+  assert.ok(intruder.z > 11.3, `z=${intruder.z}`);
 });
 
 test('yang sudah di dalam tetap bisa keluar walau kamar terkunci', () => {
@@ -64,7 +64,7 @@ test('yang sudah di dalam tetap bisa keluar walau kamar terkunci', () => {
   Object.assign(intruder, { x: DOOR_G1.x, z: 8 }); // sudah di dalam kamar
   room.roomCommand('own', { act: 'checkin', room: 'guest_1' }, T0);
   walk(room, 'int', 0, 1, 2);
-  assert.ok(intruder.z > 12.5, `harus bisa keluar, z=${intruder.z}`);
+  assert.ok(intruder.z > 11.5, `harus bisa keluar, z=${intruder.z}`);
 });
 
 test('check-in butuh dekat pintu; satu kamar satu pemilik; satu orang satu kamar', () => {
@@ -94,7 +94,7 @@ test('ketuk: diterima pemilik memberi izin sementara, lalu kedaluwarsa', () => {
   Object.assign(intruder, { x: DOOR_G1.x, z: 13 });
   room.expire(T0 + 1000 + LOCK_RULES.allowTtlMs + 1);
   walk(room, 'int', 0, -1, 2, T0 + 1000 + LOCK_RULES.allowTtlMs + 2);
-  assert.ok(intruder.z > 12.3, `z=${intruder.z}`);
+  assert.ok(intruder.z > 11.3, `z=${intruder.z}`);
 });
 
 test('ketukan ditolak pemilik atau kedaluwarsa: tidak ada izin', () => {
@@ -103,7 +103,7 @@ test('ketukan ditolak pemilik atau kedaluwarsa: tidak ada izin', () => {
   room.roomCommand('int', { act: 'knock', room: 'guest_1' }, T0);
   assert.equal(room.roomCommand('own', { act: 'knock-reply', from: 'int', accept: false }, T0 + 500).accepted, false);
   walk(room, 'int', 0, -1, 2, T0 + 600);
-  assert.ok(intruder.z > 12.3);
+  assert.ok(intruder.z > 11.3);
   room.roomCommand('int', { act: 'knock', room: 'guest_1' }, T0 + 10000);
   assert.equal(room.roomCommand('own', { act: 'knock-reply', from: 'int', accept: true }, T0 + 10000 + LOCK_RULES.knockTtlMs + 1).reason, 'expired');
 });
@@ -128,7 +128,7 @@ test('pemilik membuka kunci: semua orang bisa masuk; mengunci lagi mencabut izin
   Object.assign(intruder, { x: DOOR_G1.x, z: 13 });
   room.roomCommand('own', { act: 'lock', locked: true }, T0);
   walk(room, 'int', 0, -1, 2);
-  assert.ok(intruder.z > 12.3);
+  assert.ok(intruder.z > 11.3);
 });
 
 test('pemilik yang sedang tidur: kamar otomatis terkunci dan tidak bisa dibuka', () => {
@@ -142,7 +142,7 @@ test('pemilik yang sedang tidur: kamar otomatis terkunci dan tidak bisa dibuka',
   assert.equal(room.locks.state.get('guest_1').locked, true, 'otomatis terkunci saat mulai tidur');
   assert.equal(room.roomCommand('own', { act: 'lock', locked: false }, T0).reason, 'sleeping');
   walk(room, 'int', 0, -1, 3);
-  assert.ok(intruder.z > 12.3, `z=${intruder.z}`);
+  assert.ok(intruder.z > 11.3, `z=${intruder.z}`);
 });
 
 test('pemilik keluar/check-out: kamar terbuka lagi', () => {
