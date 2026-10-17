@@ -1,4 +1,4 @@
-// Mesh lapangan bulu tangkis + kok untuk dunia villa (three.js). Letak/aturan ada di activities/.
+// Mesh lapangan bulu tangkis + kok + raket untuk dunia villa (three.js). Letak/aturan ada di activities/.
 import * as THREE from 'three';
 import { COURT, PHYSICS } from './activities/badminton.js';
 import { VILLA_COURT, createCourtFrame } from './activities/court-frame.js';
@@ -109,6 +109,25 @@ export function createShuttleMesh({ scale = 2.5 } = {}) {
   group.add(skirt, cork);
   group.scale.setScalar(scale);
   group.castShadow = true;
+  group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+  return group;
+}
+
+/** Raket: pegangan, tangkai, dan kepala oval. Pangkal pegangan = titik genggam (asal grup); raket menjulur ke +y. */
+export function createRacketMesh() {
+  const group = new THREE.Group();
+  const frame = new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.5, metalness: 0.3 });
+  const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.2, 8), new THREE.MeshStandardMaterial({ color: 0xc23b3b, roughness: 0.8 }));
+  grip.position.y = 0.1;
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.24, 6), frame);
+  shaft.position.y = 0.32;
+  const head = new THREE.Mesh(new THREE.TorusGeometry(0.1, 0.008, 6, 20), frame);
+  head.scale.set(0.8, 1, 1);
+  head.position.y = 0.55;
+  const strings = new THREE.Mesh(new THREE.CircleGeometry(0.1, 20), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, side: THREE.DoubleSide, depthWrite: false }));
+  strings.scale.set(0.8, 1, 1);
+  strings.position.y = 0.55;
+  group.add(grip, shaft, head, strings);
   group.traverse((o) => { if (o.isMesh) o.castShadow = true; });
   return group;
 }
