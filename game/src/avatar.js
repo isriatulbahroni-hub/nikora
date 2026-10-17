@@ -1,18 +1,31 @@
 import * as THREE from 'three';
 import { CHARACTERS, HAIR_COLORS, OUTFITS, SKINS, sanitizeConfig } from './avatar-config.js';
-import { HumanRig, loadHumanModel } from './avatar-human.js';
+import { HumanRig, loadHumanModel, neutralToLocal } from './avatar-human.js';
 import { auraFor } from './avatar-aura.js';
 import { GAIT, gaitPose, labelMetrics, stepGait } from './villa-motion.js';
+import { FALL_TOTAL, HEAD_YAW_MAX, LIE_ROLL, createMannersRegistry, fallPose, idleGlance } from './avatar-manners.js';
 
 // Proporsi avatar sederhana (meter): tinggi total ±1,72 m, kepala ±1/7,5 tinggi badan, kaki ±47% tinggi.
 const HIP_Y = 0.82;
 const THIGH = 0.4;
 const SHANK = 0.38;
+const NECK_Y = 1.4; // pangkal leher = sumbu putar kepala (tengok kiri-kanan, mengangguk)
 const HEAD_Y = 1.55;
 const HEAD_R = 0.155;
 const LABEL_Y = 1.95;
 const GEAR_SCALE = HEAD_R / 0.3; // aksesori/rambut dirancang untuk kepala r=0,3 di y=1,37
 const GEAR_Y = HEAD_Y - 1.37 * GEAR_SCALE;
+const SEAT_HIP = 1.32; // duduk di kursi: paha sedikit miring ke bawah supaya telapak kaki menapak lantai (panggul turun 0,3 m)
+const TAU = Math.PI * 2;
+
+/** Nama melayang di atas kepala dimatikan agar layar tidak penuh tulisan; tambahkan ?nama=1 pada alamat untuk menampilkannya. */
+function namesVisible() {
+  try {
+    return typeof location !== 'undefined' && new URLSearchParams(location.search).get('nama') === '1';
+  } catch {
+    return false;
+  }
+}
 
 export function makeLabel(text) {
   if (typeof document === 'undefined') return null;
@@ -55,7 +68,7 @@ export function updateLabel(group, camera) {
   label.visible = opacity > 0.02;
 }
 
-/** Avatar sederhana: badan, kepala, wajah, kaki berlutut, lengan, dan nama opsional. Depan = -z. */
+/** Avatar sederhana: badan, kepala (bisa menoleh), wajah, kaki, lengan bersiku, dan nama opsional. Depan = -z. */
 export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, config = null } = {}) {
   const cfg = config ? sanitizeConfig(config) : null;
   if (cfg) {
@@ -78,25 +91,36 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
   const body = mesh(new THREE.CapsuleGeometry(0.15, 0.24, 5, 12), bodyMaterial, 0, 1.08, 0);
   body.scale.set(1.3, 1, 0.85); // bahu lebih lebar dari dada
   const neck = mesh(new THREE.CylinderGeometry(0.055, 0.06, 0.1, 10), skinMaterial, 0, 1.4, 0);
-  const head = mesh(new THREE.SphereGeometry(HEAD_R, 18, 14), skinMaterial, 0, HEAD_Y, 0);
   const markerMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
   const marker = mesh(new THREE.SphereGeometry(0.03, 8, 6), markerMaterial, 0, 1.2, -0.125);
-  group.add(body, neck, head, marker);
+  // Kepala di pivot sendiri (di pangkal leher) supaya bisa menoleh ke kiri-kanan dan mengangguk tanpa memutar badan.
+  const headPivot = new THREE.Group();
+  headPivot.position.set(0, NECK_Y, 0);
+  headPivot.rotation.order = 'YXZ'; // menoleh dulu, baru mengangguk
+  const head = mesh(new THREE.SphereGeometry(HEAD_R, 18, 14), skinMaterial, 0, HEAD_Y - NECK_Y, 0);
   const face = new THREE.Group(); // mata dikelompokkan agar bisa disembunyikan saat stiker menampilkan ekspresi
-  for (const sx of [-0.058, 0.058]) face.add(mesh(new THREE.SphereGeometry(0.017, 8, 6), eyeMaterial, sx, HEAD_Y + 0.015, -(HEAD_R - 0.013)));
-  group.add(face);
+  for (const sx of [-0.058, 0.058]) face.add(mesh(new THREE.SphereGeometry(0.017, 8, 6), eyeMaterial, sx, HEAD_Y + 0.015 - NECK_Y, -(HEAD_R - 0.013)));
+  headPivot.add(head, face);
+  group.add(body, neck, marker, headPivot);
   group.userData.face = face;
+  group.userData.headPivot = headPivot;
   group.userData.faceAnchor = { y: HEAD_Y, z: -(HEAD_R + 0.02), size: HEAD_R * 1.5 }; // tempat overlay ekspresi (emoji-sticker-fx.js)
 
-  // Lengan: pivot di bahu, menggantung ke bawah (-y); rotation.x = +90° mengarahkannya ke depan (-z).
+  // Lengan: bahu (pivot) -> lengan atas -> siku (pivot) -> lengan bawah + telapak. Bahu menggantung ke bawah (-y);
+  // rotation.x = +90° mengarahkan lengan ke depan (-z). Siku menekuk ke depan dengan rotation.x positif.
   const armMaterial = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
   const arms = {};
+  const elbows = {};
   for (const [side, sx] of [['l', -0.24], ['r', 0.24]]) {
     const pivot = new THREE.Group();
     pivot.position.set(sx, 1.28, 0);
-    pivot.add(mesh(new THREE.CapsuleGeometry(0.05, 0.34, 4, 8), armMaterial, 0, -0.24, 0), mesh(new THREE.SphereGeometry(0.055, 10, 8), skinMaterial, 0, -0.5, 0));
+    const elbow = new THREE.Group();
+    elbow.position.y = -0.27;
+    elbow.add(mesh(new THREE.CapsuleGeometry(0.046, 0.13, 4, 8), armMaterial, 0, -0.12, 0), mesh(new THREE.SphereGeometry(0.055, 10, 8), skinMaterial, 0, -0.255, 0));
+    pivot.add(mesh(new THREE.CapsuleGeometry(0.05, 0.17, 4, 8), armMaterial, 0, -0.135, 0), elbow);
     group.add(pivot);
     arms[side] = pivot;
+    elbows[side] = elbow;
   }
 
   // Kaki: pinggul (paha) dan lutut (betis + sepatu), rotation.x positif = ayun ke depan (-z).
@@ -106,13 +130,18 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
     hip.position.set(sx, HIP_Y, 0);
     const knee = new THREE.Group();
     knee.position.y = -THIGH;
-    knee.add(mesh(new THREE.CapsuleGeometry(0.065, 0.26, 4, 8), pantsMaterial, 0, -0.19, 0), mesh(new THREE.BoxGeometry(0.12, 0.08, 0.26), shoeMaterial, 0, -(SHANK), -0.05));
+    // telapak di grup pergelangan sendiri supaya bisa diratakan ke lantai saat betis terlipat (bersila, duduk di atas tumit)
+    const ankle = new THREE.Group();
+    ankle.position.y = -SHANK;
+    ankle.add(mesh(new THREE.BoxGeometry(0.12, 0.08, 0.26), shoeMaterial, 0, 0, -0.05));
+    knee.add(mesh(new THREE.CapsuleGeometry(0.065, 0.26, 4, 8), pantsMaterial, 0, -0.19, 0), ankle);
     hip.add(mesh(new THREE.CapsuleGeometry(0.075, 0.26, 4, 8), pantsMaterial, 0, -0.2, 0), knee);
     group.add(hip);
-    legs[side] = { hip, knee };
+    legs[side] = { hip, knee, ankle };
   }
 
   group.userData.arms = arms;
+  group.userData.elbows = elbows;
   group.userData.legs = legs;
   group.userData.tint = [bodyMaterial, markerMaterial, armMaterial];
   group.userData.skin = skinMaterial;
@@ -124,7 +153,7 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
   group.userData.pivot = spinPivot;
   group.userData.parts = [...spinPivot.children]; // bagian avatar sederhana (disembunyikan saat memakai model manusia)
   if (cfg) setAvatarConfig(group, cfg);
-  if (name) {
+  if (name && namesVisible()) {
     const label = makeLabel(name);
     if (label) {
       group.add(label);
@@ -191,15 +220,35 @@ export function makeBubble(text) {
 
 
 const lerp = (a, b, k) => a + (b - a) * k;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+/** Sudut siku (rad, menekuk ke depan) per aksi, dan saat duduk tangan bertumpu di paha. */
+function elbowTargets(act, seated) {
+  if (seated) return { r: 1.22, l: 1.22 };
+  if (act === 'handshake') return { r: 0.5, l: 0 };
+  if (act === 'wave') return { r: 0.8, l: 0 };
+  if (act === 'clap') return { r: 1, l: 1 };
+  if (act === 'dance') return { r: 0.6, l: 0.6 };
+  return { r: 0, l: 0 };
+}
 
 /**
- * Pose berdasarkan aksi. act: null | 'handshake' | 'wave' | 'highfive' | 'bow' | 'clap' | 'walk'.
+ * Pose berdasarkan aksi. act: null | 'handshake' | 'wave' | 'highfive' | 'bow' | 'clap' | 'walk' | 'fall'.
  * t: waktu (detik). speed: laju nyata avatar (m/s); menentukan ayunan kaki/lengan. Tanpa speed, 'walk' = laju penuh.
- * group.userData.seated = true membuat avatar duduk seperti manusia: punggung tegak, paha mendatar, betis tegak,
- * lutut sedikit terbuka, tangan bertumpu di paha. Pemanggil mengaturnya tiap frame sebelum applyPose.
- * Dipanggil tiap frame; halus karena peluruhan eksponensial.
+ * group.userData.seated = true membuat avatar duduk seperti manusia: punggung tegak, paha hampir mendatar (sedikit miring
+ * supaya telapak menapak lantai), betis tegak, lutut sedikit terbuka, tangan bertumpu di paha.
+ * group.userData.lie = 'up' | 'left' | 'right' membuat avatar berbaring telentang atau miring (kemiringan badan 90° diatur pemanggil lewat rotation.x).
+ * Dipanggil tiap frame; halus karena peluruhan eksponensial. Di atas pose dasar ditambahkan lapisan sopan santun
+ * (tengok, hormat, jatuh) dari avatar-manners.js.
  */
 export function applyPose(group, act, t, delta = 1 / 60, speed) {
+  const ud = group.userData;
+  if (ud?.pivot && ud.mLift) ud.pivot.position.y -= ud.mLift; // lapisan frame lalu dilepas dulu supaya tidak menumpuk
+  applyPoseBase(group, act === 'fall' ? null : act, t, delta, speed);
+  applyManners(group, act, t, delta);
+}
+
+function applyPoseBase(group, act, t, delta, speed) {
   // gestur dari stiker emoji (emoji-sticker-fx.js): berjalan tetap menang, dan tidak dipaksakan saat duduk
   const forced = group.userData?.forcedAct;
   if (forced && act !== 'walk' && !((speed ?? 0) > 0.6) && group.userData.seated !== true && !(group.position.y < -0.1)) act = forced;
@@ -208,6 +257,7 @@ export function applyPose(group, act, t, delta = 1 / 60, speed) {
   animateAura(group, t);
   const human = group.userData?.human;
   if (human) {
+    group.rotation.x = 0; // model manusia tidak memakai condong; kemiringan tidur/jatuh ditambahkan pemanggil sesudahnya
     human.update(act, t, delta, group.position.y < -0.1); // y turun = duduk di kursi
     return;
   }
@@ -246,10 +296,10 @@ export function applyPose(group, act, t, delta = 1 / 60, speed) {
     l = { x: 2.6 - s * 0.3, z: 0.4 - s * 0.3 };
     lean = s * 0.12;
   } else if (seated) {
-    // duduk santai: lengan atas turun, tangan bertumpu di paha, badan sedikit condong ke depan
-    r = { x: 0.8, z: -0.1 };
-    l = { x: 0.8, z: 0.1 };
-    lean = -0.04;
+    // duduk tegak: lengan atas turun dekat badan, siku menekuk, telapak bertumpu di atas paha
+    r = { x: 0.08, z: -0.18 };
+    l = { x: 0.08, z: 0.18 };
+    lean = 0;
   } else {
     // jalan / diam: lengan mengayun berlawanan dengan kaki sisi yang sama, mengecil halus saat berhenti
     r = { x: gp.armR, z: -0.08 };
@@ -260,13 +310,21 @@ export function applyPose(group, act, t, delta = 1 / 60, speed) {
   arms.r.rotation.z = lerp(arms.r.rotation.z, r.z, k);
   arms.l.rotation.x = lerp(arms.l.rotation.x, l.x, k);
   arms.l.rotation.z = lerp(arms.l.rotation.z, l.z, k);
+  const elbows = group.userData.elbows;
+  if (elbows) {
+    const e = elbowTargets(act, seated);
+    elbows.r.rotation.x = lerp(elbows.r.rotation.x, e.r, k);
+    elbows.l.rotation.x = lerp(elbows.l.rotation.x, e.l, k);
+    elbows.r.rotation.z = lerp(elbows.r.rotation.z, 0, k);
+    elbows.l.rotation.z = lerp(elbows.l.rotation.z, 0, k);
+  }
 
   const legs = group.userData.legs;
   if (legs) {
-    const hipR = seated ? 1.5 : gp.hipR; // duduk: paha hampir mendatar
-    const hipL = seated ? 1.5 : gp.hipL;
-    const kneeR = seated ? -1.5 : gp.kneeR; // betis menggantung tegak
-    const kneeL = seated ? -1.5 : gp.kneeL;
+    const hipR = seated ? SEAT_HIP : gp.hipR; // duduk: paha hampir mendatar, sedikit miring ke bawah
+    const hipL = seated ? SEAT_HIP : gp.hipL;
+    const kneeR = seated ? -SEAT_HIP : gp.kneeR; // betis menggantung tegak, telapak rata di lantai
+    const kneeL = seated ? -SEAT_HIP : gp.kneeL;
     const spread = seated ? 0.08 : 0; // lutut sedikit terbuka (rotasi z: + = ke luar untuk kaki kanan)
     const lk = seated || gait.amp < 0.02 ? k : 1; // sambil berjalan langsung mengikuti siklus; duduk/berdiri dihaluskan
     legs.r.hip.rotation.x = lerp(legs.r.hip.rotation.x, hipR, lk);
@@ -275,11 +333,172 @@ export function applyPose(group, act, t, delta = 1 / 60, speed) {
     legs.l.hip.rotation.z = lerp(legs.l.hip.rotation.z, -spread, k);
     legs.r.knee.rotation.x = lerp(legs.r.knee.rotation.x, kneeR, lk);
     legs.l.knee.rotation.x = lerp(legs.l.knee.rotation.x, kneeL, lk);
+    for (const side of ['r', 'l']) {
+      const ankle = legs[side].ankle;
+      if (!ankle) continue;
+      ankle.rotation.x = lerp(ankle.rotation.x, 0, k);
+      ankle.rotation.y = lerp(ankle.rotation.y, 0, k);
+    }
   }
   if (spinPivot) spinPivot.position.y = lerp(spinPivot.position.y, seated ? 0 : gp.dip, k);
   group.userData.leanTarget = lean;
   group.userData.leanNow = lerp(group.userData.leanNow ?? 0, lean, k);
   group.rotation.x = group.userData.leanNow;
+}
+
+// ---------------------------------------------------------------- lapisan sopan santun
+// Dipanggil sesudah pose dasar. Mengatur: kepala menoleh (ke avatar terdekat di depan, atau melirik sesekali saat diam),
+// hormat (menunduk sedikit + tangan kanan di dada) saat dua avatar berhadapan dekat, berbaring miring, dan jatuh.
+const manners = createMannersRegistry();
+let lastMannersStep = -1;
+const clock = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000;
+const mix = (a, b, w) => a + (b - a) * w;
+const AX = new THREE.Vector3(1, 0, 0);
+const AY = new THREE.Vector3(0, 1, 0);
+const AZ = new THREE.Vector3(0, 0, 1);
+const qx = (a) => new THREE.Quaternion().setFromAxisAngle(AX, a);
+const qy = (a) => new THREE.Quaternion().setFromAxisAngle(AY, a);
+const qz = (a) => new THREE.Quaternion().setFromAxisAngle(AZ, a);
+const qmul = (...qs) => qs.reduce((acc, q) => acc.multiply(q), new THREE.Quaternion());
+
+/** Model manusia (rig Mixamo): kepala menoleh/mengangguk, dan saat hormat tulang belakang membungkuk sedikit + tangan kanan ke dada. */
+function layerHuman(human, m) {
+  const bones = human.model.rest.bones;
+  const put = (key, dq, weight = 1) => {
+    const info = bones.get(key);
+    const bone = human.bones.get(key);
+    if (!info || !bone) return;
+    const target = neutralToLocal(dq, info);
+    if (weight >= 0.999) bone.quaternion.copy(target);
+    else bone.quaternion.slerp(target, weight);
+  };
+  put('Neck', qy(m.yaw * 0.35));
+  put('Head', qmul(qx(m.pitch), qy(m.yaw * 0.65)));
+  const w = m.w.salute;
+  if (w > 0.01) {
+    put('Spine', qx(0.09), w);
+    put('Spine1', qx(0.09), w);
+    put('Spine2', qx(0.07), w);
+    put('RightArm', qmul(qy(0.9), qx(-0.5), qz(1.3)), w); // lengan kanan naik ke depan dada
+    put('RightForeArm', qy(2.3), w); // siku menekuk, telapak di dada
+  }
+}
+
+function applyManners(group, act, t, delta) {
+  const ud = group.userData;
+  if (!ud) return;
+  const m = (ud.m ??= { yaw: 0, pitch: 0, roll: 0, lift: 0, spd: 0, has: false, px: 0, pz: 0, fallStart: null, seed: Math.random() * TAU, w: { salute: 0, lie: 0, fall: 0 } });
+  if (group.rotation.order !== 'YXZ') group.rotation.order = 'YXZ'; // miring (tidur/jatuh) dalam bingkai avatar, lalu arah hadap
+  const dt = Math.max(delta, 1e-3);
+  const k = 1 - Math.exp(-14 * Math.max(0, delta));
+  const now = clock();
+
+  // laju nyata (m/s) dari perpindahan posisi, dihaluskan
+  const px = group.position.x;
+  const pz = group.position.z;
+  if (m.has) m.spd += (Math.hypot(px - m.px, pz - m.pz) / dt - m.spd) * (1 - Math.exp(-8 * dt));
+  m.px = px;
+  m.pz = pz;
+  m.has = true;
+
+  // jatuh: dimulai saat act 'fall' pertama kali terlihat (lokal maupun dari pemain lain), lalu berjalan sendiri sampai bangun
+  if (act === 'fall' && m.fallStart === null) m.fallStart = t;
+  let fall = null;
+  if (m.fallStart !== null) {
+    const e = t - m.fallStart;
+    if (e >= FALL_TOTAL && act !== 'fall') m.fallStart = null;
+    else fall = fallPose(clamp(e, 0, FALL_TOTAL));
+  }
+  const falling = fall !== null && fall.w > 0.001;
+  const posture = ud.posture?.active === true; // gerak shalat/duduk bersila di masjid memakai pengendali sendiri
+  const lying = typeof ud.lie === 'string';
+  const seated = ud.seated === true;
+  const busy = act != null || seated || lying || posture || fall !== null;
+
+  manners.touch(group.uuid, { x: px, z: pz, y: group.position.y, rot: group.rotation.y, busy, speed: m.spd }, now);
+  if (now - lastMannersStep > 0.012 || now < lastMannersStep) {
+    manners.step(now);
+    lastMannersStep = now;
+  }
+  const gw = busy ? 0 : manners.greeting(group.uuid, now);
+
+  // kepala: menengok avatar terdekat di depan; saat diam melirik sesekali; saat tidur/jatuh lurus
+  const look = manners.look(group.uuid);
+  let yawT = 0;
+  if (!lying && !falling) {
+    if (posture) yawT = ud.posture?.cur?.headTurn ?? 0; // salam ke kanan/kiri
+    else if (look) yawT = clamp(look.rel, -HEAD_YAW_MAX, HEAD_YAW_MAX);
+    else if (m.spd < 0.6) yawT = idleGlance(t, m.seed);
+  }
+  const pitchT = lying || falling ? 0 : 0.34 * gw; // mengangguk saat memberi hormat
+  const kh = 1 - Math.exp(-7 * Math.max(0, delta));
+  m.yaw += (yawT - m.yaw) * kh;
+  m.pitch += (pitchT - m.pitch) * kh;
+
+  // bobot lapisan (dihaluskan)
+  const wantSalute = gw > 0 && !posture && !lying && !falling && !seated;
+  m.w.salute = lerp(m.w.salute, wantSalute ? gw : 0, k);
+  m.w.lie = lerp(m.w.lie, lying ? 1 : 0, k);
+  m.w.fall = falling ? fall.w : 0;
+  m.roll = lerp(m.roll, lying ? LIE_ROLL[ud.lie] ?? 0 : 0, k);
+  m.lift = falling ? fall.lift : 0;
+
+  const pivot = ud.pivot;
+  if (pivot) {
+    pivot.rotation.y += m.roll; // berbaring miring: badan berputar pada sumbu panjangnya
+    pivot.position.y += m.lift; // saat jatuh badan diangkat setebal badan supaya tidak menembus lantai
+  }
+  ud.mLift = m.lift;
+  group.rotation.x += (falling ? fall.tilt : 0) - 0.16 * m.w.salute; // jatuh ke belakang; hormat = condong sedikit ke depan
+
+  const human = ud.human;
+  if (human) {
+    if (!posture) layerHuman(human, m);
+    return;
+  }
+  const hp = ud.headPivot;
+  if (hp) {
+    hp.rotation.y = m.yaw;
+    hp.rotation.x = -m.pitch; // negatif = menunduk
+  }
+  const arms = ud.arms;
+  const elbows = ud.elbows;
+  const legs = ud.legs;
+  if (!arms || !elbows) return;
+  const ws = m.w.salute;
+  if (ws > 0.001) {
+    // tangan kanan di dada: bahu sedikit ke depan-luar, siku menekuk dalam dan menyilang ke tengah (sudut dihitung dari kinematika lengan)
+    arms.r.rotation.x = mix(arms.r.rotation.x, 0.3, ws);
+    arms.r.rotation.z = mix(arms.r.rotation.z, 0.2, ws);
+    elbows.r.rotation.x = mix(elbows.r.rotation.x, 2.4, ws);
+    elbows.r.rotation.z = mix(elbows.r.rotation.z, -0.9, ws);
+  }
+  const wl = m.w.lie;
+  if (wl > 0.001 && ud.lie !== 'up') {
+    // miring: lutut ditekuk santai, lengan di depan dada
+    for (const [side, hip, knee] of [['r', 0.9, -1.3], ['l', 0.6, -1]]) {
+      arms[side].rotation.x = mix(arms[side].rotation.x, 1, wl);
+      elbows[side].rotation.x = mix(elbows[side].rotation.x, 0.9, wl);
+      if (legs) {
+        legs[side].hip.rotation.x = mix(legs[side].hip.rotation.x, hip, wl);
+        legs[side].knee.rotation.x = mix(legs[side].knee.rotation.x, knee, wl);
+      }
+    }
+  }
+  const wf = m.w.fall;
+  if (wf > 0.001) {
+    // jatuh: tangan dan kaki terentang
+    for (const [side, sgn] of [['r', 1], ['l', -1]]) {
+      arms[side].rotation.x = mix(arms[side].rotation.x, 0.2, wf);
+      arms[side].rotation.z = mix(arms[side].rotation.z, sgn * 1, wf);
+      elbows[side].rotation.x = mix(elbows[side].rotation.x, 0.4, wf);
+      if (legs) {
+        legs[side].hip.rotation.x = mix(legs[side].hip.rotation.x, 0.1, wf);
+        legs[side].hip.rotation.z = mix(legs[side].hip.rotation.z, sgn * 0.2, wf);
+        legs[side].knee.rotation.x = mix(legs[side].knee.rotation.x, -0.15, wf);
+      }
+    }
+  }
 }
 
 /** Cincin emas di kaki avatar penanda pembicara di panggung Party Room. */
@@ -301,7 +520,7 @@ export function setStageRing(group, on) {
 function buildGear(cfg) {
   const gear = new THREE.Group();
   gear.scale.setScalar(GEAR_SCALE); // aksesori dirancang untuk kepala besar; skala ke kepala berproporsi manusia
-  gear.position.y = GEAR_Y;
+  gear.position.y = GEAR_Y - NECK_Y; // gear ikut pivot kepala (yang berada di pangkal leher), jadi ikut menoleh
   const hairColor = HAIR_COLORS[cfg.k].hex;
   const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.7, ...extra });
   const add = (geometry, material, x, y, z, rx = 0) => {
@@ -363,7 +582,7 @@ export function setAvatarConfig(group, rawConfig) {
   }
   group.userData.gear = buildGear(cfg);
   group.userData.gear.visible = !CHARACTERS[cfg.m]?.id;
-  (group.userData.pivot ?? group).add(group.userData.gear);
+  (group.userData.headPivot ?? group.userData.pivot ?? group).add(group.userData.gear);
   group.userData.config = cfg;
   applyHuman(group, cfg);
 }
