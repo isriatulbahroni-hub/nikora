@@ -4,8 +4,11 @@
 //
 // Vila bertingkat 3 lantai (level 0, 1, 2). Lantai atas dicapai lewat empat menara tangga
 // (dua lengan tangga lurus per menara). Status pemain: { x, z, level, stair, y }.
-import { COURT_MARGIN, VILLA_COURT, createCourtFrame } from './activities/court-frame.js';
+import { GAME_DOORS, GAME_ROOMS, insideGameWing } from './villa-gamewing.js';
 
+import { GAME_WING } from './villa-gamewing.js';
+import { VILLA_COURT, createCourtFrame } from './activities/court-frame.js';
+// Ukuran dasar denah
 export const WALL_THICKNESS = 0.3;
 export const WALL_HEIGHT = 3.0;
 export const LEVEL_HEIGHT = 3.4; // jarak antar lantai (tinggi permukaan lantai)
@@ -53,6 +56,7 @@ export const ROOMS = Object.freeze([
   { id: 'kitchen', name: 'Kitchen', kind: 'kitchen', rect: [-36, 20, -26, 30] },
   { id: 'corridor', name: 'Guest Corridor', kind: 'corridor', rect: [16, 12, 38, 14] },
   ...guestRooms(0),
+  ...GAME_ROOMS, // sayap Ruang Game (villa-gamewing.js): bulu tangkis, lobi, horor
 ]);
 
 // Area terbuka (dipakai untuk label lokasi dan lantai paving).
@@ -130,6 +134,7 @@ export const UPPER_ROOMS = Object.freeze([
 export const ROOFS = Object.freeze([
   { id: 'hall', kind: 'gable', rect: [-14, -20, 14, -3], base: HALL_WALL_HEIGHT, rise: 2.6, overhang: 0.7 },
   { id: 'kitchen', kind: 'hip', rect: [-36, 20, -26, 30], base: WALL_HEIGHT, rise: 1.4, overhang: 0.6 },
+  { id: 'gamewing', kind: 'hip', rect: GAME_WING.rect, base: WALL_HEIGHT, rise: 1.6, overhang: 0.5 }, // satu atap untuk seluruh sayap Ruang Game
   { id: 'presidential', kind: 'hip', rect: [26, -20, 38, -3], base: levelY(2) + WALL_HEIGHT, rise: 2.2, overhang: 0.6 },
   ...TOWERS.map((t) => ({ id: `${t.id}_roof`, kind: 'hip', rect: t.rect, base: levelY(2) + WALL_HEIGHT, rise: 1.8, overhang: 0.5 })),
 ]);
@@ -157,6 +162,7 @@ const GROUND_DOORS = [
   ...guestDoorXs.map((x) => ({ x, z: 12, orient: 'h', width: 1.6 })),
   ...guestDoorXs.map((x) => ({ x, z: 14, orient: 'h', width: 1.6 })),
   ...TOWERS.map((t) => t.groundDoor), // pintu masuk menara tangga
+  ...GAME_DOORS, // pintu sayap Ruang Game (masuk lewat lobi)
 ];
 export const DOORS = Object.freeze(GROUND_DOORS);
 
@@ -207,10 +213,8 @@ function buildProps() {
     [-14, 24], [-22, 26], [-30, 34], [-36, 36], [-26, 38], [-18, 33], [-12, 38], [14, 24], [13, 36], [12, 30],
     [-40, -23.5], [-40, 28], [40, -23.5], [40, 26], [-40, 33], [-2.8, 40], [2.8, 40],
   ];
-  for (const [x, z] of palms) {
-    if (COURT_FRAME.contains({ x, z }, COURT_MARGIN)) continue; // area lapangan bulu tangkis dikosongkan
-    props.push({ type: 'palm', x, z });
-  }
+  // palem yang jatuh di dalam sayap Ruang Game dilewati (sayap berdiri di bekas taman barat daya)
+  for (const [x, z] of palms) if (!insideGameWing(x, z, 0.9)) props.push({ type: 'palm', x, z });
 
   // lantai 1
   for (const r of guestRooms(1)) {
