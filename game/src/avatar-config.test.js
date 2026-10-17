@@ -43,7 +43,8 @@ test('createAvatar/setAvatarConfig: semua gaya rambut dan aksesori terbentuk tan
       assert.deepEqual(avatar.userData.config, { o: 1, s: 2, h, k: 3, a, m: 0 });
     }
   }
-  assert.equal(avatar.userData.pivot.children.filter((c) => c === avatar.userData.gear).length, 1); // tidak menumpuk
+  // aksesori dan rambut ikut pivot kepala (supaya ikut menoleh), dan tidak menumpuk saat diganti berulang
+  assert.equal(avatar.userData.headPivot.children.filter((c) => c === avatar.userData.gear).length, 1);
   assert.equal(avatar.userData.skin.color.getHex(), 0xc99468);
   assert.equal(avatar.userData.tint[0].color.getHex(), OUTFITS[1].hex);
 });
