@@ -59,7 +59,7 @@ test('emote tunduk hormat: badan atas membungkuk ke depan di pinggul, kepala iku
     const g = createAvatar({ color: 0x70c7a2 });
     g.userData.emote = { id: 'bow', t0: now() / 1000 - 1.2, dur: 2.4 };
     settle(g, 120);
-    const head = new THREE.Vector3(0, 1.55, 0);
+    const head = new THREE.Vector3(0, RIG.headY - RIG.neckY, 0); // pusat kepala dalam bingkai headPivot (pivot ada di pangkal leher)
     g.updateMatrixWorld(true);
     g.userData.headPivot.localToWorld(head);
     assert.ok(head.z < -0.3 && head.y < 1.4, `kepala di ${head.toArray().map((v) => v.toFixed(2))}`);
