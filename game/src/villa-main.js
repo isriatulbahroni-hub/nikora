@@ -12,6 +12,9 @@ import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
 import { modeFor } from './event-mode.js';
+import { placeTvs } from './room-tv.js';
+import { createTvView } from './room-tv-view.js';
+import { mountRoomTvUi } from './room-tv-ui.js';
 import { createVillaGames } from './villa-gameui.js';
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
@@ -337,6 +340,10 @@ async function start() {
   let doors = null;
   let doorUi = null;
   const doorView = createDoorView({ scene, rooms: lockableRooms(world), getDoors: () => doors });
+  // TV pribadi di tiap ruangan: tiap tamu memutar videonya sendiri (link atau berkas HP), tidak terkait layar utama; jalan juga saat offline.
+  const tvs = placeTvs(world);
+  const tvView = createTvView({ scene, tvs });
+  const tvUi = mountRoomTvUi({ tvs, onActive: (id) => tvView.setActive(id) });
   // Siang-malam otomatis (jam asli; ?sky= dan ?tz= untuk mengubahnya). Dibuat sebelum layar dan avatar supaya hanya dunia vila yang diatur.
   const sky = createVillaSky({ scene, renderer, search: window.location.search });
   if (lowQuality) applyQuality(renderer, scene, quality.settings()); // ?q=low: mulai langsung dengan kualitas hemat
@@ -747,6 +754,7 @@ async function start() {
       doorUi?.update(me, sleeping);
     }
     doorView.update();
+    tvUi.update(me); // tombol "Tonton TV" muncul saat dekat TV ruangan
 
     const near = nearestSpot();
     const terminal = seat === null && !games.locksInput ? games.nearTerminal(me) : null;
