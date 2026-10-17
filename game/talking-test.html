@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Uji avatar bicara</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: #1b1b22; color: #eee; display: flex; flex-direction: column; height: 100dvh; }
+    #stage { flex: 1; min-height: 0; }
+    #stage canvas { width: 100%; height: 100%; display: block; }
+    #bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; }
+    button { padding: 10px 14px; border-radius: 10px; border: 0; background: #3b3b4d; color: #fff; font-size: 15px; }
+    button:disabled { opacity: 0.5; }
+    #status { margin: 0; padding: 0 10px 12px; font-size: 14px; opacity: 0.85; }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="bar">
+    <button id="mic" disabled>Aktifkan mikrofon</button>
+    <button id="happy" disabled>Senang</button>
+    <button id="neutral" disabled>Netral</button>
+    <button id="sad" disabled>Sedih</button>
+    <button id="wave" disabled>Lambai</button>
+    <button id="look" disabled>Lihat kamera</button>
+  </div>
+  <p id="status">Memuat avatar…</p>
+  <script type="module" src="/src/talking-test-main.js"></script>
+</body>
+</html>
