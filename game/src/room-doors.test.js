@@ -5,7 +5,7 @@ import { RoomLocks } from './villa-doors.js';
 import { createRoomDoors } from './room-doors.js';
 
 const world = getVillaWorld();
-const DOOR = { x: 18.75, z: 12 }; // pintu Guest Room 1, kamar di utara
+const DOOR = { x: 18.75, z: 11 }; // pintu Guest Room 1, kamar di utara
 
 /** Bus LiveKit tiruan: pesan sampai ke peserta lain (atau yang dituju) secara langsung. */
 function makeBus() {
@@ -70,7 +70,7 @@ test('P2P: check-in disiarkan, peserta lain tertahan di pintu, pemilik bisa masu
   assert.equal(b.ctl.locks.state.get('guest_1').owner, 'a1');
   assert.equal(b.ctl.locks.state.get('guest_1').locked, true);
   walkIn(b);
-  assert.ok(b.me.z > 12.3, `b tertahan, z=${b.me.z}`);
+  assert.ok(b.me.z > 11.3, `b tertahan, z=${b.me.z}`);
   walkIn(a);
   assert.ok(a.me.z < 10, `pemilik masuk, z=${a.me.z}`);
 });
@@ -100,7 +100,7 @@ test('P2P: ketukan ditolak; membuka kunci mempersilakan semua; tidur mengunci ot
   a.ctl.reply('b2', false);
   assert.ok(b.notices.includes('Ketukanmu ditolak.'));
   walkIn(b);
-  assert.ok(b.me.z > 12.3);
+  assert.ok(b.me.z > 11.3);
   assert.equal(a.ctl.setLocked(false).ok, true);
   assert.equal(b.ctl.locks.state.get('guest_1').locked, false);
   walkIn(b);
@@ -110,7 +110,7 @@ test('P2P: ketukan ditolak; membuka kunci mempersilakan semua; tidur mengunci ot
   assert.equal(b.ctl.locks.state.get('guest_1').locked, true, 'tidur = terkunci di semua klien');
   assert.equal(a.ctl.setLocked(false).reason, 'sleeping');
   walkIn(b);
-  assert.ok(b.me.z > 12.3);
+  assert.ok(b.me.z > 11.3);
 });
 
 test('P2P: pendatang baru mendapat status kamar; pemilik keluar/check-out membuka kamar', () => {
