@@ -3,12 +3,13 @@
 Tujuan: avatar tampak seperti manusia, wajahnya berekspresi, dan mulutnya mengikuti suara asli (mikrofon atau suara tamu lain).
 
 ## Cara menyiapkan (sekali)
-1. Di GitHub: **Actions → Siapkan aset avatar → Run workflow** pada branch ini (centang avatar dasar). Berkas workflow ada di `docs/avatar-assets.workflow.yml`; salin ke `.github/workflows/avatar-assets.yml` bila belum ada.
-2. Workflow menyematkan TalkingHead dan HeadAudio (versi terkunci, MIT), mengambil `mpfb.glb` (CC0), mengompresnya, lalu meng-commit hasilnya ke `game/src/vendor`, `game/public/headaudio`, dan `game/public/avatars`.
-3. Jalankan `npm run dev` di `game/`, buka `/talking-test.html`, aktifkan mikrofon, lalu bicara.
+1. Buka `docs/avatar-assets.workflow.yml` di branch `fitur/avatar-talkinghead`, salin isinya.
+2. Di branch yang sama, buat berkas baru `.github/workflows/avatar-assets.yml` (GitHub web: Add file, Create new file, pilih commit langsung ke branch `fitur/avatar-talkinghead`), tempel isinya, lalu commit.
+3. Workflow langsung berjalan sendiri: menyematkan TalkingHead dan HeadAudio (versi terkunci, MIT), mengambil `mpfb.glb` (CC0), mengompresnya, lalu meng-commit hasilnya ke `game/src/vendor`, `game/public/headaudio`, dan `game/public/avatars`.
+4. Jalankan `npm run dev` di `game/`, buka `/talking-test.html`, aktifkan mikrofon, lalu bicara.
 
 ## Menambah avatar
-- Taruh GLB di `game/avatars-src/` dan push. Workflow mengompresnya otomatis ke `game/public/avatars/`.
+- Taruh GLB di `game/avatars-src/` pada branch itu dan push. Workflow mengompresnya otomatis ke `game/public/avatars/`.
 - Daftarkan di `game/src/avatar-talking-config.js` lengkap dengan lisensi. Hanya model berlisensi jelas yang boleh didaftarkan; isi `commercialOk` dengan jujur.
 - Syarat model: rig kompatibel Mixamo, blendshape ARKit (52) dan viseme Oculus (15). Lihat Appendix A README TalkingHead.
 
