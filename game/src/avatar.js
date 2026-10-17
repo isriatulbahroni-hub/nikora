@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CHARACTERS, HAIR_COLORS, OUTFITS, SKINS, sanitizeConfig } from './avatar-config.js';
 import { HumanRig, loadHumanModel, neutralToLocal } from './avatar-human.js';
 import { auraFor } from './avatar-aura.js';
+import { emotePose } from './avatar-emotes.js';
 import { GAIT, gaitPose, labelMetrics, stepGait } from './villa-motion.js';
 import { FALL_TOTAL, HEAD_YAW_MAX, LIE_ROLL, createMannersRegistry, fallPose, idleGlance } from './avatar-manners.js';
 
@@ -114,6 +115,7 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
   for (const [side, sx] of [['l', -0.24], ['r', 0.24]]) {
     const pivot = new THREE.Group();
     pivot.position.set(sx, 1.28, 0);
+    pivot.rotation.order = 'XZY'; // putar lengan atas (t), buka ke samping (z), lalu ayun ke depan (x); dipakai emote berpose penuh
     const elbow = new THREE.Group();
     elbow.position.y = -0.27;
     elbow.add(mesh(new THREE.CapsuleGeometry(0.046, 0.13, 4, 8), armMaterial, 0, -0.12, 0), mesh(new THREE.SphereGeometry(0.055, 10, 8), skinMaterial, 0, -0.255, 0));
@@ -140,6 +142,15 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
     legs[side] = { hip, knee, ankle };
   }
 
+  // Badan atas satu grup berpusat di pinggul supaya bisa membungkuk (emote tunduk hormat, sedih, tertawa) tanpa menggeser kaki.
+  const upper = new THREE.Group();
+  upper.position.y = HIP_Y;
+  for (const child of [body, neck, marker, headPivot, arms.l, arms.r]) {
+    child.position.y -= HIP_Y;
+    upper.add(child);
+  }
+  group.add(upper);
+  group.userData.upper = upper;
   group.userData.arms = arms;
   group.userData.elbows = elbows;
   group.userData.legs = legs;
@@ -244,8 +255,63 @@ function elbowTargets(act, seated) {
 export function applyPose(group, act, t, delta = 1 / 60, speed) {
   const ud = group.userData;
   if (ud?.pivot && ud.mLift) ud.pivot.position.y -= ud.mLift; // lapisan frame lalu dilepas dulu supaya tidak menumpuk
+  if (ud?.pivot && ud.eDip) ud.pivot.position.y -= ud.eDip;
+  ud.eDip = 0;
   applyPoseBase(group, act === 'fall' ? null : act, t, delta, speed);
   applyManners(group, act, t, delta);
+  applyEmote(group, act, delta, speed);
+}
+
+// ---------------------------------------------------------------- lapisan emote berpose penuh
+// group.userData.emote = { id, t0, dur } (t0 dalam detik jam performance.now) membuat avatar sederhana memeragakan pose dari
+// avatar-emotes.js: lengan (bahu + siku), badan atas membungkuk, kepala, naik-turun badan, dan kaki (duduk). Berjalan, duduk di kursi,
+// berbaring, jatuh, atau gerak shalat membatalkannya dengan halus. Model manusia (rig Mixamo) belum memakai lapisan ini.
+function applyEmote(group, act, delta, speed) {
+  const ud = group.userData;
+  const { arms, elbows, legs, upper, headPivot: hp } = ud;
+  if (!arms || !elbows || !upper || ud.human) return;
+  const k = 1 - Math.exp(-14 * Math.max(0, delta));
+  const em = ud.emote;
+  const elapsed = em ? clock() - em.t0 : 0;
+  const blocked = act === 'fall' || act === 'walk' || (speed ?? 0) > 0.6 || (ud.m?.spd ?? 0) > 0.6 || ud.seated === true
+    || typeof ud.lie === 'string' || ud.posture?.active === true || group.position.y < -0.1;
+  const pose = em && elapsed <= (em.dur ?? 2.4) ? emotePose(em.id, elapsed, em.dur ?? 2.4) : null;
+  if (em && !pose && elapsed > (em.dur ?? 2.4)) ud.emote = null; // selesai atau id tak dikenal
+  ud.emoteK = lerp(ud.emoteK ?? 0, pose && !blocked ? 1 : 0, 1 - Math.exp(-10 * Math.max(delta, 1e-3)));
+  const w = pose ? pose.w * ud.emoteK : 0;
+
+  if (pose && w > 0.001) {
+    for (const [side, a, sign] of [['r', pose.r, 1], ['l', pose.l, -1]]) {
+      if (!a) continue; // lengan ini dibiarkan mengikuti pose dasar
+      arms[side].rotation.x = mix(arms[side].rotation.x, a.x, w);
+      arms[side].rotation.z = mix(arms[side].rotation.z, sign * a.z, w);
+      arms[side].rotation.y = mix(arms[side].rotation.y, sign * a.t, w);
+      elbows[side].rotation.x = mix(elbows[side].rotation.x, a.e, w);
+      elbows[side].rotation.z = mix(elbows[side].rotation.z, 0, w);
+    }
+    upper.rotation.x = -pose.spine * w; // negatif = membungkuk ke depan (-z)
+    hp.rotation.x -= pose.headPitch * w; // positif = menunduk
+    hp.rotation.y += pose.headYaw * w;
+    hp.rotation.z = pose.headRoll * w;
+    if (pose.dip) {
+      ud.eDip = pose.dip * w;
+      ud.pivot.position.y += ud.eDip;
+    }
+    if (pose.legs && legs) {
+      const L = pose.legs;
+      legs.r.hip.rotation.x = mix(legs.r.hip.rotation.x, L.hipR, w);
+      legs.l.hip.rotation.x = mix(legs.l.hip.rotation.x, L.hipL, w);
+      legs.r.knee.rotation.x = mix(legs.r.knee.rotation.x, L.kneeR, w);
+      legs.l.knee.rotation.x = mix(legs.l.knee.rotation.x, L.kneeL, w);
+      legs.r.hip.rotation.z = mix(legs.r.hip.rotation.z, L.spread, w);
+      legs.l.hip.rotation.z = mix(legs.l.hip.rotation.z, -L.spread, w);
+    }
+    return;
+  }
+  // tidak aktif: sisa putaran yang tidak dipulihkan pose dasar (lengan atas y, badan atas, miring kepala) dikembalikan halus
+  upper.rotation.x = lerp(upper.rotation.x, 0, k);
+  hp.rotation.z = lerp(hp.rotation.z, 0, k);
+  for (const side of ['r', 'l']) arms[side].rotation.y = lerp(arms[side].rotation.y, 0, k);
 }
 
 function applyPoseBase(group, act, t, delta, speed) {
