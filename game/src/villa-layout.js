@@ -27,10 +27,11 @@ export const SEATED_DROP = -0.3; // avatar duduk sedikit lebih rendah
 
 const GUEST_COLS = [16, 21.5, 27, 32.5, 38];
 
+// Lorong kamar tamu selebar 4 m (z 11..15): dua orang bisa berpapasan dengan lega. Kamar tamu 7 m dalamnya (z 4..11 dan 15..22).
 function guestRooms(level = 0) {
   const rooms = [];
   let n = level === 0 ? 1 : 9;
-  for (const [z1, z2] of [[4, 12], [14, 22]]) {
+  for (const [z1, z2] of [[4, 11], [15, 22]]) {
     for (let i = 0; i < 4; i++) {
       rooms.push({ id: `guest_${n}`, name: `Guest Room ${n}`, kind: 'guest', level, rect: [GUEST_COLS[i], z1, GUEST_COLS[i + 1], z2] });
       n++;
@@ -47,7 +48,7 @@ export const ROOMS = Object.freeze([
   { id: 'bridal_room', name: 'Bridal Room', kind: 'bridal', rect: [26, -20, 38, -3] },
   { id: 'restaurant', name: 'Restaurant & Cafe', kind: 'restaurant', rect: [-36, 4, -16, 20] },
   { id: 'kitchen', name: 'Kitchen', kind: 'kitchen', rect: [-36, 20, -26, 30] },
-  { id: 'corridor', name: 'Guest Corridor', kind: 'corridor', rect: [16, 12, 38, 14] },
+  { id: 'corridor', name: 'Guest Corridor', kind: 'corridor', rect: [16, 11, 38, 15] },
   ...guestRooms(0),
   ...GAME_ROOMS, // sayap Ruang Game (villa-gamewing.js): bulu tangkis, lobi, horor
 ]);
@@ -95,7 +96,7 @@ function makeTower({ id, name, x1, x2, stairX, dz1, zMin, zMax, groundDoorX, adj
 export const TOWERS = Object.freeze([
   makeTower({ id: 'tower_w', name: 'Stair Tower West', x1: -41.6, x2: -38, stairX: [-41.2, -39.2], dz1: -10.4, zMin: -20, zMax: -3, groundDoorX: -39.8, adj: -38, l1DoorZ: -10.4, l2DoorZ: -18.8, l1DoorW: 1.6, l2DoorW: 1.4 }),
   makeTower({ id: 'tower_e', name: 'Stair Tower East', x1: 38, x2: 41.6, stairX: [39.2, 41.2], dz1: -10.4, zMin: -20, zMax: -3, groundDoorX: 39.8, adj: 38, l1DoorZ: -10.4, l2DoorZ: -18.8, l1DoorW: 1.6, l2DoorW: 1.4 }),
-  makeTower({ id: 'tower_g', name: 'Stair Tower Guest Wing', x1: 38, x2: 41.6, stairX: [39.2, 41.2], dz1: 13, zMin: 4, zMax: 22, groundDoorX: 39.8, adj: 38, l1DoorZ: 13, l2DoorZ: 4.9, l1DoorW: 1.4, l2DoorW: 1.4 }),
+  makeTower({ id: 'tower_g', name: 'Stair Tower Guest Wing', x1: 38, x2: 41.6, stairX: [39.2, 41.2], dz1: 13, zMin: 4, zMax: 22, groundDoorX: 39.8, adj: 38, l1DoorZ: 13, l2DoorZ: 4.9, l1DoorW: 2.4, l2DoorW: 1.4 }),
   makeTower({ id: 'tower_r', name: 'Stair Tower Restaurant', x1: -41.6, x2: -36, stairX: [-41.2, -39.2], dz1: 14, zMin: 4, zMax: 22, groundDoorX: -39.8, adj: -36, l1DoorZ: 14, l2DoorZ: 5.4, l1DoorW: 1.6, l2DoorW: 1.4 }),
 ]);
 export const STAIRS = Object.freeze(TOWERS.flatMap((t) => t.stairs));
@@ -112,7 +113,7 @@ export const UPPER_ROOMS = Object.freeze([
   { id: 'library', name: 'Library Lounge', kind: 'library', level: 1, rect: [14, -20, 26, -3] },
   { id: 'honeymoon', name: 'Honeymoon Suite', kind: 'bridal', level: 1, rect: [26, -20, 38, -3] },
   { id: 'sky_cafe', name: 'Sky Cafe', kind: 'restaurant', level: 1, rect: [-36, 4, -16, 20] },
-  { id: 'corridor_1', name: 'Guest Corridor', kind: 'corridor', level: 1, rect: [16, 12, 38, 14] },
+  { id: 'corridor_1', name: 'Guest Corridor', kind: 'corridor', level: 1, rect: [16, 11, 38, 15] },
   ...guestRooms(1),
   // lantai 2
   { id: 'terrace_w', name: 'Sky Terrace West', kind: 'terrace', level: 2, rect: [-38, -20, -14, -3] },
@@ -150,9 +151,9 @@ const GROUND_DOORS = [
   { x: -26, z: 4, orient: 'h', width: 2.2 }, // restoran ke teras
   { x: -20, z: 20, orient: 'h', width: 2.2 }, // restoran ke taman selatan
   { x: -31, z: 20, orient: 'h', width: 2.2 }, // restoran <-> dapur
-  { x: 16, z: 13, orient: 'v', width: 2 }, // koridor kamar tamu ke luar
-  ...guestDoorXs.map((x) => ({ x, z: 12, orient: 'h', width: 1.6 })),
-  ...guestDoorXs.map((x) => ({ x, z: 14, orient: 'h', width: 1.6 })),
+  { x: 16, z: 13, orient: 'v', width: 3 }, // koridor kamar tamu ke luar (lebar)
+  ...guestDoorXs.map((x) => ({ x, z: 11, orient: 'h', width: 1.6 })),
+  ...guestDoorXs.map((x) => ({ x, z: 15, orient: 'h', width: 1.6 })),
   ...TOWERS.map((t) => t.groundDoor), // pintu masuk menara tangga
   ...GAME_DOORS, // pintu sayap Ruang Game (masuk lewat lobi)
 ];
@@ -162,8 +163,8 @@ export const UPPER_DOORS = Object.freeze([
   // lantai 1
   { level: 1, x: -26, z: -11, orient: 'v', width: 2.2 }, // yoga <-> suite
   { level: 1, x: 26, z: -11, orient: 'v', width: 2.2 }, // library <-> honeymoon
-  ...guestDoorXs.map((x) => ({ level: 1, x, z: 12, orient: 'h', width: 1.6 })),
-  ...guestDoorXs.map((x) => ({ level: 1, x, z: 14, orient: 'h', width: 1.6 })),
+  ...guestDoorXs.map((x) => ({ level: 1, x, z: 11, orient: 'h', width: 1.6 })),
+  ...guestDoorXs.map((x) => ({ level: 1, x, z: 15, orient: 'h', width: 1.6 })),
   ...TOWERS.map((t) => ({ level: 1, ...t.doors[1] })),
   // lantai 2
   { level: 2, x: 26, z: -11, orient: 'v', width: 2.2 }, // presidential <-> teras timur
