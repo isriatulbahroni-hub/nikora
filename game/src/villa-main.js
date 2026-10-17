@@ -12,10 +12,6 @@ import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
 import { modeFor } from './event-mode.js';
-import { lockableRooms } from './villa-doors.js';
-import { createRoomDoors } from './room-doors.js';
-import { mountRoomDoorsUi } from './room-doors-ui.js';
-import { createDoorView } from './villa-door-view.js';
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
 function applyQuality(renderer, scene, q) {
@@ -31,6 +27,10 @@ function applyQuality(renderer, scene, q) {
 import { createPartyController, stageIds } from './party.js';
 import { takeRoleKey } from './role-key.js';
 import { renderPartyPanel } from './party-panel.js';
+import { lockableRooms } from './villa-doors.js';
+import { createRoomDoors } from './room-doors.js';
+import { mountRoomDoorsUi } from './room-doors-ui.js';
+import { createDoorView } from './villa-door-view.js';
 import { VOICE_CROWD, VoiceChat } from './voice.js';
 import { buildVillaWorld } from './villa-world.js';
 import { createVillaSky } from './villa-sky.js';
