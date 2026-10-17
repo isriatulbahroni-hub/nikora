@@ -1,30 +1,43 @@
-// Sayap Ruang Game NIKORA Wedding Villa (satuan meter, sistem koordinat sama dengan villa-layout.js).
+// Game Center NIKORA Wedding Villa (satuan meter, sistem koordinat sama dengan villa-layout.js).
 // Modul ini murni data + fungsi kecil (tanpa THREE) supaya dipakai bersama klien dan server.
 //
 // Aturan produk:
 //  - Ruang game ada di semua tempat acara KECUALI masjid (lihat GAME_ROOM_EXCLUDED).
-//  - Tiap permainan punya ruangannya sendiri (bulu tangkis, horor, dst.). Tamu harus masuk ke sayap ini
-//    lewat lobi untuk bermain; di luar sayap tidak ada permainan yang berjalan.
-//  - Pintu masuk tunggal lewat lobi, jadi pemilik acara kelak bisa menutup seluruh sayap dari satu tempat.
+//  - Tiap permainan punya arenanya sendiri, berukuran sungguhan (lapangan bulu tangkis resmi 13,4 x 6,1 m).
+//  - Dua arena berdiri di kiri dan kanan jalan masuk (plaza) di selatan halaman villa. Kompleks villa diperluas ke
+//    selatan (BOUNDS.maxZ = 84) untuk memberi ruang; plaza di tengah berfungsi sebagai lobi terbuka.
 //
-// Letak: pojok barat daya halaman villa (selatan dapur, di dalam pagar). Pagar barat x = -42, selatan z = 42.
+// Susunan (tampak atas, utara di atas):
+//
+//        z=44   [ gerbang lengkung GAME CENTER ]
+//        z=46   +-----------------+   plaza   +-----------------+
+//               |  Arena Bulu     |  x -6..6  |  Ruang Mansion  |
+//               |  Tangkis        D<--- jalan --->D  Horor       |
+//        z=70   +-----------------+           +-----------------+
+//               x -40..-6                      x 6..40
+//        z=84   [ pagar + gerbang ke jalan desa ]
 
 export const GAME_ROOM_EXCLUDED = Object.freeze(['masjid']);
 
 /** Apakah dunia/tempat acara `world` (kunci seperti di venues.js) boleh punya ruang game? */
 export const gameRoomAllowed = (world) => !GAME_ROOM_EXCLUDED.includes(world);
 
-// Batas luar sayap. Jarak ke pagar: barat 4 m, selatan 2,5 m (semak hias tembok keliling berada di luar sayap).
-export const GAME_WING = Object.freeze({ rect: [-38, 31, -14, 39.5] });
+// Tinggi dinding arena. Harus <= 4 m: renderer memasang dua baris jendela bila dinding lebih tinggi dari 4 m,
+// dan uji atap/kamera mensyaratkan puncak dinding dekat WALL_HEIGHT (3 m) denah villa.
+export const ARENA_WALL_HEIGHT = 4.0;
 
-// Urutan dari barat ke timur: bulu tangkis | lobi | horor. Semua ruangan hanya terhubung lewat lobi.
+// Urutan dari barat ke timur. Tiap arena punya satu pintu lebar yang menghadap plaza.
 export const GAME_ROOMS = Object.freeze([
-  { id: 'game_badminton', name: 'Ruang Bulu Tangkis', kind: 'game', game: 'badminton', rect: [-38, 31, -30, 39.5] },
-  { id: 'game_lobby', name: 'Lobi Ruang Game', kind: 'game', game: null, rect: [-30, 31, -22, 39.5] },
-  { id: 'game_horror', name: 'Ruang Mansion Horor', kind: 'game', game: 'horror', rect: [-22, 31, -14, 39.5] },
+  { id: 'game_badminton', name: 'Arena Bulu Tangkis', kind: 'game', game: 'badminton', wallH: ARENA_WALL_HEIGHT, rect: [-40, 46, -6, 70] },
+  { id: 'game_horror', name: 'Ruang Mansion Horor', kind: 'game', game: 'horror', wallH: ARENA_WALL_HEIGHT, rect: [6, 46, 40, 70] },
 ]);
 
-// Katalog permainan. status: 'soon' = ruangan sudah ada tetapi permainannya belum bisa dimainkan.
+// Plaza = lobi terbuka di antara dua arena, menyambung jalan setapak dari taman villa ke gerbang.
+export const GAME_ZONES = Object.freeze([
+  { id: 'game_plaza', name: 'Plaza Game Center', kind: 'garden', rect: [-6, 44, 6, 84] },
+]);
+
+// Katalog permainan. status: 'soon' = arena sudah ada tetapi permainannya belum bisa dimainkan.
 // scary = diberi label peringatan di pintu ruangannya.
 export const GAMES = Object.freeze({
   badminton: Object.freeze({ label: 'Bulu Tangkis', room: 'game_badminton', status: 'soon', scary: false }),
@@ -32,36 +45,86 @@ export const GAMES = Object.freeze({
 });
 
 // orient 'h' = pintu di dinding sepanjang x (koordinat z); 'v' = di dinding sepanjang z (koordinat x).
+// Pintu lebar 3,2 m (dua daun) agar lega dilalui banyak tamu sekaligus.
 export const GAME_DOORS = Object.freeze([
-  { x: -24, z: 31, orient: 'h', width: 2.2 }, // pintu masuk dari taman ke lobi (digeser dari sudut dapur)
-  { x: -30, z: 35.25, orient: 'v', width: 2.2 }, // lobi <-> bulu tangkis
-  { x: -22, z: 35.25, orient: 'v', width: 2.2 }, // lobi <-> horor
+  { x: -6, z: 58, orient: 'v', width: 3.2 }, // plaza <-> arena bulu tangkis
+  { x: 6, z: 58, orient: 'v', width: 3.2 }, // plaza <-> ruang horor
 ]);
 
-// Terminal (mesin arcade) tiap permainan: berdiri rapat di dinding selatan ruangannya, menghadap utara.
-// Belum punya tabrakan (klien dan server memakai denah yang sama, jadi tabrakan baru ditambah di villa-layout.js).
+// Atap limasan di atas tiap arena (puncak dinding = ARENA_WALL_HEIGHT). Id tidak boleh berakhiran "_roof"
+// (itu khusus atap menara tangga di uji).
+export const GAME_ROOFS = Object.freeze(GAME_ROOMS.map((r) => Object.freeze({
+  id: `${r.id}_arena`, kind: 'hip', rect: r.rect, base: ARENA_WALL_HEIGHT, rise: 3.2, overhang: 0.8,
+})));
+
+// ---------------------------------------------------------------- lapangan bulu tangkis (ukuran resmi BWF)
+// Sumbu panjang lapangan sejajar x; jaring berada di x = pusat, membentang sepanjang z.
+export const COURT = Object.freeze({
+  length: 13.4, width: 6.1, singlesWidth: 5.18, shortService: 1.98, backService: 0.76, netHeight: 1.55, line: 0.04,
+});
+// Dua lapangan berdampingan (empat pemain ganda atau dua pertandingan sekaligus), pintu tepat di antaranya.
+export const BADMINTON_COURTS = Object.freeze([{ x: -23, z: 52.6 }, { x: -23, z: 63.4 }]);
+
+/** Garis lapangan sebagai persegi panjang {x, z, w, d} (pusat, lebar sepanjang x, kedalaman sepanjang z). */
+export function courtLines(cx, cz, c = COURT) {
+  const hl = c.length / 2;
+  const hw = c.width / 2;
+  const sw = c.singlesWidth / 2;
+  const t = c.line;
+  const lines = [];
+  for (const s of [-1, 1]) {
+    lines.push({ x: cx + s * hl, z: cz, w: t, d: c.width + t }); // garis belakang
+    lines.push({ x: cx, z: cz + s * hw, w: c.length + t, d: t }); // garis samping ganda
+    lines.push({ x: cx, z: cz + s * sw, w: c.length, d: t }); // garis samping tunggal
+    lines.push({ x: cx + s * c.shortService, z: cz, w: t, d: c.width }); // garis servis pendek
+    lines.push({ x: cx + s * (hl - c.backService), z: cz, w: t, d: c.width }); // garis servis belakang (ganda)
+    lines.push({ x: cx + (s * (c.shortService + hl)) / 2, z: cz, w: hl - c.shortService, d: t }); // garis tengah
+  }
+  lines.push({ x: cx, z: cz, w: t, d: c.width }); // garis jaring
+  return lines;
+}
+
+// Terminal (meja pertandingan / mesin arcade) tiap permainan: menempel di dinding sisi plaza, menghadap ke dalam arena.
+// face = arah depan: n (utara, -z), s, w (barat, -x), e (timur, +x). Belum punya tabrakan (klien dan server memakai
+// denah yang sama, jadi tabrakan baru ditambah di villa-layout.js).
 export const TERMINAL_RANGE = 1.9;
 export const GAME_TERMINALS = Object.freeze([
-  { id: 'term_badminton', game: 'badminton', x: -34, z: 38.7 },
-  { id: 'term_horror', game: 'horror', x: -18, z: 38.7 },
+  { id: 'term_badminton', game: 'badminton', x: -6.5, z: 63, face: 'w' },
+  { id: 'term_horror', game: 'horror', x: 6.5, z: 63, face: 'e' },
 ]);
 
-// Papan nama. ry = putaran sumbu y bidang (depan bidang menghadap +z saat ry = 0). Tinggi 2,25..2,85 m: di atas bukaan
-// pintu (2,1 m) dan di bawah puncak dinding (3,0 m).
+// Papan nama di atas pintu (sisi plaza). ry = putaran sumbu y bidang (depan bidang menghadap +z saat ry = 0).
+// Tinggi 2,75..3,55 m: di atas bukaan pintu (2,1 m) dan di bawah puncak dinding arena (4,0 m).
 export const GAME_SIGNS = Object.freeze([
-  { id: 'sign_entrance', text: 'RUANG GAME', sub: 'Bulu Tangkis · Mansion Horor', x: -24, y: 2.55, z: 30.78, ry: Math.PI, w: 3.0, h: 0.6 },
-  { id: 'sign_badminton', game: 'badminton', text: 'BULU TANGKIS', sub: '', x: -29.8, y: 2.55, z: 35.25, ry: Math.PI / 2, w: 1.8, h: 0.55 },
-  { id: 'sign_horror', game: 'horror', text: 'MANSION HOROR', sub: 'Seram', x: -22.2, y: 2.55, z: 35.25, ry: -Math.PI / 2, w: 1.8, h: 0.55, scary: true },
+  { id: 'sign_badminton', game: 'badminton', text: 'BULU TANGKIS', sub: 'Arena', x: -5.78, y: 3.15, z: 58, ry: Math.PI / 2, w: 3.0, h: 0.8 },
+  { id: 'sign_horror', game: 'horror', text: 'MANSION HOROR', sub: 'Seram', x: 5.78, y: 3.15, z: 58, ry: -Math.PI / 2, w: 3.0, h: 0.8, scary: true },
 ]);
 
-/** Apakah titik (x,z) berada di dalam sayap ruang game, diperluas `margin` meter? */
+// Gerbang lengkung di mulut plaza (hiasan; tiangnya berdiri di tepi plaza, tidak menghalangi jalan tengah).
+export const GAME_ARCH = Object.freeze({ z: 44.5, halfSpan: 5.3, height: 5.6, text: 'GAME CENTER', sub: 'Bulu Tangkis · Mansion Horor' });
+
+/** Apakah titik (x,z) berada di dalam salah satu arena, diperluas `margin` meter? */
 export function insideGameWing(x, z, margin = 0) {
-  const [x1, z1, x2, z2] = GAME_WING.rect;
-  return x > x1 - margin && x < x2 + margin && z > z1 - margin && z < z2 + margin;
+  return GAME_ROOMS.some(({ rect: [x1, z1, x2, z2] }) => x > x1 - margin && x < x2 + margin && z > z1 - margin && z < z2 + margin);
 }
 
 /** Ruang game yang memuat permainan `gameId`, atau null. */
 export const gameRoomFor = (gameId) => GAME_ROOMS.find((r) => r.game === gameId) ?? null;
+
+/**
+ * Tinggi dinding untuk segmen dinding `w` (hasil buildWallSegments) bila segmen itu bagian tepi arena, selain itu null.
+ * Dipakai getVillaWorld agar renderer dan kamera memakai tinggi yang sama.
+ */
+export function gameEdgeHeight(w) {
+  const mid = (w.a + w.b) / 2;
+  for (const r of GAME_ROOMS) {
+    const [x1, z1, x2, z2] = r.rect;
+    const onH = w.orient === 'h' && (Math.abs(w.coord - z1) < 1e-6 || Math.abs(w.coord - z2) < 1e-6) && mid > x1 && mid < x2;
+    const onV = w.orient === 'v' && (Math.abs(w.coord - x1) < 1e-6 || Math.abs(w.coord - x2) < 1e-6) && mid > z1 && mid < z2;
+    if (onH || onV) return r.wallH ?? null;
+  }
+  return null;
+}
 
 /** Terminal terdekat dalam jangkauan, atau null. Hanya di lantai dasar dan tidak saat di tangga. */
 export function nearestTerminal(pos, range = TERMINAL_RANGE) {
