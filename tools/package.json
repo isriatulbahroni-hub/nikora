@@ -4,7 +4,8 @@
   "type": "module",
   "description": "Alat build aset avatar manusia (bukan bagian dari bundel game).",
   "scripts": {
-    "build:human": "node build-human-assets.mjs"
+    "build:human": "node build-human-assets.mjs",
+    "build:extra": "node build-extra-anims.mjs"
   },
   "dependencies": {
     "@gltf-transform/core": "^4.2.0",

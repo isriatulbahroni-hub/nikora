@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { HUMAN_ROSTER } from './avatar-roster.js';
+import { EXTRA_CLIPS, loadExtraNeutral } from './avatar-extra-anims.js';
 
 const BASE = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/';
 export const HUMAN_HEIGHT = 1.75;
@@ -153,15 +154,36 @@ export class HumanRig {
     this.root.rotation.y = Math.PI;
     this.mixer = new THREE.AnimationMixer(this.root);
     this.actions = {};
-    for (const [name, clip] of Object.entries(model.clips)) {
-      const a = this.mixer.clipAction(clip);
-      a.setLoop(THREE.LoopRepeat, Infinity);
-      this.actions[name] = a;
-    }
+    this.loading = new Set();
+    this.forcedClip = null; // klip tambahan yang dipaksakan stiker (emoji-sticker-fx.js); hanya berlaku saat diam dan tidak duduk
+    this.disposed = false;
+    for (const [name, clip] of Object.entries(model.clips)) this.addAction(name, clip);
     this.bones = new Map();
     this.root.traverse((o) => { if (o.isBone && /^mixamorig/.test(o.name)) this.bones.set(boneKeyOf(o.name), o); });
     this.current = null;
     this.play('idle', 0);
+  }
+
+  addAction(name, clip) {
+    const a = this.mixer.clipAction(clip);
+    if (clip.userData?.loop === false) {
+      a.setLoop(THREE.LoopOnce, 1);
+      a.clampWhenFinished = true; // tahan pose terakhir sampai klip berikutnya
+    } else a.setLoop(THREE.LoopRepeat, Infinity);
+    this.actions[name] = a;
+  }
+
+  /** Klip tambahan (anims/extra). True bila siap diputar; bila belum, memulai pemuatan di latar dan mengembalikan false. */
+  extraReady(id) {
+    if (this.actions[id]) return true;
+    if (!Object.hasOwn(EXTRA_CLIPS, id) || this.loading.has(id)) return false;
+    this.loading.add(id); // juga mencegah pemuatan ulang bila berkasnya belum ada
+    loadExtraNeutral(id).then((neutral) => {
+      if (!neutral || this.disposed) return;
+      this.model.clips[id] ??= buildClip(id, neutral, this.model.rest, EXTRA_CLIPS[id]);
+      this.addAction(id, this.model.clips[id]);
+    });
+    return false;
   }
 
   play(name, fade = 0.25) {
@@ -174,8 +196,9 @@ export class HumanRig {
   }
 
   update(act, t, delta, seated = false) {
-    const wantsPose = seated || ['wave', 'highfive', 'handshake', 'clap', 'bow', 'spin'].includes(act);
-    this.play(CLIP_FOR_ACT[act] ?? 'idle');
+    const extra = this.forcedClip && !seated && act !== 'walk' && this.extraReady(this.forcedClip) ? this.forcedClip : null;
+    const wantsPose = seated || (!extra && ['wave', 'highfive', 'handshake', 'clap', 'bow', 'spin'].includes(act));
+    this.play(extra ?? CLIP_FOR_ACT[act] ?? 'idle');
     this.mixer.update(delta);
     if (!wantsPose) return;
     const delta3 = proceduralPose(act, t, seated);
@@ -187,6 +210,7 @@ export class HumanRig {
   }
 
   dispose() {
+    this.disposed = true;
     this.mixer.stopAllAction();
     this.mixer.uncacheRoot(this.root);
   }
