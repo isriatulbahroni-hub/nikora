@@ -160,13 +160,14 @@ test('findNearestSpot melewati yang terpakai dan menghormati jangkauan', () => {
   assert.equal(findNearestSpot({ x: 0, z: 37 }, world.spots), null);
 });
 
-test('spotPose: duduk lebih rendah, tidur berbaring dengan kepala ke papan kepala', () => {
+test('spotPose: duduk lebih rendah, tidur telentang dengan kepala ke papan kepala', () => {
   const sit = spotPose({ kind: 'sit', x: 1, z: 2, rot: 0, level: 0 });
   assert.ok(sit.y < 0 && sit.tilt === 0);
   assert.ok(Math.abs(spotPose({ kind: 'sit', x: 1, z: 2, rot: 0, level: 2 }).y - (levelY(2) + sit.y)) < 1e-9);
   const bed = world.spots.find((s) => s.kind === 'sleep' && s.level === 0 && s.z < 10);
   const p = spotPose(bed);
-  assert.equal(p.tilt, -Math.PI / 2);
+  assert.equal(p.tilt, Math.PI / 2, 'tilt +90° = telentang (dada ke atas), bukan tengkurap');
+  assert.ok(Math.abs(p.rotY - (bed.rot + Math.PI)) < 1e-9, 'menghadap berlawanan supaya kepala tetap di papan kepala');
   assert.ok(p.y > 0.7);
   assert.ok(p.z > bed.z, 'kaki di sisi selatan, kepala di utara');
 });
