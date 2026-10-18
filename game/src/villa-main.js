@@ -12,8 +12,8 @@ import './screen.css';
 import { createScreen } from './screen/screen-setup.js';
 import { createQualityGovernor } from './quality.js';
 import { modeFor } from './event-mode.js';
-import { buildBadmintonCourt, createRacketMesh, createShuttleMesh, placeShuttle } from './villa-court.js';
-import { createPractice } from './activities/badminton-practice.js';
+import { buildBadmintonCourt } from './villa-court.js';
+import { createVillaBadminton } from './villa-badminton.js';
 import { placeTvs } from './room-tv.js';
 import { createTvView } from './room-tv-view.js';
 import { mountRoomTvUi } from './room-tv-ui.js';
@@ -454,7 +454,7 @@ async function start() {
     const terminal = games.nearTerminal(me); // mesin permainan di ruang game
     if (terminal) return games.open(terminal, me);
     if (nearestSpot()) return sitDown(performance.now());
-    return practiceAction(); // jauh dari kursi/kasur/mesin: tombol dipakai untuk bulu tangkis bila dekat lapangan
+    return badminton.action(clamp(-lastMove.z, -1, 1)); // jauh dari kursi/kasur/mesin: tombol dipakai untuk bulu tangkis bila dekat lapangan
   };
   actBtn.addEventListener('click', () => hooks.action());
   const setActLabel = (() => {
@@ -467,65 +467,9 @@ async function start() {
     };
   })();
 
-  // ---------- bulu tangkis: latihan melawan bot (lokal; fisika kok sungguhan, aturan reli poin) ----------
-  const practice = createPractice();
-  const shuttleMesh = createShuttleMesh();
-  shuttleMesh.visible = false;
-  scene.add(shuttleMesh);
-  let botConfig = avatarConfig;
-  try {
-    botConfig = loadConfig(null) ?? avatarConfig;
-  } catch {
-    /* pakai tampilan pemain */
-  }
-  const botAvatar = createAvatar({ config: botConfig });
-  botAvatar.visible = false;
-  scene.add(botAvatar);
-  const myRacket = createRacketMesh();
-  const botRacket = createRacketMesh();
-  for (const r of [myRacket, botRacket]) r.position.set(0.42, 0.95, -0.2);
-  myRacket.visible = false;
-  avatar.add(myRacket);
-  botAvatar.add(botRacket);
-  const scoreEl = document.createElement('div');
-  scoreEl.style.cssText = 'position:fixed;z-index:9;top:calc(max(12px,env(safe-area-inset-top)) + 84px);left:50%;transform:translateX(-50%);padding:6px 14px;border-radius:999px;background:rgba(20,32,26,.72);color:#fff;font:600 13px ui-sans-serif,sans-serif;pointer-events:none;display:none;max-width:92vw;text-align:center;';
-  document.body.appendChild(scoreEl);
-  const SWING_TIME = 0.35;
-  const swing = { me: 0, bot: 0 };
-  let pendingHit = 0; // tekan 'Pukul' sedikit lebih awal tetap dihitung (jendela pukulan sangat singkat)
-  let pendingAim = 0;
-  let lastMove = { x: 0, z: 0 };
-  let botPrev = null;
-  let botSpeed = 0;
-  const nearCourt = (margin) => me.level === 0 && me.stair === null && court.frame.contains(me, margin);
-  const practiceAction = () => {
-    if (!practice.active) {
-      if (!nearCourt(3)) return false;
-      practice.start();
-      return true;
-    }
-    if (practice.phase === 'over') {
-      practice.stop();
-      return true;
-    }
-    if (practice.canServe()) {
-      practice.serve({ power: 0.62, aimX: clamp(-lastMove.z, -1, 1) * 0.6 });
-      swing.me = SWING_TIME;
-      return true;
-    }
-    if (practice.phase === 'rally') {
-      pendingHit = 0.45;
-      pendingAim = clamp(-lastMove.z, -1, 1); // dorong ke utara/selatan = bidik ke samping lapangan
-      return true;
-    }
-    return false;
-  };
-  const practiceLabel = () => {
-    if (!practice.active) return nearCourt(3) ? 'Main' : '';
-    if (practice.phase === 'over') return 'Selesai';
-    if (practice.canServe()) return 'Servis';
-    return practice.phase === 'rally' ? 'Pukul' : '';
-  };
+  // ---------- bulu tangkis manusia lawan manusia (data channel LiveKit; tanpa bot) ----------
+  const badminton = createVillaBadminton({ scene, court, me, avatar, getSession: () => multiplayer, toast: (text) => toast(text) });
+  let lastMove = { x: 0, z: 0 }; // arah gerak terakhir: dorong ke utara/selatan saat memukul = bidik ke samping lapangan
 
   // ---------- peta (tersembunyi secara bawaan) ----------
   const mapBtn = $('map-button');
@@ -707,54 +651,10 @@ async function start() {
     // laju nyata (bukan sekadar joystick ditekan): menabrak dinding = kaki berhenti, menyusur dinding = melambat
     speedNow += ((delta > 0 ? travelled / delta : 0) - speedNow) * (1 - Math.exp(-10 * delta));
 
-    // bulu tangkis: lanjutkan reli, pukulan yang menunggu, dan tampilan kok/bot/skor
+    // bulu tangkis: pengendali mengurus kok, raket, skor, dan pukulan yang menunggu
     lastMove = move;
-    if (practice.active) {
-      const local = court.frame.toLocal(me);
-      if (seat === null && !moving) facing = -Math.PI / 2; // menghadap net (timur)
-      if (pendingHit > 0) {
-        pendingHit -= delta;
-        if (practice.canHit(local)) {
-          const result = practice.hit(local, { aim: pendingAim });
-          if (result.ok) {
-            pendingHit = 0;
-            swing.me = SWING_TIME;
-          }
-        }
-      }
-      for (const ev of practice.tick(delta, local)) {
-        if (ev.type === 'hit') swing.bot = SWING_TIME;
-        if (ev.message) toast(ev.message);
-      }
-      if (practice.active && !nearCourt(9)) {
-        practice.stop();
-        toast('Latihan bulu tangkis dihentikan');
-      }
-    }
-    const shuttleNow = practice.active ? practice.shuttle : null;
-    shuttleMesh.visible = shuttleNow !== null;
-    if (shuttleNow) placeShuttle(shuttleMesh, court.frame, shuttleNow);
-    myRacket.visible = practice.active;
-    botAvatar.visible = practice.active && camArm > 0.7;
-    if (practice.active) {
-      const bw = court.frame.toWorld({ x: practice.bot.x, y: 0, z: practice.bot.z });
-      if (botPrev) botSpeed += ((delta > 0 ? Math.hypot(bw.x - botPrev.x, bw.z - botPrev.z) / delta : 0) - botSpeed) * (1 - Math.exp(-10 * delta));
-      botPrev = bw;
-      botAvatar.position.set(bw.x, 0, bw.z);
-      botAvatar.rotation.y = Math.PI / 2; // menghadap barat, ke arah pemain
-      applyPose(botAvatar, botSpeed > 0.6 ? 'walk' : null, time / 1000, delta, botSpeed);
-      const text = `Kamu ${practice.score.a} – ${practice.score.b} Lawan${practice.message ? ` · ${practice.message}` : ''}`;
-      if (scoreEl.textContent !== text) scoreEl.textContent = text;
-      scoreEl.style.display = 'block';
-    } else {
-      botPrev = null;
-      botSpeed = 0;
-      scoreEl.style.display = 'none';
-    }
-    swing.me = Math.max(0, swing.me - delta);
-    swing.bot = Math.max(0, swing.bot - delta);
-    myRacket.rotation.x = swing.me > 0 ? -1.7 * Math.sin((1 - swing.me / SWING_TIME) * Math.PI) : 0;
-    botRacket.rotation.x = swing.bot > 0 ? -1.7 * Math.sin((1 - swing.bot / SWING_TIME) * Math.PI) : 0;
+    const bd = badminton.update({ delta, moving, seated: seat !== null });
+    if (bd.facing !== null) facing = bd.facing; // menghadap net saat bertanding dan diam
 
     if (multiplayer) {
       multiplayer.sendInput(seat === null ? move.x : 0, seat === null ? move.z : 0, facing, time, seat, { x: me.x, z: me.z, y: me.y });
@@ -871,7 +771,7 @@ async function start() {
 
     const near = nearestSpot();
     const terminal = seat === null && !games.locksInput ? games.nearTerminal(me) : null;
-    setActLabel(games.locksInput ? '' : seat !== null ? 'Berdiri' : terminal ? terminal.label : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : practiceLabel());
+    setActLabel(games.locksInput ? '' : seat !== null ? 'Berdiri' : terminal ? terminal.label : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : badminton.label());
 
     const place = me.stair ? { id: 'stair', name: 'Tangga' } : roomAt(me.x, me.z, me.level);
     const placeKey = `${place.id}@${me.level}`;
@@ -889,7 +789,7 @@ async function start() {
 
   window.__villa = {
     state: () => ({
-      badminton: { phase: practice.phase, score: practice.score },
+      badminton: badminton.state(),
       x: me.x, z: me.z, y: me.y, level: me.level, stair: me.stair, place: roomAt(me.x, me.z, me.level), online: !!multiplayer, others: multiplayer ? multiplayer.view.count : 0,
       seat, game: games.state(), action: actBtn.hidden ? '' : actBtn.textContent, mapVisible: !mapCanvas.hidden, skyPhase: sky.phase(),
     }),
