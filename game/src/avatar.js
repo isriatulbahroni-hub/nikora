@@ -233,6 +233,15 @@ export function makeBubble(text) {
 const lerp = (a, b, k) => a + (b - a) * k;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
+/**
+ * Status duduk. Penanda eksplisit (userData.seated) menang; bila tidak ada (aula dan Royal hanya menurunkan avatar 0,3 m),
+ * panggul yang turun di bawah lantai berarti duduk. Gerak duduk/shalat masjid punya pengendali sendiri, jadi dikecualikan.
+ */
+function isSeated(group) {
+  const ud = group.userData;
+  return ud?.seated === true || (ud?.posture?.active !== true && group.position.y < -0.1);
+}
+
 /** Sudut siku (rad, menekuk ke depan) per aksi, dan saat duduk tangan bertumpu di paha. */
 function elbowTargets(act, seated) {
   if (seated) return { r: 1.22, l: 1.22 };
@@ -282,7 +291,7 @@ function applyEmote(group, act, delta, speed) {
   const em = ud.emote;
   const dur = em?.dur ?? 2.4;
   const elapsed = em ? clock() - em.t0 : -1;
-  const blocked = act === 'walk' || act === 'fall' || (speed ?? 0) > 0.6 || ud.seated === true || typeof ud.lie === 'string' || ud.posture?.active === true || ud.m?.fallStart != null;
+  const blocked = act === 'walk' || act === 'fall' || (speed ?? 0) > 0.6 || isSeated(group) || typeof ud.lie === 'string' || ud.posture?.active === true || ud.m?.fallStart != null;
   const e = em && !blocked && elapsed >= 0 && elapsed < dur ? emotePose(em.id, elapsed, dur) : null;
   const hp = ud.headPivot;
   if (!e || e.w < 0.001) {
@@ -326,20 +335,20 @@ function applyEmote(group, act, delta, speed) {
 function applyPoseBase(group, act, t, delta, speed) {
   // gestur dari stiker emoji (emoji-sticker-fx.js): berjalan tetap menang, dan tidak dipaksakan saat duduk
   const forced = group.userData?.forcedAct;
-  if (forced && act !== 'walk' && !((speed ?? 0) > 0.6) && group.userData.seated !== true && !(group.position.y < -0.1)) act = forced;
+  if (forced && act !== 'walk' && !((speed ?? 0) > 0.6) && !isSeated(group) && !(group.position.y < -0.1)) act = forced;
   const spinPivot = group.userData?.pivot;
   if (spinPivot) spinPivot.rotation.y = act === 'spin' ? (t * Math.PI * 2 * 1.25) % (Math.PI * 2) : 0; // putar satu kali tiap ~0,8 detik
   animateAura(group, t);
   const human = group.userData?.human;
   if (human) {
     group.rotation.x = 0; // model manusia tidak memakai condong; kemiringan tidur/jatuh ditambahkan pemanggil sesudahnya
-    human.update(act, t, delta, group.position.y < -0.1); // y turun = duduk di kursi
+    human.update(act, t, delta, isSeated(group)); // duduk: penanda seated, atau y turun di aula/Royal
     return;
   }
   const arms = group.userData?.arms;
   if (!arms) return;
   const k = 1 - Math.exp(-14 * Math.max(0, delta));
-  const seated = group.userData.seated === true;
+  const seated = isSeated(group);
   const gait = (group.userData.gait ??= { phase: 0, amp: 0 });
   const next = stepGait(gait, seated ? 0 : speed ?? (act === 'walk' ? GAIT.maxSpeed : 0), delta);
   gait.phase = next.phase;
@@ -487,7 +496,7 @@ function applyManners(group, act, t, delta) {
   const falling = fall !== null && fall.w > 0.001;
   const posture = ud.posture?.active === true; // gerak shalat/duduk bersila di masjid memakai pengendali sendiri
   const lying = typeof ud.lie === 'string';
-  const seated = ud.seated === true;
+  const seated = isSeated(group);
   const busy = act != null || seated || lying || posture || fall !== null;
 
   manners.touch(group.uuid, { x: px, z: pz, y: group.position.y, rot: group.rotation.y, busy, speed: m.spd }, now);
