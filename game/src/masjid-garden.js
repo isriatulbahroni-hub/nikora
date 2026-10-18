@@ -3,7 +3,7 @@
 // Malam hari air berkilau perak oleh cahaya bulan dan lentera menyala hangat dengan halo lembut.
 import * as THREE from 'three';
 import { canvasTexture } from './masjid-batch.js';
-import { GARDEN } from './masjid-garden-data.js';
+import { GARDEN, moonReflectionPoint, poolInside } from './masjid-garden-data.js';
 
 const GOLD = '#d8b04a';
 const TEAL = '#2f8f86';
@@ -53,6 +53,57 @@ function lampHaloTexture() {
   return tex;
 }
 
+// Cahaya hangat lentera di tanah (cakram lembut, aditif) menggantikan lampu titik sungguhan yang berat untuk HP.
+function groundGlowTexture() {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 128;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  grad.addColorStop(0, 'rgba(255,200,120,0.85)');
+  grad.addColorStop(0.45, 'rgba(255,180,90,0.32)');
+  grad.addColorStop(1, 'rgba(255,170,80,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Jejak pantulan bulan: pita perak memanjang searah pandangan (lebar di tengah, memudar di ujung) dengan butiran kilau.
+function glintTexture() {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 256;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, 'rgba(220,235,255,0)');
+  grad.addColorStop(0.5, 'rgba(235,242,255,0.9)');
+  grad.addColorStop(1, 'rgba(220,235,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 256);
+  g.globalCompositeOperation = 'destination-in'; // sisi kiri-kanan memudar
+  const side = g.createLinearGradient(0, 0, 64, 0);
+  side.addColorStop(0, 'rgba(0,0,0,0)');
+  side.addColorStop(0.5, 'rgba(0,0,0,1)');
+  side.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = side;
+  g.fillRect(0, 0, 64, 256);
+  g.globalCompositeOperation = 'source-over';
+  let seed = 9;
+  const rand = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  for (let i = 0; i < 46; i += 1) {
+    g.fillStyle = `rgba(255,255,255,${0.35 + rand() * 0.5})`;
+    g.fillRect(8 + rand() * 48, 20 + rand() * 216, 1 + rand() * 4, 1);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 /**
  * Menambahkan taman ke batch yang diberikan dan membuat mesh air/sinar. Mengembalikan { update(night, tSeconds) }.
  * night = 0 (siang) .. 1 (malam), sama dengan atm.night dari langit.
@@ -65,10 +116,22 @@ export function createGarden({ root, boxes, cyls, cones, balls, glow, props, ren
   let rippleTex = null;
   let waterMat = null;
   let haloMat = null;
+  let groundMat = null;
+  let glint = null;
+  const lampSpots = []; // titik lentera untuk cahaya tanah
   try {
     rippleTex = canvasTexture([128, 128], rippleDraw, renderer, [3, 6]);
     waterMat = new THREE.MeshStandardMaterial({ color: WATER_DAY, roughness: 0.12, metalness: 0.15, emissive: new THREE.Color('#cfe3ff'), emissiveMap: rippleTex, emissiveIntensity: 0 });
     haloMat = new THREE.SpriteMaterial({ map: lampHaloTexture(), color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    groundMat = new THREE.MeshBasicMaterial({ map: groundGlowTexture(), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    glint = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.6, 9),
+      new THREE.MeshBasicMaterial({ map: glintTexture(), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }),
+    );
+    glint.rotation.order = 'YXZ';
+    glint.rotation.x = -Math.PI / 2;
+    glint.visible = false;
+    root.add(glint);
   } catch (error) {
     console.warn('[taman] tekstur air/lentera tidak bisa dibuat, memakai bahan polos', error);
     waterMat = new THREE.MeshStandardMaterial({ color: WATER_DAY, roughness: 0.2 });
@@ -133,6 +196,7 @@ export function createGarden({ root, boxes, cyls, cones, balls, glow, props, ren
     balls.add(gx, 8.3, GARDEN.z, 0.38, 0.38, 0.38, GOLD);
     cyls.add(gx, 0.65, GARDEN.z, 0.9, 0.5, 0.9, '#8a5a2f');
     glow.add(gx, 4.4, GARDEN.z, 0.35, 0.45, 0.35, '#ffd98a');
+    lampSpots.push([gx, GARDEN.z, 11]);
     if (haloMat) {
       const h = new THREE.Sprite(haloMat);
       h.position.set(gx, 4.4, GARDEN.z);
@@ -157,10 +221,17 @@ export function createGarden({ root, boxes, cyls, cones, balls, glow, props, ren
         boxes.add(p.x, 1.0, p.z - f * 0.5, along, 0.8, 0.12, WOOD);
         for (const o of [-1.9, 1.9]) boxes.add(p.x + o, 0.25, p.z, 0.2, 0.5, 1, '#3a3a3a');
       }
+    } else if (p.type === 'gseat') {
+      // bangku di atas alas gazebo (alas setinggi 0,4 m), sandaran menghadap ke luar
+      const f = p.face;
+      boxes.add(p.x, 0.88, p.z, 4.4, 0.12, 1, WOOD);
+      boxes.add(p.x, 1.4, p.z - f * 0.46, 4.4, 0.85, 0.12, WOOD);
+      for (const o of [-1.9, 1.9]) boxes.add(p.x + o, 0.64, p.z, 0.2, 0.48, 0.9, '#3a3a3a');
     } else if (p.type === 'glamp') {
       cyls.add(p.x, 0.15, p.z, 0.3, 0.3, 0.3, '#3b3b3b');
       cyls.add(p.x, 1.6, p.z, 0.12, 3.2, 0.12, '#3b3b3b');
       glow.add(p.x, 3.5, p.z, 0.42, 0.5, 0.42, '#ffd98a');
+      lampSpots.push([p.x, p.z, 9]);
       cones.add(p.x, 4.1, p.z, 0.5, 0.4, 0.5, GOLD);
       if (haloMat) {
         const h = new THREE.Sprite(haloMat);
@@ -182,8 +253,20 @@ export function createGarden({ root, boxes, cyls, cones, balls, glow, props, ren
     }
   }
 
+  if (groundMat) {
+    for (const [x, z, size] of lampSpots) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(size, size), groundMat);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(x, 0.24, z);
+      m.renderOrder = 2;
+      root.add(m);
+    }
+  }
+  const camPos = new THREE.Vector3();
+
   return {
-    update(night, t) {
+    /** ctx = { camera, moonDir } opsional: dengan itu pantulan bulan di kolam dihitung dari posisi kamera. */
+    update(night, t, ctx) {
       const k = clamp((night - 0.3) / 0.6, 0, 1); // sama dengan tingkat malam bulan
       waterMat.color.copy(WATER_DAY).lerp(WATER_NIGHT, k);
       waterMat.emissiveIntensity = 0.9 * k; // air berkilau perak oleh cahaya bulan
@@ -194,6 +277,19 @@ export function createGarden({ root, boxes, cyls, cones, balls, glow, props, ren
       if (haloMat) haloMat.opacity = 0.85 * k;
       const pulse = 1 + 0.08 * Math.sin(t * 3.1);
       for (const j of jets) j.scale.set(1, pulse, 1);
+      if (groundMat) groundMat.opacity = 0.5 * k;
+      if (glint && ctx?.camera && ctx.moonDir) {
+        ctx.camera.getWorldPosition(camPos);
+        const pt = moonReflectionPoint(camPos, ctx.moonDir, 0.64);
+        const inside = pt ? poolInside(pt.x, pt.z) : 0;
+        const a = k * inside * (0.78 + 0.22 * Math.sin(t * 4.3) * Math.sin(t * 2.7 + 1));
+        glint.visible = a > 0.01;
+        if (glint.visible) {
+          glint.material.opacity = Math.min(1, a);
+          glint.position.set(pt.x, 0.65, pt.z);
+          glint.rotation.y = Math.atan2(camPos.x - pt.x, camPos.z - pt.z); // memanjang ke arah penonton
+        }
+      }
     },
   };
 }
