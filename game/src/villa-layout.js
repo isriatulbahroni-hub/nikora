@@ -313,11 +313,15 @@ function buildSpots(props) {
   return spots.map((s, id) => ({ id, ...s }));
 }
 
-/** Posisi/arah avatar saat memakai titik duduk atau tidur (tidur = berbaring telentang). y sudah termasuk tinggi lantai. */
+/**
+ * Posisi/arah avatar saat memakai titik duduk atau tidur. y sudah termasuk tinggi lantai.
+ * Tidur = berbaring TELENTANG (dada menghadap ke atas): tilt +90° dan menghadap berlawanan (rotY = rot + 180°), sehingga
+ * kepala tetap di sisi papan kepala. Dengan tilt -90° (bawaan lama) avatar jadi tengkurap.
+ */
 export function spotPose(spot) {
   const base = levelY(spot.level);
   if (spot.kind === 'sleep') {
-    return { x: spot.x + 0.83 * Math.sin(spot.rot), z: spot.z + 0.83 * Math.cos(spot.rot), y: base + 0.9, rotY: spot.rot, tilt: -Math.PI / 2 };
+    return { x: spot.x + 0.83 * Math.sin(spot.rot), z: spot.z + 0.83 * Math.cos(spot.rot), y: base + 0.9, rotY: spot.rot + Math.PI, tilt: Math.PI / 2 };
   }
   return { x: spot.x, z: spot.z, y: base + SEATED_DROP, rotY: spot.rot, tilt: 0 };
 }
