@@ -551,7 +551,7 @@ async function start() {
     // di dalam bangunan: cahaya langit dikurangi dan lampu dalam ruangan menyala halus mengikuti pemain
     const place = world.roomAt(me.x, me.z);
     indoorK += ((place.indoor ? 1 : 0) - indoorK) * (1 - Math.exp(-3 * delta));
-    built.setIndoor(indoorK);
+    built.setIndoor(indoorK, { x: me.x, z: me.z, camera });
     indoorLight.intensity = 60 * indoorK;
     indoorLight.position.set(me.x, 3, me.z);
 

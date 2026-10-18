@@ -22,7 +22,9 @@ export function createMasjidSky({ scene, hemi, sun, renderer, search = '' }) {
   const baseExposure = renderer?.toneMappingExposure ?? 1;
   const decor = createNightDecor({ radius: 1200, stars: 900, moonRadius: 34, seed: 2026 });
   scene.add(decor.group);
-  const moonDir = new THREE.Vector3(...FRAMES.night.sunPos).normalize();
+  // Bulan dilukis rendah di timur laut (sekitar 14° di atas cakrawala, 40° dari utara) supaya terlihat dari taman tanpa menengadah
+  // dan pantulannya jatuh di kolam; arah cahaya malam tetap dari FRAMES.night.sunPos (lebih tinggi) agar tanah cukup terang.
+  const moonDir = new THREE.Vector3(260, 100, -310).normalize();
   const atm = { hemiI: FRAMES.day.hemiI, sunI: FRAMES.day.sunI, night: 0 };
   const SRGB = THREE.SRGBColorSpace;
 
@@ -45,6 +47,9 @@ export function createMasjidSky({ scene, hemi, sun, renderer, search = '' }) {
 
   return {
     atm,
+    moonDir,
+    /** Memusatkan bintang dan bulan pada pemain supaya tidak bergeser saat berjalan ke tepi kompleks. */
+    follow: (x, z) => decor.follow(x, z),
     phase: () => tracker.phase,
     setMode: (mode) => tracker.setMode(mode),
     /** Dipanggil tiap frame: bergerak halus menuju fase target dan menerapkan atmosfer hanya saat nilainya berubah. */
