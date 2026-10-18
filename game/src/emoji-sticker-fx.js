@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { INTENSITY, PARTICLE_GLYPHS, STICKERS, isIntensity, motionAt } from './emoji-sticker-system.js';
+import { pickClip } from './avatar-extra-anims.js';
 
 const DURATION_MS = 2400;
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -325,6 +326,9 @@ export function playSticker(group, index, { listener = null } = {}) {
   const particles = budget && level.particles > 0 ? createParticles(group, spec.particles, [0, 0, 0], level.particles) : null;
   const face = makeFaceOverlay(group, spec.face);
   if (spec.act) group.userData.forcedAct = spec.act; // gestur tubuh sungguhan, dibaca applyPose di avatar.js
+  const clip = pickClip(spec.clip);
+  const human = group.userData.human;
+  if (clip && human) human.forcedClip = clip; // klip Mixamo untuk model manusia (HumanRig memutarnya bila berkasnya ada)
 
   let finished = false;
   const done = () => {
@@ -342,6 +346,7 @@ export function playSticker(group, index, { listener = null } = {}) {
     particles?.dispose();
     face?.dispose();
     if (spec.act && group.userData.forcedAct === spec.act) group.userData.forcedAct = null;
+    if (clip && human?.forcedClip === clip) human.forcedClip = null;
     if (group.userData.stickerRun === run) group.userData.stickerRun = null;
   };
   const run = { cancel: done };
