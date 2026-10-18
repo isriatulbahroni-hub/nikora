@@ -2,7 +2,8 @@
 // Pemilihan animasi dibuat murni (heroAnim/resolveClip) supaya bisa diuji tanpa THREE/DOM; bagian THREE hanya di HeroRig.
 // Konvensi arah game horor: rot = 0 menghadap +z, maju = (sin rot, cos rot). Model Mixamo menghadap +z, jadi tanpa putaran tambahan.
 //
-// Berkas model: game/public/models/horor/hero.glb (klip: Idle, CrouchWalk, Run, WalkTurnLeft, HitReaction, Die).
+// Berkas model: game/public/models/horor/*.glb. Hero bawaan: hero.glb (klip: Idle, CrouchWalk, Run, WalkTurnLeft, HitReaction, Die).
+// Hero lain cukup diunggah ke folder yang sama (daftar & pemilihnya ada di horor-heroes.js); semua hero memakai nama klip yang sama.
 // Bila berkasnya belum ada, createHero() memakai tokoh pengganti (kapsul) dengan API yang sama, jadi game tetap jalan.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -54,29 +55,33 @@ export function resolveClip(plan, available) {
 }
 
 // ---------- Pemuatan model ----------
-let modelPromise = null;
+const modelPromises = new Map(); // jalur berkas -> Promise; tiap hero dimuat sekali
 
-/** Muat hero.glb sekali (di-cache). Ditolak bila berkasnya tidak ada atau rusak. */
-export function loadHeroModel() {
-  modelPromise ??= new GLTFLoader().loadAsync(`${BASE}${HERO_FILE}`).then((gltf) => {
-    const scene = gltf.scene;
-    const box = new THREE.Box3().setFromObject(scene);
-    const scale = HERO_HEIGHT / (box.max.y - box.min.y);
-    scene.scale.setScalar(scale);
-    scene.position.y = -box.min.y * scale;
-    const holder = new THREE.Group();
-    holder.add(scene);
-    scene.traverse((o) => {
-      if (o.isMesh) {
-        o.castShadow = true;
-        o.frustumCulled = false; // mesh berangka: kotak batas dari pose rest tidak ikut animasi
-      }
+/** Muat satu berkas hero (jalur relatif BASE_URL, bawaan hero.glb) sekali dan di-cache. Ditolak bila berkasnya tidak ada atau rusak. */
+export function loadHeroModel(file = HERO_FILE) {
+  let promise = modelPromises.get(file);
+  if (!promise) {
+    promise = new GLTFLoader().loadAsync(`${BASE}${file}`).then((gltf) => {
+      const scene = gltf.scene;
+      const box = new THREE.Box3().setFromObject(scene);
+      const scale = HERO_HEIGHT / (box.max.y - box.min.y);
+      scene.scale.setScalar(scale);
+      scene.position.y = -box.min.y * scale;
+      const holder = new THREE.Group();
+      holder.add(scene);
+      scene.traverse((o) => {
+        if (o.isMesh) {
+          o.castShadow = true;
+          o.frustumCulled = false; // mesh berangka: kotak batas dari pose rest tidak ikut animasi
+        }
+      });
+      return { holder, clips: gltf.animations };
     });
-    return { holder, clips: gltf.animations };
-  });
-  // gagal tidak boleh di-cache: kalau berkas baru diunggah, muat ulang berikutnya harus mencoba lagi
-  modelPromise.catch(() => { modelPromise = null; });
-  return modelPromise;
+    modelPromises.set(file, promise);
+    // gagal tidak boleh di-cache: kalau berkas baru diunggah, muat ulang berikutnya harus mencoba lagi
+    promise.catch(() => { if (modelPromises.get(file) === promise) modelPromises.delete(file); });
+  }
+  return promise;
 }
 
 /** Pengendali animasi satu hero. root = Group yang ditambahkan ke scene; atur posisi lewat setPose. */
@@ -143,7 +148,7 @@ export class HeroRig {
   }
 }
 
-/** Pengganti saat hero.glb belum ada: kapsul gelap dengan API sama, tanpa animasi. */
+/** Pengganti saat berkas hero belum ada: kapsul gelap dengan API sama, tanpa animasi. */
 export class PlaceholderHero {
   constructor() {
     this.root = new THREE.Group();
@@ -179,10 +184,13 @@ export class PlaceholderHero {
   }
 }
 
-/** Buat hero: model animasi bila hero.glb termuat, kalau tidak kapsul pengganti. Selalu mengembalikan objek yang bisa dipakai. */
-export async function createHero() {
+/**
+ * Buat hero dari satu berkas (jalur relatif BASE_URL; dari pilihan pemain: createHero(heroPath(picker.hero))).
+ * Model animasi bila berkasnya termuat, kalau tidak kapsul pengganti. Selalu mengembalikan objek yang bisa dipakai.
+ */
+export async function createHero(file = HERO_FILE) {
   try {
-    return new HeroRig(await loadHeroModel());
+    return new HeroRig(await loadHeroModel(file));
   } catch {
     return new PlaceholderHero();
   }

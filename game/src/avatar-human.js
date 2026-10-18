@@ -2,12 +2,12 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { HUMAN_ROSTER } from './avatar-roster.js';
 
 const BASE = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/';
 export const HUMAN_HEIGHT = 1.75;
-export const HUMAN_MODELS = [
-  { id: 'michelle', name: 'Michelle', file: 'models/michelle.glb' },
-];
+// Daftar karakter ada di avatar-roster.js (satu sumber untuk editor, jaringan, dan pemuat model ini).
+export const HUMAN_MODELS = HUMAN_ROSTER.map(({ id, name, file }) => ({ id, name, file }));
 
 export const boneKeyOf = (name) => name.replace(/^mixamorig:?/, '');
 
