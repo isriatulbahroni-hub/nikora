@@ -166,7 +166,8 @@ test('spotPose: duduk lebih rendah, tidur berbaring dengan kepala ke papan kepal
   assert.ok(Math.abs(spotPose({ kind: 'sit', x: 1, z: 2, rot: 0, level: 2 }).y - (levelY(2) + sit.y)) < 1e-9);
   const bed = world.spots.find((s) => s.kind === 'sleep' && s.level === 0 && s.z < 10);
   const p = spotPose(bed);
-  assert.equal(p.tilt, -Math.PI / 2);
+  assert.equal(p.tilt, Math.PI / 2, 'berbaring telentang (bukan tengkurap)');
+  assert.ok(Math.abs(p.rotY - (bed.rot + Math.PI)) < 1e-9, 'badan diputar 180 derajat supaya kepala tetap di papan kepala');
   assert.ok(p.y > 0.7);
   assert.ok(p.z > bed.z, 'kaki di sisi selatan, kepala di utara');
 });
