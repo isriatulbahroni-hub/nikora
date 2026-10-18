@@ -1,5 +1,7 @@
 // Konfigurasi avatar buatan pemain (murni, tanpa THREE/DOM supaya mudah diuji).
 // Dikirim ke pemain lain sebagai array kecil [pakaian, kulit, gaya rambut, warna rambut, aksesori, karakter].
+import { HUMAN_ROSTER } from './avatar-roster.js';
+
 export const OUTFITS = [
   { name: 'Hijau Zamrud', hex: 0x2e9e6b }, { name: 'Maroon', hex: 0x8c2f39 }, { name: 'Emas', hex: 0xd4a84b },
   { name: 'Biru Navy', hex: 0x2f4a7a }, { name: 'Putih Gading', hex: 0xf2e4cf }, { name: 'Hitam', hex: 0x2a2a30 },
@@ -18,8 +20,8 @@ export const HAIR_COLORS = [
   { name: 'Maroon', hex: 0x8c2f39 }, { name: 'Hijau', hex: 0x2e9e6b }, { name: 'Emas', hex: 0xd4a84b },
 ];
 export const ACCESSORIES = ['Tanpa', 'Kacamata', 'Peci', 'Kerudung', 'Blangkon', 'Mahkota', 'Topi'];
-// Karakter: 0 = avatar sederhana yang bisa dikustomisasi; 1.. = model manusia (urutan sama dengan HUMAN_MODELS).
-export const CHARACTERS = [{ id: null, name: 'Sederhana' }, { id: 'michelle', name: 'Michelle' }];
+// Karakter: 0 = avatar sederhana yang bisa dikustomisasi; 1.. = model manusia, urutan dari HUMAN_ROSTER (avatar-roster.js).
+export const CHARACTERS = [{ id: null, name: 'Sederhana' }, ...HUMAN_ROSTER.map(({ id, name }) => ({ id, name }))];
 
 const SIZES = [OUTFITS.length, SKINS.length, HAIR_STYLES.length, HAIR_COLORS.length, ACCESSORIES.length, CHARACTERS.length];
 export const FIELDS = ['o', 's', 'h', 'k', 'a', 'm'];

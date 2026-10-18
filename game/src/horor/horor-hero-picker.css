@@ -1,0 +1,21 @@
+.horor-hero-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.horor-hero-opt {
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  background: rgba(20, 16, 24, 0.8);
+  color: #f4efe6;
+  font: inherit;
+  cursor: pointer;
+}
+
+.horor-hero-opt[aria-checked='true'] {
+  border-color: #e8c36a;
+  background: rgba(232, 195, 106, 0.18);
+}
