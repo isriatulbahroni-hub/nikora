@@ -27,7 +27,7 @@ test('nearestTerminal: dekat = ada, jauh/di tangga/lantai atas = tidak', () => {
 });
 
 test('papan nama berada di atas bukaan pintu dan di bawah puncak dinding arena', () => {
-  assert.equal(GAME_SIGNS.length, 2);
+  assert.equal(GAME_SIGNS.length, 3);
   for (const s of GAME_SIGNS) {
     assert.ok(s.y - s.h / 2 >= DOOR_HEIGHT, `${s.id} menutupi bukaan pintu`);
     assert.ok(s.y + s.h / 2 <= ARENA_WALL_HEIGHT, `${s.id} melewati puncak dinding`);
