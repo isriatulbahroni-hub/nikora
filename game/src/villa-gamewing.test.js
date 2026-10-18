@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ARENA_WALL_HEIGHT, BADMINTON_COURTS, COURT, GAMES, GAME_DOORS, GAME_ROOFS, GAME_ROOMS, GAME_TERMINALS, GAME_ZONES,
-  courtLines, gameEdgeHeight, gameRoomAllowed, gameRoomFor, insideGameWing,
+  courtLines, gameEdgeHeight, gameRoomAllowed, gameRoomFor, insideGameWing, nearestTerminal,
 } from './villa-gamewing.js';
 import { BOUNDS, DOORS, PLAYER_RADIUS, ROOFS, ROOMS, SPAWN, WALL_HEIGHT, ZONES, getVillaWorld, isWalkable, roomAt, sameVoiceSpace } from './villa-layout.js';
 
@@ -144,7 +144,70 @@ test('terminal berada di dalam arenanya, dekat pintu', () => {
   for (const t of GAME_TERMINALS) {
     const room = gameRoomFor(t.game);
     assert.ok(t.x > room.rect[0] && t.x < room.rect[2] && t.z > room.rect[1] && t.z < room.rect[3], `${t.id} di luar arenanya`);
-    const door = GAME_DOORS.find((d) => Math.abs(d.x - t.x) < 1);
+    // beberapa pintu bisa sejajar di x yang sama (plaza): pakai yang terdekat ke terminal
+    const door = GAME_DOORS.filter((d) => Math.abs(d.x - t.x) < 1).sort((a, b) => Math.abs(a.z - t.z) - Math.abs(b.z - t.z))[0];
     assert.ok(door && Math.abs(door.z - t.z) < 8, `${t.id} jauh dari pintu`);
   }
+});
+
+// ---------------------------------------------------------------- Ruang MOBA (jendela ke server MOBA)
+const mobaRoom = GAME_ROOMS.find((r) => r.game === 'moba');
+
+test('ruang MOBA terdaftar, siap dimainkan, dan berada di dalam pagar tanpa menimpa ruangan lain', () => {
+  assert.ok(mobaRoom, 'ruang MOBA tidak ada');
+  assert.equal(GAMES.moba.room, mobaRoom.id);
+  assert.equal(GAMES.moba.status, 'ready');
+  assert.equal(GAMES.moba.scary, false);
+  const [x1, z1, x2, z2] = mobaRoom.rect;
+  assert.ok(x1 > BOUNDS.minX + 1.5 && x2 < BOUNDS.maxX - 1.5 && z1 > BOUNDS.minZ && z2 < BOUNDS.maxZ - 6);
+  for (const r of ROOMS.filter((q) => q.id !== mobaRoom.id)) assert.ok(!overlap(mobaRoom.rect, r.rect), `ruang MOBA menimpa ${r.id}`);
+  for (const z of ZONES.filter((q) => q.kind !== 'garden')) assert.ok(!overlap(mobaRoom.rect, z.rect), `ruang MOBA menimpa zona ${z.id}`);
+});
+
+test('pintu ruang MOBA menghadap plaza: bisa dilewati, dinding menahan di sisi lain', () => {
+  const door = GAME_DOORS.find((d) => d.x === mobaRoom.rect[2] && d.z > mobaRoom.rect[1] && d.z < mobaRoom.rect[3]);
+  assert.ok(door, 'pintu ruang MOBA tidak ada');
+  assert.ok(DOORS.some((q) => q.x === door.x && q.z === door.z));
+  assert.ok(door.width >= 3);
+  const inside = walk(at(-3, door.z), -0.1, 0, 60);
+  assert.ok(inside.x < door.x - 1, `tidak bisa masuk ruang MOBA, x=${inside.x}`);
+  assert.equal(roomAt(inside.x, inside.z).id, 'game_moba');
+  const blocked = walk(at(-3, 73), -0.1, 0, 60);
+  assert.ok(blocked.x > door.x, `menembus dinding ruang MOBA, x=${blocked.x}`);
+  const back = walk(at(-15, door.z), 0.1, 0, 120);
+  assert.ok(back.x > door.x, 'tidak bisa keluar lewat pintu');
+  const wallS = walk(at(-18, 74), 0, 0.1, 60);
+  assert.ok(wallS.z < BOUNDS.maxZ - 6, `menembus dinding selatan, z=${wallS.z}`);
+});
+
+test('terminal MOBA ada di dalam ruangnya dan dekat pintu; pemain di dalam ruang bisa membukanya', () => {
+  const term = GAME_TERMINALS.find((t) => t.game === 'moba');
+  const [x1, z1, x2, z2] = mobaRoom.rect;
+  assert.ok(term.x > x1 && term.x < x2 && term.z > z1 && term.z < z2);
+  assert.ok(Math.hypot(term.x - x2, term.z - 75) < 5, 'terminal jauh dari pintu');
+  assert.equal(nearestTerminal(at(term.x - 1.5, term.z))?.id, 'term_moba');
+  assert.equal(nearestTerminal(at(-20, 74)), null, 'terlalu jauh dari terminal');
+  assert.equal(roomAt(term.x, term.z).id, 'game_moba');
+  assert.equal(sameVoiceSpace(at(-18, 75), at(0, 75)), false, 'ruang MOBA terpisah dari plaza');
+  assert.equal(overlap(mobaRoom.rect, west.rect), false);
+  assert.ok(mobaRoom.rect[1] - west.rect[3] >= 1.6, 'atap ruang MOBA dan arena bulu tangkis saling menimpa');
+});
+
+test('pemuat MOBA terpasang di GameHost dan permainannya dibuka dari dalam ruang MOBA saja', async () => {
+  const { GAME_LOADERS } = await import('./game-registry.js');
+  const { createGameHost } = await import('./game-host.js');
+  assert.equal(typeof GAME_LOADERS.moba, 'function');
+  const mod = await GAME_LOADERS.moba();
+  assert.equal(typeof (mod.default ?? mod.game).mount, 'function');
+  const host = createGameHost({
+    catalog: GAMES,
+    loaders: { moba: async () => ({ default: { mount: () => ({ destroy() {} }) } }) },
+    inRoom: (id, me) => roomAt(me.x, me.z, me.level ?? 0).id === GAMES[id]?.room,
+  });
+  const outside = await host.open('moba', { id: 'a', x: 0, z: 60, level: 0 });
+  assert.equal(outside.ok, false);
+  assert.equal(outside.reason, 'wrong-room');
+  const inside = await host.open('moba', { id: 'a', x: -20, z: 75, level: 0 });
+  assert.equal(inside.ok, true);
+  host.close('manual');
 });
