@@ -4,6 +4,7 @@ import { HumanRig, loadHumanModel, neutralToLocal } from './avatar-human.js';
 import { auraFor } from './avatar-aura.js';
 import { GAIT, gaitPose, labelMetrics, stepGait } from './villa-motion.js';
 import { FALL_TOTAL, HEAD_YAW_MAX, LIE_ROLL, createMannersRegistry, fallPose, idleGlance } from './avatar-manners.js';
+import { emotePose } from './avatar-emotes.js';
 
 // Proporsi avatar sederhana (meter): tinggi total ±1,72 m, kepala ±1/7,5 tinggi badan, kaki ±47% tinggi.
 const HIP_Y = 0.82;
@@ -114,6 +115,7 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
   for (const [side, sx] of [['l', -0.24], ['r', 0.24]]) {
     const pivot = new THREE.Group();
     pivot.position.set(sx, 1.28, 0);
+    pivot.rotation.order = 'XZY'; // putar lengan atas (y) dulu, lalu buka ke samping (z), lalu ayun ke depan (x); lihat avatar-emotes.js
     const elbow = new THREE.Group();
     elbow.position.y = -0.27;
     elbow.add(mesh(new THREE.CapsuleGeometry(0.046, 0.13, 4, 8), armMaterial, 0, -0.12, 0), mesh(new THREE.SphereGeometry(0.055, 10, 8), skinMaterial, 0, -0.255, 0));
@@ -140,6 +142,15 @@ export function createAvatar({ color = 0x70c7a2, skin = 0xf1e3d3, name = null, c
     legs[side] = { hip, knee, ankle };
   }
 
+  // Badan atas (badan, leher, kepala, lengan) di pivot pinggul supaya bisa membungkuk (hormat, tertawa, sedih) tanpa memutar kaki.
+  const upper = new THREE.Group();
+  upper.position.set(0, HIP_Y, 0);
+  for (const part of [body, neck, marker, headPivot, arms.l, arms.r]) {
+    part.position.y -= HIP_Y;
+    upper.add(part);
+  }
+  group.add(upper);
+  group.userData.upper = upper;
   group.userData.arms = arms;
   group.userData.elbows = elbows;
   group.userData.legs = legs;
@@ -244,8 +255,72 @@ function elbowTargets(act, seated) {
 export function applyPose(group, act, t, delta = 1 / 60, speed) {
   const ud = group.userData;
   if (ud?.pivot && ud.mLift) ud.pivot.position.y -= ud.mLift; // lapisan frame lalu dilepas dulu supaya tidak menumpuk
+  if (ud?.pivot && ud.eDip) {
+    ud.pivot.position.y -= ud.eDip;
+    ud.eDip = 0;
+  }
   applyPoseBase(group, act === 'fall' ? null : act, t, delta, speed);
   applyManners(group, act, t, delta);
+  applyEmote(group, act, delta, speed);
+}
+
+/**
+ * Emote berpose penuh (avatar-emotes.js): userData.emote = { id, t0, dur } (t0 dalam detik, jam performance.now()/1000).
+ * Berjalan, duduk, berbaring, jatuh, dan model manusia mengalahkan emote. Dipanggil terakhir, di atas pose dasar dan sopan santun:
+ * lengan memakai konvensi lengan kanan (kiri dicerminkan: z dan t dibalik), badan atas membungkuk di pinggul
+ * (spine + = condong ke depan = -z), kepala menambah tengok/angguk/miring, dip menurunkan badan (duduk).
+ */
+function applyEmote(group, act, delta, speed) {
+  const ud = group.userData;
+  const up = ud?.upper;
+  const arms = ud?.arms;
+  const elbows = ud?.elbows;
+  if (!up || !arms || !elbows || ud.human) return;
+  const k = 1 - Math.exp(-14 * Math.max(0, delta));
+  for (const side of ['r', 'l']) arms[side].rotation.y = lerp(arms[side].rotation.y, 0, k); // putaran lengan atas kembali saat emote selesai
+
+  const em = ud.emote;
+  const dur = em?.dur ?? 2.4;
+  const elapsed = em ? clock() - em.t0 : -1;
+  const blocked = act === 'walk' || act === 'fall' || (speed ?? 0) > 0.6 || ud.seated === true || typeof ud.lie === 'string' || ud.posture?.active === true || ud.m?.fallStart != null;
+  const e = em && !blocked && elapsed >= 0 && elapsed < dur ? emotePose(em.id, elapsed, dur) : null;
+  const hp = ud.headPivot;
+  if (!e || e.w < 0.001) {
+    up.rotation.x = lerp(up.rotation.x, 0, k);
+    if (hp) hp.rotation.z = lerp(hp.rotation.z, 0, k);
+    return;
+  }
+  const w = e.w;
+  const setArm = (side, a, sgn) => {
+    if (!a) return; // lengan dibiarkan mengikuti pose dasar
+    arms[side].rotation.x = mix(arms[side].rotation.x, a.x, w);
+    arms[side].rotation.z = mix(arms[side].rotation.z, sgn * a.z, w);
+    arms[side].rotation.y = mix(arms[side].rotation.y, sgn * a.t, w);
+    elbows[side].rotation.x = mix(elbows[side].rotation.x, a.e, w);
+    elbows[side].rotation.z = mix(elbows[side].rotation.z, 0, w);
+  };
+  setArm('r', e.r, 1);
+  setArm('l', e.l, -1);
+  up.rotation.x = -e.spine * w; // negatif = condong ke depan (-z)
+  if (hp) {
+    hp.rotation.y += e.headYaw * w; // + = menoleh ke kiri
+    hp.rotation.x -= e.headPitch * w; // + = menunduk
+    hp.rotation.z = e.headRoll * w; // + = miring ke kiri
+  }
+  const legs = ud.legs;
+  if (e.legs && legs) {
+    legs.r.hip.rotation.x = mix(legs.r.hip.rotation.x, e.legs.hipR, w);
+    legs.l.hip.rotation.x = mix(legs.l.hip.rotation.x, e.legs.hipL, w);
+    legs.r.knee.rotation.x = mix(legs.r.knee.rotation.x, e.legs.kneeR, w);
+    legs.l.knee.rotation.x = mix(legs.l.knee.rotation.x, e.legs.kneeL, w);
+    legs.r.hip.rotation.z = mix(legs.r.hip.rotation.z, e.legs.spread, w);
+    legs.l.hip.rotation.z = mix(legs.l.hip.rotation.z, -e.legs.spread, w);
+  }
+  const dip = e.dip * w;
+  if (ud.pivot && dip) {
+    ud.pivot.position.y += dip;
+    ud.eDip = dip;
+  }
 }
 
 function applyPoseBase(group, act, t, delta, speed) {
