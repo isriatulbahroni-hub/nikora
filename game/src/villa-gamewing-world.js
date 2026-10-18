@@ -4,8 +4,8 @@
 import * as THREE from 'three';
 import { BADMINTON_COURTS, COURT, GAMES, GAME_ARCH, GAME_ROOMS, GAME_SIGNS, GAME_TERMINALS, GAME_ZONES, courtLines } from './villa-gamewing.js';
 
-const FLOOR_COLORS = Object.freeze({ game_badminton: 0x2f7d4f, game_horror: 0x2b1d22 });
-const GAME_COLORS = Object.freeze({ badminton: '#39d98a', horror: '#ff4d4d' });
+const FLOOR_COLORS = Object.freeze({ game_badminton: 0x2f7d4f, game_horror: 0x2b1d22, game_moba: 0x1b2540 });
+const GAME_COLORS = Object.freeze({ badminton: '#39d98a', horror: '#ff4d4d', moba: '#7aa2ff' });
 const FACE_ROT = Object.freeze({ n: 0, s: Math.PI, w: Math.PI / 2, e: -Math.PI / 2 }); // depan model = utara (-z)
 
 /** Kanvas teks sebagai tekstur. Mengembalikan null bila 2D canvas tidak tersedia (mis. saat uji tanpa DOM penuh). */
