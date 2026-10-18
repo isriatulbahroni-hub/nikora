@@ -153,10 +153,10 @@ test('terminal berada di dalam arenanya, dekat pintu', () => {
 // ---------------------------------------------------------------- Ruang MOBA (jendela ke server MOBA)
 const mobaRoom = GAME_ROOMS.find((r) => r.game === 'moba');
 
-test('ruang MOBA terdaftar, siap dimainkan, dan berada di dalam pagar tanpa menimpa ruangan lain', () => {
+test('ruang MOBA terdaftar, berstatus segera hadir (menunggu server MOBA), dan berada di dalam pagar tanpa menimpa ruangan lain', () => {
   assert.ok(mobaRoom, 'ruang MOBA tidak ada');
   assert.equal(GAMES.moba.room, mobaRoom.id);
-  assert.equal(GAMES.moba.status, 'ready');
+  assert.equal(GAMES.moba.status, 'soon');
   assert.equal(GAMES.moba.scary, false);
   const [x1, z1, x2, z2] = mobaRoom.rect;
   assert.ok(x1 > BOUNDS.minX + 1.5 && x2 < BOUNDS.maxX - 1.5 && z1 > BOUNDS.minZ && z2 < BOUNDS.maxZ - 6);
@@ -199,8 +199,10 @@ test('pemuat MOBA terpasang di GameHost dan permainannya dibuka dari dalam ruang
   assert.equal(typeof GAME_LOADERS.moba, 'function');
   const mod = await GAME_LOADERS.moba();
   assert.equal(typeof (mod.default ?? mod.game).mount, 'function');
+  const soonHost = createGameHost({ catalog: GAMES, loaders: GAME_LOADERS, inRoom: () => true });
+  assert.equal((await soonHost.open('moba', { id: 'a', x: -20, z: 75, level: 0 })).reason, 'soon');
   const host = createGameHost({
-    catalog: GAMES,
+    catalog: { ...GAMES, moba: { ...GAMES.moba, status: 'ready' } },
     loaders: { moba: async () => ({ default: { mount: () => ({ destroy() {} }) } }) },
     inRoom: (id, me) => roomAt(me.x, me.z, me.level ?? 0).id === GAMES[id]?.room,
   });
