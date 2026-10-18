@@ -87,6 +87,8 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
         const tx = pose ? pose.x : target.x;
         const tz = pose ? pose.z : target.z;
         const speed = Math.hypot(tx - group.position.x, tz - group.position.z) / Math.max(delta, 1e-3);
+        // duduk: pose duduk (tilt 0) atau, tanpa poseFor (aula), titik duduk apa pun; berbaring (tilt != 0) bukan duduk
+        group.userData.seated = pose ? pose.tilt === 0 : target.sit != null;
         applyPose(group, avatar.act ?? (speed > 0.8 ? 'walk' : null), time, delta);
         group.position.x += (tx - group.position.x) * k;
         group.position.z += (tz - group.position.z) * k;
