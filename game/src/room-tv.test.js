@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getVillaWorld } from './villa-layout.js';
+import { blockedSpans } from './villa-tv.js';
 import { placeTvs, nearestTv, classifyMedia, TV_RANGE, TV_SIZE } from './room-tv.js';
 
 const world = getVillaWorld();
 const tvs = placeTvs(world);
 
-test('setiap ruangan (kecuali lorong, teras, tangga, aula) punya satu TV di dalam ruangannya', () => {
-  const skip = new Set(['stair', 'terrace', 'corridor', 'hall']);
+test('setiap ruangan (kecuali lorong, teras, tangga, aula, ruang game) punya satu TV di dalam ruangannya', () => {
+  const skip = new Set(['stair', 'terrace', 'corridor', 'hall', 'game']);
   const expected = world.levels.flatMap((L) => L.rooms.filter((r) => !skip.has(r.kind)).map((r) => `${r.id}@${L.level}`));
   assert.ok(expected.length > 20);
   const got = tvs.map((t) => `${t.room}@${t.level}`);
@@ -61,4 +62,35 @@ test('classifyMedia: YouTube, TikTok, video langsung, file lain, kosong', () => 
   assert.equal(classifyMedia('https://contoh.com/halaman').reason, 'format');
   assert.equal(classifyMedia('  ').kind, 'none');
   assert.equal(classifyMedia('javascript:alert(1)').kind, 'unsupported');
+});
+
+test('ruang game tidak punya TV kamar', () => {
+  const games = world.levels.flatMap((L) => L.rooms.filter((r) => r.kind === 'game').map((r) => r.id));
+  assert.ok(games.length >= 2);
+  for (const id of games) assert.equal(tvs.some((t) => t.room === id), false, `${id} tidak boleh punya TV`);
+});
+
+test('TV tidak menutupi jendela maupun pintu pada dindingnya', () => {
+  for (const t of tvs) {
+    const L = world.levels[t.level];
+    const orient = t.nx === 0 ? 'h' : 'v';
+    const coord = orient === 'h' ? t.z - t.nz * TV_SIZE.inset : t.x - t.nx * TV_SIZE.inset;
+    const along = orient === 'h' ? t.x : t.z;
+    for (const [a, b] of blockedSpans(L, orient, Math.round(coord * 1000) / 1000)) {
+      assert.ok(along + TV_SIZE.frame / 2 <= a + 1e-6 || along - TV_SIZE.frame / 2 >= b - 1e-6, `${t.id} menutupi jendela/pintu (${a.toFixed(2)}..${b.toFixed(2)})`);
+    }
+  }
+});
+
+test('TV kamar tidur: di dinding kaki tempat tidur, menghadap tempat tidur, dan bisa ditonton dari tempat tidur', () => {
+  for (const L of world.levels) {
+    for (const bed of L.props.filter((p) => p.type === 'bed')) {
+      const room = L.rooms.find((r) => r.kind !== 'stair' && bed.x > r.rect[0] && bed.x < r.rect[2] && bed.z > r.rect[1] && bed.z < r.rect[3]);
+      const t = tvs.find((x) => x.room === room.id && x.level === L.level);
+      assert.ok(t, `kamar ${room.id} tanpa TV`);
+      assert.ok(t.nx * (bed.x - t.x) + t.nz * (bed.z - t.z) > 3, `${t.id} tidak menghadap tempat tidur`);
+      assert.ok(Math.hypot(bed.x - t.x, bed.z - t.z) > 4, `${t.id} terlalu dekat dengan tempat tidur`);
+      assert.equal(nearestTv(tvs, { x: bed.x, z: bed.z, level: L.level, stair: null })?.id, t.id, `${t.id} tidak bisa ditonton dari tempat tidur`);
+    }
+  }
 });
