@@ -6,6 +6,7 @@ import { createInteriors } from './masjid-decor.js';
 import { BOUNDS, CENTRAL_DOME, GATE_TOWERS, HALL_H, MINARETS, PROP_SPECS, ROOMS } from './masjid-layout.js';
 import { createGarden } from './masjid-garden.js';
 import { createMasjidSky } from './masjid-sky.js';
+import { createWaterSound } from './masjid-water-sound.js';
 
 const CREAM = '#efe6d0';
 const GOLD = '#d8b04a';
@@ -344,6 +345,7 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
   } catch (error) {
     console.warn('[masjid] taman tidak bisa dibuat', error);
   }
+  const water = garden ? createWaterSound() : null; // gemericik pancuran; mulai setelah sentuhan pertama
 
   for (const b of [boxes, cyls, cones, balls, domes, glow, glowBox]) b.build(root);
 
@@ -379,12 +381,17 @@ export function buildMasjidWorld(scene, world, { renderer } = {}) {
     exhibitHits,
     sky,
     /**
+     * focus = { x, z, camera } (opsional): bintang/bulan mengikuti pemain, suara air menurut jarak, pantulan bulan menurut kamera.
      * k = 0 di luar, 1 di dalam bangunan: dalam ruangan cahaya langit dikurangi dan cahaya isi dinaikkan (lampu mengikuti pemain dari main).
      * Dipanggil tiap frame oleh masjid-main, jadi di sinilah langit siang-malam ikut diperbarui.
      */
-    setIndoor(k) {
+    setIndoor(k, focus) {
       const atm = sky.update();
-      if (garden) garden.update(atm.night, performance.now() / 1000);
+      if (focus) {
+        sky.follow(focus.x, focus.z);
+        water?.update(focus.x, focus.z, k);
+      }
+      if (garden) garden.update(atm.night, performance.now() / 1000, focus ? { camera: focus.camera, moonDir: sky.moonDir } : undefined);
       hemi.intensity = atm.hemiI * (1 - 0.35 * k);
       sun.intensity = atm.sunI * (1 - SUN_INDOOR_CUT * k);
       fill.intensity = (0.55 + 0.3 * atm.night) * k;
