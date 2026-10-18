@@ -10,6 +10,18 @@ import * as THREE from 'three';
 import { B, TAU, mat, mergeMeshes, texMat, TEX, worldUV } from './horor-core.js';
 
 export const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+
+/** Potongan [a, b] dari from..to setelah dikurangi bukaan `gaps` ({a, b}). */
+export function spans(from, to, gaps = []) {
+  const out = [];
+  let cur = from;
+  for (const g of [...gaps].sort((p, q) => p.a - q.a)) {
+    if (g.a > cur) out.push([cur, Math.min(g.a, to)]);
+    cur = Math.max(cur, g.b);
+  }
+  if (cur < to) out.push([cur, to]);
+  return out;
+}
 export const FACE = Object.freeze({ N: Math.PI, S: 0, E: Math.PI / 2, W: -Math.PI / 2 });
 
 export class Room {
@@ -106,14 +118,18 @@ export class Room {
 
   /**
    * Dinding sepanjang X (di z = at) atau sepanjang Z (di x = at). `inner` = +1/-1, sisi tempat ruangan berada.
-   * `o.win` = daftar bukaan jendela {a, b, y0, y1}.
+   * `o.win` = daftar bukaan jendela {a, b, y0, y1}. `o.gaps` = bukaan pintu {a, b} setinggi `o.doorH` (default 2,2 m): tanpa
+   * collider, dengan ambang di atasnya. Pasang gerbang di bukaan itu dengan gate() bila perlu dikunci.
    */
   wall(axis, at, from, to, inner, o = {}) {
     const h = o.h ?? 3;
     const t = 0.2;
     const base = o.base ?? 0;
     const material = o.mat ?? texMat('plaster', 0xc9c1ab);
-    const ops = (o.win || []).slice().sort((a, b) => a.a - b.a);
+    const gaps = (o.gaps || []).map((g) => ({ a: g.a, b: g.b }));
+    const doorH = o.doorH ?? 2.2;
+    const wins = (o.win || []).slice().sort((a, b) => a.a - b.a);
+    const ops = [...wins, ...gaps.map((g) => ({ a: g.a, b: g.b, y0: 0, y1: doorH }))].sort((a, b) => a.a - b.a);
     const segs = [];
     let cur = from;
     for (const op of ops) {
@@ -128,18 +144,20 @@ export class Room {
       if (axis === 'x') this.box(b - a, y1 - y0, t, material, (a + b) / 2, base + y0, at, { uv: o.uv ?? 2 });
       else this.box(t, y1 - y0, b - a, material, at, base + y0, (a + b) / 2, { uv: o.uv ?? 2 });
     }
-    if (axis === 'x') this.solid(from, at - t / 2, to, at + t / 2, 'wall');
-    else this.solid(at - t / 2, from, at + t / 2, to, 'wall');
-
+    const pieces = spans(from, to, gaps); // collider, lis, dan panel tidak menutup bukaan pintu
     const off = inner * (t / 2 + 0.015);
-    if (o.wains) {
-      const wm = o.wainsMat ?? texMat('panel', 0x5a3f28);
-      if (axis === 'x') this.box(to - from, o.wains, 0.03, wm, (from + to) / 2, base, at + off, { uv: 1 });
-      else this.box(0.03, o.wains, to - from, wm, at + off, base, (from + to) / 2, { uv: 1 });
-    }
+    const wm = o.wainsMat ?? texMat('panel', 0x5a3f28);
     const baseboard = mat(0x2a2320);
-    if (axis === 'x') this.box(to - from, 0.1, 0.04, baseboard, (from + to) / 2, base, at + off);
-    else this.box(0.04, 0.1, to - from, baseboard, at + off, base, (from + to) / 2);
+    for (const [a, b] of pieces) {
+      if (axis === 'x') this.solid(a, at - t / 2, b, at + t / 2, 'wall');
+      else this.solid(at - t / 2, a, at + t / 2, b, 'wall');
+      if (o.wains) {
+        if (axis === 'x') this.box(b - a, o.wains, 0.03, wm, (a + b) / 2, base, at + off, { uv: 1 });
+        else this.box(0.03, o.wains, b - a, wm, at + off, base, (a + b) / 2, { uv: 1 });
+      }
+      if (axis === 'x') this.box(b - a, 0.1, 0.04, baseboard, (a + b) / 2, base, at + off);
+      else this.box(0.04, 0.1, b - a, baseboard, at + off, base, (a + b) / 2);
+    }
 
     // kaca jendela, bingkai, ambang (kisi-kisinya melempar bayangan cahaya bulan ke lantai)
     const frame = mat(0x9aa0a6);
@@ -151,7 +169,7 @@ export class Room {
       fog: false,
       map: o.frosted ? TEX.frosted ?? null : null,
     });
-    for (const op of ops) {
+    for (const op of wins) {
       const len = op.b - op.a;
       const mid = (op.a + op.b) / 2;
       const oh = op.y1 - op.y0;
@@ -167,7 +185,7 @@ export class Room {
         this.box(0.28, 0.05, len + 0.1, frame, at + inner * 0.05, base + op.y0 - 0.05, mid);
       }
     }
-    if (ops.length && !o.frosted && TEX.sky) {
+    if (wins.length && !o.frosted && TEX.sky) {
       // langit malam di balik kaca
       const sky = new THREE.MeshBasicMaterial({ map: TEX.sky, fog: false });
       const len = to - from + 16;
@@ -233,6 +251,19 @@ export class Room {
     const door = { ...o, rect, spawn, face };
     this.doors.push(door);
     return door;
+  }
+
+  /**
+   * Gerbang terkunci pada bukaan dinding (lihat wall `gaps`): kotak berpenghalang yang dibuka lewat setShutter(id, false, true).
+   * `axis` 'x' = dinding sepanjang X (di z = at, bukaan di x = pos); 'z' = dinding sepanjang Z (di x = at, bukaan di z = pos).
+   * Mengembalikan { id, axis, at, pos, w, x, z } (x, z = titik tengah gerbang).
+   */
+  gate(id, { axis, at, pos, w = 2, h = 2.3, material = texMat('shutter', 0x6c7076) }) {
+    const t = 0.12;
+    const mesh = axis === 'x' ? this.box(w, h, t, material, pos, 0, at, { dyn: true }) : this.box(t, h, w, material, at, 0, pos, { dyn: true });
+    const c = axis === 'x' ? this.solid(pos - w / 2, at - t / 2, pos + w / 2, at + t / 2, 'wall') : this.solid(at - t / 2, pos - w / 2, at + t / 2, pos + w / 2, 'wall');
+    (this.shutters ||= {})[id] = { mesh, c, saved: { ...c }, y: mesh.position.y };
+    return { id, axis, at, pos, w, x: axis === 'x' ? pos : at, z: axis === 'x' ? at : pos };
   }
 
   /** Naikkan (down = false) atau turunkan gerbang; naik bisa dianimasikan masuk ke langit-langit. */
