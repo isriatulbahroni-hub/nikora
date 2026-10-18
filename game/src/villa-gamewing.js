@@ -48,7 +48,8 @@ export const GAME_ZONES = Object.freeze([
 export const GAMES = Object.freeze({
   badminton: Object.freeze({ label: 'Bulu Tangkis', room: 'game_badminton', status: 'soon', scary: false }),
   horror: Object.freeze({ label: 'Mansion Horor', room: 'game_horror', status: 'soon', scary: true }),
-  moba: Object.freeze({ label: 'MOBA 5v5', room: 'game_moba', status: 'ready', scary: false }),
+  // 'soon' sampai server MOBA hidup (moba/index.js hanya jendela ke sana); ganti ke 'ready' setelah server siap.
+  moba: Object.freeze({ label: 'MOBA 5v5', room: 'game_moba', status: 'soon', scary: false }),
 });
 
 // orient 'h' = pintu di dinding sepanjang x (koordinat z); 'v' = di dinding sepanjang z (koordinat x).
