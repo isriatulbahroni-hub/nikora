@@ -6,7 +6,7 @@
 //
 // Contoh (tambahkan oleh pembuat permainan):
 //   horror: () => import('./horor/index.js'),
-//   badminton: () => import('./badminton/index.js'),
 export const GAME_LOADERS = Object.freeze({
+  badminton: () => import('./badminton/index.js'),
   moba: () => import('./moba/index.js'),
 });
