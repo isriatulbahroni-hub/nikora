@@ -30,13 +30,20 @@ test('login: berhasil -> onDone; gagal -> pesan dan tombol aktif lagi', async ()
   assert.equal(done, 1);
 });
 
-test('login: mode daftar dengan konfirmasi email', async () => {
-  const v = loginView({ client: { signUp: async () => ({ needsConfirm: true }) }, onDone: () => assert.fail('tidak boleh lanjut') });
+test('login: tidak ada tombol atau mode daftar; akun dibuat oleh admin', async () => {
+  const v = loginView({ client: { signIn: async () => ({}) }, onDone() {} });
   document.body.append(v);
-  v.querySelector('.s-link').click();
-  assert.equal(v.querySelector('button[type=submit]').textContent, 'Daftar');
-  submit(v); await tick(); await tick();
-  assert.match(v.querySelector('.s-msg').textContent, /konfirmasi/);
+  assert.equal(v.querySelector('.s-link'), null);
+  assert.equal(v.querySelector('button[type=submit]').textContent, 'Masuk');
+  assert.equal(v.querySelector('input[name=password]').getAttribute('autocomplete'), 'current-password');
+  assert.doesNotMatch(v.textContent, /Daftar/);
+  assert.match(v.textContent, /Hubungi admin/);
+  // Mengirim formulir hanya pernah memanggil signIn; tidak ada jalur signUp dari layar ini.
+  let signUps = 0;
+  const guarded = loginView({ client: { signIn: async () => ({}), signUp: async () => { signUps++; return { needsConfirm: true }; } }, onDone() {} });
+  document.body.append(guarded);
+  submit(guarded); await tick(); await tick();
+  assert.equal(signUps, 0);
 });
 
 test('buat undangan: slug terisi dari nama, tema mengikuti jenis acara, galat per kolom', async () => {
