@@ -5,6 +5,9 @@ import { HOTEL_BUILDING, HOTEL_LEVEL_COUNT, HOTEL_PARKING, HOTEL_SPAWN, isGuestL
 /** Tinggi perabot (m): dipakai penggambar dan penghalang kamera. */
 export const PROP_HEIGHT = Object.freeze({ bed: 1.2, table: 0.85, desk: 1.1, counter: 0.95, tub: 0.8, sofa: 0.95, lounger: 0.6 });
 
+/** Kanopi lobi di depan pintu utama (tempat turun penumpang): digambar di hotel-world.js, penghalang kamera di hotel-camera.js. */
+export const CANOPY = Object.freeze({ x1: -14, x2: 14, z1: 406, z2: 420, y1: 5.3, y2: 5.7 });
+
 /** Warna lantai per jenis ruang (hex). */
 export const FLOOR_COLORS = Object.freeze({
   core: 0xe9e4da, lobby: 0xd9cbb0, restaurant: 0xbf9f7c, kitchen: 0xc3c8ca, hall: 0xe7d9bf, bridal: 0xecd2da,
