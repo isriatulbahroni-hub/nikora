@@ -1,5 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { AccessToken } from 'livekit-server-sdk';
+import { DEVICE_ID, hashDevice, moderationSecret, newModToken, storeFromEnv } from './moderation-server.js';
 
 export const LIVEKIT_VARS = ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'];
 
@@ -78,7 +79,7 @@ export function cleanName(raw) {
 }
 
 /** Terbitkan identitas + token LiveKit untuk satu tamu. { enabled:false } bila LiveKit belum dikonfigurasi. */
-export async function issueToken({ env = process.env, name, world, event, key: roleKey, fetchImpl } = {}) {
+export async function issueToken({ env = process.env, name, world, event, key: roleKey, deviceId, store, fetchImpl } = {}) {
   const [url, key, secret] = LIVEKIT_VARS.map((name) => readEnv(env, name));
   const missing = LIVEKIT_VARS.filter((_, i) => ![url, key, secret][i]);
   // Hanya NAMA variabel yang kurang yang dikirim (tidak pernah nilainya), supaya salah konfigurasi bisa didiagnosis dari HP.
@@ -86,11 +87,28 @@ export async function issueToken({ env = process.env, name, world, event, key: r
   if (event !== undefined && event !== null && event !== '') {
     if (!isEventSlug(event) || !(await eventExists(event, { env, ...(fetchImpl ? { fetchImpl } : {}) }))) return { enabled: false, reason: 'event' };
   }
+  // Moderasi (opsional, aktif hanya bila MODERATION_SECRET dipasang): tamu yang sudah diblokir di acara ini tidak diberi token.
+  // Gagal memeriksa (jaringan/DB) tidak menghalangi masuk, sama seperti eventExists.
+  const modSecret = moderationSecret(env);
+  const deviceHash = modSecret && typeof deviceId === 'string' && DEVICE_ID.test(deviceId) ? hashDevice(modSecret, deviceId) : null;
+  const evKey = isEventSlug(event) ? event : '-';
+  if (deviceHash) {
+    try {
+      const st = store ?? storeFromEnv(env, fetchImpl);
+      if (st && (await st.isBanned(evKey, deviceHash))) return { enabled: false, reason: 'banned' };
+    } catch (error) {
+      console.error('[token] cek blokir gagal', error?.message);
+    }
+  }
   const id = randomUUID().slice(0, 8);
   const rs = roleSecret(env);
   const role = rs ? verifyRoleKey(rs, isEventSlug(event) ? event : '', roleKey) ?? 'guest' : 'guest';
   const at = new AccessToken(key, secret, { identity: id, name: cleanName(name), ttl: '2h', ...(role === 'guest' ? {} : { metadata: JSON.stringify({ role }) }) });
-  at.addGrant({ roomJoin: true, room: roomFor(world, event), canPublish: true, canPublishData: true, canSubscribe: true });
+  const room = roomFor(world, event);
+  at.addGrant({ roomJoin: true, room, canPublish: true, canPublishData: true, canSubscribe: true });
   // restricted: bila rahasia peran dipasang, hanya pemilik/MC terverifikasi yang boleh membuka panggung
-  return { enabled: true, url, token: await at.toJwt(), id, role, restricted: Boolean(rs) };
+  return {
+    enabled: true, url, token: await at.toJwt(), id, role, restricted: Boolean(rs),
+    ...(deviceHash ? { modToken: newModToken(modSecret, { id, room, ev: evKey, dh: deviceHash }) } : {}),
+  };
 }
