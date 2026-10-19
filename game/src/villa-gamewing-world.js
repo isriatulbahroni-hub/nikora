@@ -1,8 +1,9 @@
-// Tampilan Game Center: lantai bertema, lapangan bulu tangkis resmi, papan nama, mesin arcade, dan gerbang lengkung.
+// Tampilan Game Center: lantai bertema, papan nama, mesin arcade, dan gerbang lengkung.
 // Dinding, pintu, dan atap sudah dibuat oleh villa-world.js dari data denah; modul ini hanya menambah dekor.
+// Permainan dimainkan di layar penuh lewat terminal (GameHost), jadi ruang tidak berisi lapangan atau arena.
 // Sengaja hemat: bentuk dasar tanpa lampu tambahan dan tanpa tekstur gambar (HP kelas menengah).
 import * as THREE from 'three';
-import { BADMINTON_COURTS, COURT, GAMES, GAME_ARCH, GAME_ROOMS, GAME_SIGNS, GAME_TERMINALS, GAME_ZONES, courtLines } from './villa-gamewing.js';
+import { GAMES, GAME_ARCH, GAME_ROOMS, GAME_SIGNS, GAME_TERMINALS, GAME_ZONES } from './villa-gamewing.js';
 
 const FLOOR_COLORS = Object.freeze({ game_badminton: 0x2f7d4f, game_horror: 0x2b1d22, game_moba: 0x1b2540 });
 const GAME_COLORS = Object.freeze({ badminton: '#39d98a', horror: '#ff4d4d', moba: '#7aa2ff' });
@@ -67,38 +68,18 @@ export function buildGameWingDecor(scene, { catalog = GAMES } = {}) {
     return m;
   };
 
-  // ---- plaza: paving batu di antara dua arena sampai gerbang ----
+  // ---- plaza: paving batu di antara dua deret ruang sampai gerbang ----
   const paving = mat(new THREE.MeshStandardMaterial({ color: 0xd2c6ae, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   for (const z of GAME_ZONES) {
     const [x1, z1, x2, z2] = z.rect;
     onFloor(x2 - x1, z2 - z1, (x1 + x2) / 2, 0.03, (z1 + z2) / 2, paving);
   }
 
-  // ---- lantai bertema tiap arena (sedikit di atas lantai bawaan) ----
+  // ---- lantai bertema tiap ruang (sedikit di atas lantai bawaan) ----
   for (const r of GAME_ROOMS) {
     const [x1, z1, x2, z2] = r.rect;
     const m = mat(new THREE.MeshStandardMaterial({ color: FLOOR_COLORS[r.id] ?? 0x333333, roughness: 0.85, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
     onFloor(x2 - x1 - 0.3, z2 - z1 - 0.3, (x1 + x2) / 2, 0.05, (z1 + z2) / 2, m);
-  }
-
-  // ---- lapangan bulu tangkis resmi (dua lapangan), garis + jaring + tiang ----
-  const line = mat(new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
-  const court = mat(new THREE.MeshStandardMaterial({ color: 0x246b44, roughness: 0.8, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
-  const netMat = mat(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4, side: THREE.DoubleSide, toneMapped: false }));
-  const postMat = mat(new THREE.MeshStandardMaterial({ color: 0x2a2a33, roughness: 0.5, metalness: 0.4 }));
-  for (const c of BADMINTON_COURTS) {
-    onFloor(COURT.length + 1.6, COURT.width + 1.6, c.x, 0.055, c.z, court); // area bermain sedikit lebih terang dari lantai
-    for (const l of courtLines(c.x, c.z)) onFloor(l.w, l.d, l.x, 0.06, l.z, line);
-    const hw = COURT.width / 2 + 0.3;
-    const net = new THREE.Mesh(geo(new THREE.PlaneGeometry(COURT.width + 0.6, 0.76)), netMat);
-    net.rotation.y = Math.PI / 2; // membentang sepanjang z
-    net.position.set(c.x, COURT.netHeight - 0.38, c.z);
-    group.add(net);
-    for (const s of [-1, 1]) {
-      const post = new THREE.Mesh(geo(new THREE.CylinderGeometry(0.035, 0.035, COURT.netHeight, 6)), postMat);
-      post.position.set(c.x, COURT.netHeight / 2, c.z + s * hw);
-      group.add(post);
-    }
   }
 
   // ---- papan nama di atas pintu ----
@@ -135,7 +116,7 @@ export function buildGameWingDecor(scene, { catalog = GAMES } = {}) {
     }
   }
 
-  // ---- mesin arcade / meja pertandingan (depan menghadap sesuai `face`) ----
+  // ---- mesin arcade (depan menghadap sesuai `face`) ----
   const body = mat(new THREE.MeshStandardMaterial({ color: 0x1d1f2e, roughness: 0.6, metalness: 0.2 }));
   for (const term of GAME_TERMINALS) {
     const entry = catalog[term.game];
