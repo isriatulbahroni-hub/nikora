@@ -115,11 +115,11 @@ test('dasbor: galat memuat tampil sebagai pesan, bukan crash', async () => {
   assert.match(v.querySelector('.s-msg').textContent, /403/);
 });
 
-test('form buat undangan: pilihan Dunia 3D memuat Villa, Istana Cinta, dan Aula', () => {
+test('form buat undangan: pilihan Dunia 3D memuat Villa, Istana Cinta, Aula, dan Masjid', () => {
   const v = createView({ client: {}, onCreated() {}, onCancel() {} });
   document.body.append(v);
   const opts = [...v.querySelectorAll('[name=world] option')].map((o) => [o.value, o.textContent]);
-  assert.deepEqual(opts.map((o) => o[0]), ['', 'villa', 'royal', 'hall']);
+  assert.deepEqual(opts.map((o) => o[0]), ['', 'villa', 'royal', 'hall', 'masjid']);
   assert.match(opts.find((o) => o[0] === 'royal')[1], /Istana Cinta/);
   v.remove();
 });

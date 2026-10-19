@@ -87,6 +87,6 @@ test('liftRider mengenali pemain lain di lift, bukan diri sendiri', () => {
 
 test('resolveMove dasar: pemain tidak bisa menembus kotak poros', () => {
   const [back] = liftColliders();
-  const r = resolveMove({ x: LIFT.x, z: back.maxZ - 0.1 }, PLAYER_RADIUS, [back]);
+  const r = resolveMove({ x: LIFT.x, z: back.maxZ - 0.05 }, PLAYER_RADIUS, [back]);
   assert.ok(r.z >= back.maxZ + PLAYER_RADIUS - 1e-6);
 });

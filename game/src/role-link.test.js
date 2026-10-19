@@ -57,7 +57,7 @@ test('generateSecret: 32 karakter dari alfabet aman, berbeda tiap panggilan, mem
 
 test('generateSecret: sebaran merata (tanpa bias modulo yang mencolok)', () => {
   const counts = new Map();
-  for (let i = 0; i < 400; i++) for (const ch of generateSecret(32)) counts.set(ch, (counts.get(ch) ?? 0) + 1);
+  for (let i = 0; i < 4000; i++) for (const ch of generateSecret(32)) counts.set(ch, (counts.get(ch) ?? 0) + 1);
   const values = [...counts.values()];
   assert.equal(counts.size, 57, 'semua huruf alfabet muncul');
   assert.ok(Math.max(...values) / Math.min(...values) < 1.5, 'sebaran kira-kira merata');
