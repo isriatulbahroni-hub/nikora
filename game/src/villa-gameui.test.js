@@ -6,27 +6,35 @@ import { ARENA_WALL_HEIGHT, GAME_SIGNS, GAME_TERMINALS, GAMES, TERMINAL_RANGE, n
 import { createVillaGames } from './villa-gameui.js';
 
 const newDoc = () => new JSDOM('<!doctype html><body></body>').window.document;
-const inHorror = { x: 7.6, z: 62.6, level: 0, stair: null, y: 0 };
-const inBadminton = { x: -7.6, z: 62.6, level: 0, stair: null, y: 0 };
+// Posisi pemain tepat di samping terminal ruang masing-masing (terminal menempel di dinding sisi plaza).
+const inHorror = { x: 7.6, z: 53.3, level: 0, stair: null, y: 0 };
+const inBadminton = { x: -7.6, z: 53.3, level: 0, stair: null, y: 0 };
+const inMoba = { x: -7.6, z: 64.1, level: 0, stair: null, y: 0 };
 const inPlaza = { x: 0, z: 60, level: 0, stair: null, y: 0 };
 const readyCatalog = { ...GAMES, horror: { ...GAMES.horror, status: 'ready' } };
 
-test('dua terminal terpisah jauh', () => {
-  const [a, b] = GAME_TERMINALS;
-  assert.ok(Math.hypot(a.x - b.x, a.z - b.z) > 2 * TERMINAL_RANGE, 'dua terminal terlalu dekat');
-  for (const t of GAME_TERMINALS) assert.ok(GAMES[t.game], `${t.id} tanpa permainan`);
+test('terminal-terminal terpisah jauh satu sama lain', () => {
+  for (let i = 0; i < GAME_TERMINALS.length; i++) {
+    const a = GAME_TERMINALS[i];
+    assert.ok(GAMES[a.game], `${a.id} tanpa permainan`);
+    for (let j = i + 1; j < GAME_TERMINALS.length; j++) {
+      const b = GAME_TERMINALS[j];
+      assert.ok(Math.hypot(a.x - b.x, a.z - b.z) > 2 * TERMINAL_RANGE, `${a.id} dan ${b.id} terlalu dekat`);
+    }
+  }
 });
 
 test('nearestTerminal: dekat = ada, jauh/di tangga/lantai atas = tidak', () => {
   assert.equal(nearestTerminal(inHorror)?.id, 'term_horror');
   assert.equal(nearestTerminal(inBadminton)?.id, 'term_badminton');
+  assert.equal(nearestTerminal(inMoba)?.id, 'term_moba');
   assert.equal(nearestTerminal(inPlaza), null, 'plaza tidak punya terminal');
   assert.equal(nearestTerminal({ ...inHorror, stair: 'tower_w_a' }), null);
   assert.equal(nearestTerminal({ ...inHorror, level: 1 }), null);
   assert.equal(nearestTerminal(null), null);
 });
 
-test('papan nama berada di atas bukaan pintu dan di bawah puncak dinding arena', () => {
+test('papan nama berada di atas bukaan pintu dan di bawah puncak dinding ruang', () => {
   assert.equal(GAME_SIGNS.length, 3);
   for (const s of GAME_SIGNS) {
     assert.ok(s.y - s.h / 2 >= DOOR_HEIGHT, `${s.id} menutupi bukaan pintu`);
@@ -38,6 +46,8 @@ test('papan nama berada di atas bukaan pintu dan di bawah puncak dinding arena',
 test('tombol terminal: soon berlabel segera hadir, ready berlabel Main', () => {
   const g = createVillaGames({ doc: newDoc(), decor: null });
   assert.match(g.nearTerminal(inHorror).label, /segera hadir/);
+  assert.match(g.nearTerminal(inMoba).label, /segera hadir/);
+  assert.match(g.nearTerminal(inBadminton).label, /Main Bulu Tangkis/, 'bulu tangkis sudah siap dimainkan');
   const g2 = createVillaGames({ doc: newDoc(), decor: null, catalog: readyCatalog });
   assert.match(g2.nearTerminal(inHorror).label, /Main Mansion Horor/);
   assert.equal(g2.nearTerminal(inPlaza), null);
