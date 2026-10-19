@@ -15,6 +15,7 @@ import { createAvatarEditor } from './avatar-editor.js';
 import { applyFacePhoto } from './avatar-face.js';
 import { GAME_RULES, cameraRelativeMovement, normalizeMovement } from './game-rules.js';
 import { HALL, SEATS, facingAngle, findNearestSeat, resolveCollisions } from './hall-layout.js';
+import { armLength, cameraOffset, clamp, clampCam, createCamState, easeToDefault, orbitBy, panBy, panUnitsPerPixel, relaxPan, zoomBy } from './hall-camera.js';
 import { buildHallWorld } from './hall-world.js';
 import { resolveServerUrl, startMultiplayer } from './multiplayer-view.js';
 import { dayPartIndex } from './avatar-aura.js';
@@ -164,8 +165,8 @@ function applyQuality(renderer, scene, q) {
 const focus = new THREE.Vector3(START.x, 0.5, START.z);
 let priorFrameTime = 0;
 let idleAngle = 0;
-let yaw = 0; // putaran kamera di sekitar pemain
-let zoom = 1;
+const cam = createCamState(); // putar, miring, zoom, dan geser kamera (hall-camera.js)
+let camResetting = false; // tombol/tuts C: kamera meluncur kembali ke tampilan awal
 let lastStatus = '';
 let hudTimer = 0;
 const LABEL_RANGE = 8; // nama avatar hanya terlihat dalam jarak ini
@@ -594,7 +595,7 @@ function updatePlayer(delta, now) {
     me.rot = paired.rot;
     return false;
   }
-  const movement = cameraRelativeMovement(getMovementInput(), yaw);
+  const movement = cameraRelativeMovement(getMovementInput(), cam.yaw);
   const moving = movement.x !== 0 || movement.z !== 0;
   if (me.sit !== null && moving) standUp(now); // bergerak = berdiri
 
@@ -720,8 +721,12 @@ function updateLabels() {
   }
 }
 
+function cameraFit() {
+  return Math.min(1.9, Math.max(1, 1.45 / camera.aspect));
+}
+
 function updateCamera(delta, now) {
-  const fit = Math.min(1.9, Math.max(1, 1.45 / camera.aspect));
+  const fit = cameraFit();
   if (!joined) {
     idleAngle += delta * 0.12;
     camera.position.set(Math.sin(idleAngle) * 46, 20, -8 + Math.cos(idleAngle) * 46); // orbit lebar: dunia kini seluas ±28 m
@@ -731,13 +736,12 @@ function updateCamera(delta, now) {
   const smoothing = 1 - Math.exp(-5 * delta);
   focus.x += (me.x - focus.x) * smoothing;
   focus.z += (me.z - focus.z) * smoothing;
-  const target = new THREE.Vector3(focus.x, 0.6, focus.z);
-  const distance = 9.5 * fit * zoom;
-  const desired = new THREE.Vector3(
-    focus.x + Math.sin(yaw) * distance,
-    8.5 * fit * zoom,
-    focus.z + Math.cos(yaw) * distance,
-  );
+  if (camResetting && easeToDefault(cam, delta)) camResetting = false;
+  const input = getMovementInput();
+  if (input.x || input.z) relaxPan(cam, delta); // berjalan: kamera kembali mengikuti pemain
+  const target = new THREE.Vector3(focus.x + cam.panX, 0.6, focus.z + cam.panZ);
+  const offset = cameraOffset(cam, fit);
+  const desired = new THREE.Vector3(target.x + offset.x, offset.y, target.z + offset.z);
   camera.position.lerp(desired, 1 - Math.exp(-6 * delta));
   camera.lookAt(target);
 }
@@ -871,47 +875,78 @@ function isTyping(event) {
   return event.target instanceof HTMLInputElement || !ui.joinOverlay.hidden;
 }
 
+/** Kendali kamera: seret = putar + miringkan; cubit dua jari = zoom; geser dua jari = geser (pan); roda = zoom. Mouse: klik kanan/tengah/Shift + seret = geser. */
 function setupCameraGestures() {
   const pointers = new Map();
   let pinchStart = 0;
   let zoomStart = 1;
-  const clampZoom = (value) => Math.min(1.6, Math.max(0.55, value));
+  let mid = null; // titik tengah dua jari sebelumnya
+  const unitsPerPx = () => panUnitsPerPixel(armLength(cam, cameraFit()), root.getBoundingClientRect().height);
+  const twoFingers = () => {
+    const [a, b] = [...pointers.values()];
+    return { dist: Math.hypot(a.x - b.x, a.y - b.y), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+  };
   root.addEventListener('pointerdown', (event) => {
     root.setPointerCapture(event.pointerId);
-    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    camResetting = false;
+    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY, pan: event.pointerType === 'mouse' && (event.button === 1 || event.button === 2 || event.shiftKey) });
     if (pointers.size === 2) {
-      const [a, b] = [...pointers.values()];
-      pinchStart = Math.hypot(a.x - b.x, a.y - b.y);
-      zoomStart = zoom;
+      const two = twoFingers();
+      pinchStart = two.dist;
+      mid = two.mid;
+      zoomStart = cam.zoom;
     }
   });
   root.addEventListener('pointermove', (event) => {
     const last = pointers.get(event.pointerId);
     if (!last) return;
+    const dx = event.clientX - last.x;
+    const dy = event.clientY - last.y;
+    last.x = event.clientX;
+    last.y = event.clientY;
     if (pointers.size === 1) {
-      yaw -= (event.clientX - last.x) * 0.006; // geser ke kanan memutar kamera ke kanan
-    }
-    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (pointers.size === 2 && pinchStart > 0) {
-      const [a, b] = [...pointers.values()];
-      zoom = clampZoom(zoomStart * (pinchStart / Math.max(1, Math.hypot(a.x - b.x, a.y - b.y))));
+      if (last.pan) panBy(cam, dx, dy, unitsPerPx());
+      else orbitBy(cam, dx, dy);
+    } else if (pointers.size === 2 && pinchStart > 0) {
+      const two = twoFingers();
+      cam.zoom = zoomStart * (pinchStart / Math.max(1, two.dist));
+      clampCam(cam);
+      if (mid) panBy(cam, two.mid.x - mid.x, two.mid.y - mid.y, unitsPerPx());
+      mid = two.mid;
     }
   });
   ['pointerup', 'pointercancel'].forEach((type) =>
     root.addEventListener(type, (event) => {
       pointers.delete(event.pointerId);
       pinchStart = 0;
+      mid = null;
     }),
   );
+  root.addEventListener('contextmenu', (event) => event.preventDefault()); // klik kanan dipakai untuk geser
   root.addEventListener('wheel', (event) => {
     event.preventDefault();
-    zoom = clampZoom(zoom * (1 + Math.sign(event.deltaY) * 0.08));
+    camResetting = false;
+    // cubit di trackpad datang sebagai wheel + ctrlKey dengan langkah kecil; roda mouse memakai langkah tetap
+    const step = event.ctrlKey ? clamp(event.deltaY, -30, 30) * 0.01 : Math.sign(event.deltaY) * 0.1;
+    zoomBy(cam, Math.exp(step));
   }, { passive: false });
+}
+
+/** Tombol zoom/pusatkan di layar (untuk HP dan untuk yang tidak punya roda). */
+function setupCameraButtons() {
+  const tap = (selector, fn) => $(selector)?.addEventListener('click', () => {
+    camResetting = false;
+    fn();
+  });
+  tap('#cam-zoom-in', () => zoomBy(cam, 1 / 1.25));
+  tap('#cam-zoom-out', () => zoomBy(cam, 1.25));
+  $('#cam-reset')?.addEventListener('click', () => { camResetting = true; });
 }
 
 function setupInput() {
   setupInputMode();
   setupCameraGestures();
+  setupCameraButtons();
   const clock = () => performance.now() * 0.001;
   window.addEventListener('keydown', (event) => {
     if (isTyping(event)) return;
@@ -929,10 +964,13 @@ function setupInput() {
     if (event.code === 'KeyV') toggleMic();
     if (event.code === 'KeyP' && joined) togglePartyPanel();
     if (event.code === 'KeyG' && !event.repeat) toggleDance(clock());
+    if (event.code === 'KeyC' && joined) camResetting = true; // pusatkan kamera
   });
   const turn = () => {
-    if (heldKeys.has('KeyQ')) yaw += 0.03;
-    if (heldKeys.has('KeyZ')) yaw -= 0.03;
+    if (heldKeys.has('KeyQ')) cam.yaw += 0.03;
+    if (heldKeys.has('KeyZ')) cam.yaw -= 0.03;
+    if (heldKeys.has('Equal') || heldKeys.has('NumpadAdd')) zoomBy(cam, 0.98); // + : zoom masuk (ditahan = terus mendekat)
+    if (heldKeys.has('Minus') || heldKeys.has('NumpadSubtract')) zoomBy(cam, 1.02);
     requestAnimationFrame(turn);
   };
   turn();
