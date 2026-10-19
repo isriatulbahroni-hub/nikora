@@ -156,11 +156,8 @@ export function createClient({ url, key, fetchImpl = globalThis.fetch, store }) 
 
   return {
     session: read,
+    // Tidak ada signUp: akun klien dibuat oleh admin lewat /api/admin/accounts (kunci service role hanya di server).
     async signIn(email, password) { const s = keep(await auth('token?grant_type=password', { email: cleanText(email, 254), password })); return s; },
-    async signUp(email, password) {
-      const d = await auth('signup', { email: cleanText(email, 254), password });
-      return { session: keep(d), needsConfirm: !d.access_token };
-    },
     /** Hapus sesi di perangkat ini seketika, lalu cabut di server (gagal jaringan tidak menahan keluar). */
     async signOut() {
       const s = read();
@@ -170,6 +167,15 @@ export function createClient({ url, key, fetchImpl = globalThis.fetch, store }) 
       }
     },
     userId() { const s = read(); return s && s.user ? s.user.id : null; },
+    /** Token akses yang masih berlaku (diperbarui bila perlu); dipakai memanggil fungsi server admin. */
+    accessToken: token,
+    /** Peran staf aktif akun ini ('owner' atau 'admin'), atau null untuk pelanggan biasa. Hanya untuk menampilkan menu: server yang menegakkan izin. */
+    async staffRole() {
+      const uid = this.userId();
+      if (!uid) return null;
+      const rows = await rest(`staff?user_id=eq.${encodeURIComponent(uid)}&active=eq.true&select=role&limit=1`);
+      return Array.isArray(rows) && rows[0] ? rows[0].role : null;
+    },
     rest,
     /** Hanya undangan milik akun ini (kebijakan baca publik membuat data contoh tanpa pemilik ikut terlihat bila tidak difilter). */
     async myInvitations() {
@@ -267,7 +273,6 @@ export function createClient({ url, key, fetchImpl = globalThis.fetch, store }) 
 function authMessage(d, status) {
   const m = String((d && (d.msg || d.error_description || d.message)) || '').toLowerCase();
   if (m.includes('invalid login')) return 'Email atau kata sandi salah.';
-  if (m.includes('already registered')) return 'Email ini sudah terdaftar, silakan masuk.';
   if (m.includes('email not confirmed')) return 'Email belum dikonfirmasi. Cek kotak masuk Anda.';
   if (m.includes('password')) return 'Kata sandi minimal 6 karakter.';
   if (status === 429) return 'Terlalu banyak percobaan. Coba lagi sebentar.';

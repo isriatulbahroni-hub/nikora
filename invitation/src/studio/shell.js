@@ -10,11 +10,15 @@ export const NAV = [
   { id: 'bantuan', label: 'Bantuan', icon: 'help', path: () => '#/bantuan' },
 ];
 
+/** Menu tambahan yang hanya muncul untuk staf (admin/owner); halamannya tetap dijaga server. */
+export const ADMIN_NAV = { id: 'admin', label: 'Admin', icon: 'user', path: () => '#/admin' };
+
 /**
  * Kerangka Studio: bilah atas (logo, akun, Keluar), menu samping di layar lebar, dan menu bawah di ponsel.
  * Menu Editor dan Template membawa undangan yang terakhir dibuka, jadi alurnya tersambung.
  */
-export function shellView({ active, email, slug, onSignOut, content }) {
+export function shellView({ active, email, slug, onSignOut, content, isAdmin = false }) {
+  const items = isAdmin ? [...NAV.slice(0, 4), ADMIN_NAV, ...NAV.slice(4)] : NAV;
   const link = (n, cls) => h('a', { class: `${cls}${n.id === active ? ' is-active' : ''}`, href: n.path(slug), 'aria-current': n.id === active ? 'page' : null },
     icon(n.icon, { size: cls === 'st-bnav-item' ? 22 : 20 }), h('span', { text: n.label }));
   return h('div', { class: 'st-app' },
@@ -23,7 +27,7 @@ export function shellView({ active, email, slug, onSignOut, content }) {
       h('div', { class: 'st-account' },
         h('span', { class: 'st-chip', title: email || '' }, icon('user', { size: 16 }), h('span', { class: 'st-chip-text', text: email || 'Akun' })),
         h('button', { class: 'st-exit', type: 'button', text: 'Keluar', onclick: onSignOut }))),
-    h('nav', { class: 'st-side', 'aria-label': 'Menu utama' }, NAV.map((n) => link(n, 'st-nav-item'))),
+    h('nav', { class: 'st-side', 'aria-label': 'Menu utama' }, items.map((n) => link(n, 'st-nav-item'))),
     h('main', { class: 'st-main', id: 'st-main' }, content),
-    h('nav', { class: 'st-bnav', 'aria-label': 'Menu utama (ponsel)' }, NAV.map((n) => link(n, 'st-bnav-item'))));
+    h('nav', { class: 'st-bnav', 'aria-label': 'Menu utama (ponsel)' }, items.map((n) => link(n, 'st-bnav-item'))));
 }
