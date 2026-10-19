@@ -10,6 +10,8 @@ import { pickerView, settingsView, helpView } from './pages.js';
 import { shellView } from './shell.js';
 import { parseRoute } from './route.js';
 import { leaveStudio, goodbyeView, hasUnsaved } from './exit.js';
+import { adminView } from './admin.js';
+import { createAdminApi } from './admin-api.js';
 import { h } from '../engine/dom.js';
 
 const KEY = 'orbit.studio.session';
@@ -34,7 +36,17 @@ try {
   root.replaceChildren(h('div', { class: 's-card' }, h('h1', { text: 'Studio belum siap' }), h('p', { class: 's-msg', role: 'alert', text: e.message })));
 }
 
+// Peran staf hanya untuk menampilkan menu Admin. Disimpan per akun supaya tidak bertanya ke database di tiap pindah halaman.
+let roleCache = { uid: null, role: null };
+async function staffRole() {
+  const uid = client.userId();
+  if (roleCache.uid === uid) return roleCache.role;
+  try { roleCache = { uid, role: await client.staffRole() }; } catch { return null; } // gagal tidak disimpan, dicoba lagi nanti
+  return roleCache.role;
+}
+
 function signOut() {
+  roleCache = { uid: null, role: null };
   return leaveStudio({ client, exitUrl, onGoodbye: () => root.replaceChildren(goodbyeView({ onAgain: render })) });
 }
 
@@ -62,8 +74,9 @@ async function render() {
   const cur = slug || recall();
   const session = client.session();
   const email = session.user && session.user.email;
-  const ACTIVE = { dashboard: 'dashboard', undangan: 'dashboard', buat: 'dashboard', tamu: 'tamu', editor: 'editor', template: 'template', pengaturan: 'pengaturan', bantuan: 'bantuan' };
-  const shell = (content) => root.replaceChildren(shellView({ active: ACTIVE[page], email, slug: cur, onSignOut: signOut, content }));
+  const role = await staffRole();
+  const ACTIVE = { dashboard: 'dashboard', undangan: 'dashboard', buat: 'dashboard', tamu: 'tamu', editor: 'editor', template: 'template', pengaturan: 'pengaturan', bantuan: 'bantuan', admin: 'admin' };
+  const shell = (content) => root.replaceChildren(shellView({ active: ACTIVE[page], email, slug: cur, onSignOut: signOut, content, isAdmin: Boolean(role) }));
   const setContent = (node) => { const m = document.getElementById('st-main'); if (m) m.replaceChildren(node); };
   const hrefs = { editor: (s) => `#/editor/${s}`, template: (s) => `#/template/${s}`, tamu: (s) => `#/tamu/${s}`, detail: (s) => `#/undangan/${s}` };
   shell(h('p', { class: 'st-loading', role: 'status', text: 'Memuat...' }));
@@ -71,6 +84,10 @@ async function render() {
   try {
     if (page === 'pengaturan') return setContent(settingsView({ email, onSignOut: signOut }));
     if (page === 'bantuan') return setContent(helpView());
+    if (page === 'admin') {
+      if (!role) return setContent(note('Halaman ini hanya untuk admin.', () => go('#/dashboard')));
+      return setContent(adminView({ api: createAdminApi({ client }), role }));
+    }
     if (page === 'buat') return setContent(createView({ client, onCreated: (s) => go(`#/template/${s}`), onCancel: () => go('#/dashboard') }));
     const items = await client.myInvitations();
     if (page === 'dashboard') {
