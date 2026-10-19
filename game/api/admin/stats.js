@@ -1,16 +1,16 @@
-// Fungsi serverless Vercel: GET /api/admin/stats (header Authorization: Admin <detik>.<tanda tangan>).
-// Dilindungi oleh turunan HMAC dari EVENT_ROLE_SECRET; tanpa rahasia terpasang endpoint ini tertutup (503).
-import { collectStats, verifyAdminHeader } from '../../src/admin-stats.js';
-import { roleSecret } from '../../src/token-issuer.js';
+// Fungsi serverless Vercel: GET /api/admin/stats
+// Akses: akun staf (Authorization: Bearer <token Supabase>) atau rahasia induk (Authorization: Admin <detik>.<tanda tangan>,
+// turunan HMAC dari EVENT_ROLE_SECRET). Tanpa keduanya terpasang endpoint ini tertutup (503).
+import { collectStats } from '../../src/admin-stats.js';
+import { authStatus, authorizeAdmin } from '../../src/staff-auth.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET' && req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
-  const secret = roleSecret(process.env);
-  const auth = verifyAdminHeader(secret, req.headers?.authorization, Date.now());
+  const auth = await authorizeAdmin(req.headers?.authorization);
   if (!auth.ok) {
     if (auth.reason !== 'not_configured') await new Promise((r) => setTimeout(r, 400)); // memperlambat tebak-tebakan
-    return res.status(auth.reason === 'not_configured' ? 503 : 401).json({ error: auth.reason });
+    return res.status(authStatus(auth.reason)).json({ error: auth.reason });
   }
   try {
     return res.status(200).json(await collectStats());
