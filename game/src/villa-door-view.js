@@ -18,7 +18,8 @@ export function createDoorView({ scene, rooms, getDoors }) {
     for (const d of room.doors) {
       const y = levelY(room.level);
       const horizontal = d.orient === 'h';
-      const leafGeo = new THREE.BoxGeometry(horizontal ? d.width - 0.04 : 0.1, 2.2, horizontal ? 0.1 : d.width - 0.04);
+      // Daun terkunci lebih lebar 0,04 m dari bukaan: kedua ujungnya masuk ke tiang rangka, jadi tidak ada celah di tepi.
+      const leafGeo = new THREE.BoxGeometry(horizontal ? d.width + 0.04 : 0.1, 2.2, horizontal ? 0.1 : d.width + 0.04);
       geos.push(leafGeo);
       const leaf = new THREE.Mesh(leafGeo, leafMat);
       leaf.position.set(d.x, y + 1.1, d.z);
