@@ -28,3 +28,19 @@ export function mobaUrl(origin, lobbyCode) {
   const code = normalizeLobbyCode(lobbyCode);
   return code ? `${base}/?join=${code}` : `${base}/`;
 }
+
+const MODES = new Set(['frame', 'tab']);
+
+/**
+ * Opsi MOBA untuk GameHost dari query halaman villa: ?moba=KODE (lobi privat 5 huruf) dan ?mobamode=tab|frame.
+ * Nilai yang tidak sah diabaikan, jadi hasilnya aman disebar langsung ke `services`.
+ */
+export function mobaServicesFromSearch(search = '') {
+  const p = new URLSearchParams(search);
+  const out = {};
+  const code = normalizeLobbyCode(p.get('moba'));
+  if (code) out.mobaLobbyCode = code;
+  const mode = String(p.get('mobamode') ?? '').toLowerCase();
+  if (MODES.has(mode)) out.mobaMode = mode;
+  return out;
+}

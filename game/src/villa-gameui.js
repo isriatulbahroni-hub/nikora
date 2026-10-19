@@ -2,6 +2,7 @@
 // Dibuat sekali oleh villa-main.js; semua logika buka/tutup ada di game-host.js.
 import { createGameHost } from './game-host.js';
 import { GAME_LOADERS } from './game-registry.js';
+import { mobaServicesFromSearch } from './moba/url.js';
 import { GAMES, nearestTerminal } from './villa-gamewing.js';
 import { buildGameWingDecor } from './villa-gamewing-world.js';
 import { roomAt } from './villa-layout.js';
@@ -63,7 +64,8 @@ export function createVillaGames({
     inRoom,
     isOpenForPlay,
     net,
-    services,
+    // opsi MOBA dari alamat halaman (?moba=KODE, ?mobamode=tab); `services` dari pemanggil menimpanya
+    services: { ...mobaServicesFromSearch(doc.defaultView?.location?.search ?? ''), ...services },
     onNotice: toast,
     makeContainer: () => {
       screenEl.replaceChildren();
