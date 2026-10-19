@@ -68,7 +68,8 @@ test('hotel kamera: dinding kamar menghalangi, ruang terbuka tidak, dan lantai a
   const inRoom = resolveCameraDistance({ x: -33, y: y0 + 1.45, z: 425 }, { x: -1, y: 0, z: 0 }, 10, boxes);
   assert.equal(inRoom.blocked, true);
   assert.ok(inRoom.dist < 3, `dinding barat kamar, dist=${inRoom.dist}`);
-  const open = resolveCameraDistance({ x: 10, y: 1.45, z: 404 }, { x: 0, y: 0, z: -1 }, 6, buildHotelOccluders(world, 0));
+  // dari halaman menghadap fasad (selatan = +z): dinding lobi masih 15 m di depan, kamera sejauh 6 m tidak terhalang
+  const open = resolveCameraDistance({ x: 10, y: 1.45, z: 404 }, { x: 0, y: 0, z: 1 }, 6, buildHotelOccluders(world, 0));
   assert.equal(open.blocked, false);
   assert.ok(doorTop({ tall: true }) > doorTop({}));
 });
