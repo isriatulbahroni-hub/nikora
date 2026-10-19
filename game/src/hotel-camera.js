@@ -7,12 +7,16 @@ import { PROP_HEIGHT } from './hotel-places.js';
 /** Tinggi bawah ambang di atas pintu: pintu "tall" (lobi, antar-petak publik) lebih tinggi. */
 export const doorTop = (door) => (door.tall ? 3.0 : DOOR_HEIGHT);
 
+/** Kanopi lobi di depan pintu utama (tempat turun penumpang): atapnya menghalangi kamera di lantai dasar. */
+export const CANOPY = Object.freeze({ x1: -14, x2: 14, z1: 406, z2: 420, y1: 5.3, y2: 5.7 });
+
 export function buildHotelOccluders(world, level) {
   const data = world.levels[level];
   const y0 = hotelLevelY(level);
   const boxes = [];
   const add = (minX, maxX, minY, maxY, minZ, maxZ) => boxes.push({ minX, maxX, minY, maxY, minZ, maxZ });
   add(-700, 700, -6, 0.05, -700, 700); // tanah
+  if (level === 0) add(CANOPY.x1, CANOPY.x2, CANOPY.y1, CANOPY.y2, CANOPY.z1, CANOPY.z2);
   if (level > 0) add(HOTEL_BUILDING[0], HOTEL_BUILDING[2], y0 - 0.4, y0, HOTEL_BUILDING[1], HOTEL_BUILDING[3]); // pelat lantai
   for (const w of data.walls) {
     const r = wallToRect(w);
