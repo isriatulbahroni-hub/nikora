@@ -67,15 +67,15 @@ test('ban dari server menutup koneksi dan menghentikan masuk ulang', async () =>
   assert.deepEqual(sent, []);
 });
 
-test('tanpa modToken atau server gagal: pesan kasar tetap ditahan', async () => {
+test('tanpa modToken pesan tetap terkirim (moderasi server mati); server gagal dengan modToken: pesan kasar ditahan', async () => {
   const a = fakeNet(() => ({ enabled: true }));
   const shownA = [];
   attachModeration(a.net, { storage: memStorage(), onNotice: (t) => shownA.push(t), fetchImpl: async () => { throw new Error('offline'); } });
   await a.net.fetch('/api/token', { method: 'POST', body: '{}' });
   a.net.sendChat('anjing');
   await new Promise((r) => setTimeout(r, 10));
-  assert.deepEqual(a.sent, []);
-  assert.equal(shownA.length, 1);
+  assert.deepEqual(a.sent, ['anjing']); // moderasi server mati (tanpa MODERATION_SECRET): perilaku lama, pesan terkirim
+  assert.equal(shownA.length, 0);
   const b = fakeNet(() => ({ enabled: true, modToken: 'tok' }));
   const shownB = [];
   attachModeration(b.net, { storage: memStorage(), onNotice: (t) => shownB.push(t), fetchImpl: async () => { throw new Error('offline'); } });
