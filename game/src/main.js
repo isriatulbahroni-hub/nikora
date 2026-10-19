@@ -278,6 +278,8 @@ function addSeatedNpc(seatId, color, name, { x, y, z, rot } = {}) {
   const avatar = createAvatar({ color, name });
   avatar.position.set(x ?? seat.x, y ?? HALL.seatedDrop, z ?? seat.z);
   avatar.rotation.y = rot ?? seat.rot;
+  avatar.userData.seated = true; // tamu simulasi benar-benar duduk (punggung tegak, paha mendatar), bukan berdiri yang diturunkan
+  applyPose(avatar, null, 0, 1); // satu kali cukup: delta 1 membuat pose langsung penuh dan tidak diubah lagi tiap frame
   scene.add(avatar);
   npcs.push({ avatar, baseY: avatar.position.y, phase: Math.random() * 6.28, seatId });
 }
@@ -753,6 +755,7 @@ function renderFrame(time) {
   const selfAct = selfState()?.act ?? null;
   if (walking) gestureUntil = 0; // berjalan menghentikan gestur lokal
   const pose = isDancing(now) ? 'dance' : now < gestureUntil ? gestureAct : selfAct ?? (now < clapUntil ? 'clap' : walking ? 'walk' : null);
+  playerAvatar.userData.seated = me.sit !== null; // duduk sungguhan, bukan sekadar diturunkan
   applyPose(playerAvatar, pose, now, delta);
   const bob = walking ? Math.abs(Math.sin(now * 13)) * 0.09 : 0;
   const hop = now < clapUntil ? Math.abs(Math.sin((clapUntil - now) * 14)) * 0.12 : 0;
