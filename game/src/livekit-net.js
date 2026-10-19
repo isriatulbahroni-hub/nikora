@@ -2,6 +2,7 @@
 // (satu ruang yang sama dengan suara). API-nya sama dengan NetClient supaya main.js dan multiplayer-view.js tidak berubah.
 // Konsekuensi: tidak ada server otoritatif (tiap klien memegang posisinya sendiri), cukup untuk ruang sosial.
 import { sanitizeConfig } from './avatar-config.js';
+import { attachModeration } from './moderated-net.js';
 
 const TOPIC = 'orbit';
 const STATE_INTERVAL_MS = 100;
@@ -47,7 +48,9 @@ export function roleOf(participant) {
 }
 
 export class LiveKitNet {
-  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl, world, event, key, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  // moderation: pasang moderasi obrolan (lihat moderated-net.js). Bawaan: aktif hanya di browser (ada `window`),
+  // sehingga tes di Node tidak berubah. Tanpa MODERATION_SECRET di server, moderasi tidak melakukan apa pun.
+  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl, world, event, key, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), moderation = typeof window !== 'undefined' } = {}) {
     this.key = key || undefined; // kunci pemilik/MC (diperiksa server); tamu biasa tidak punya
     this.role = 'guest';
     this.restricted = false; // true bila server mewajibkan peran untuk membuka panggung
@@ -75,6 +78,7 @@ export class LiveKitNet {
     this.lastSent = 0;
     this.lastChatAt = 0;
     this.timer = null;
+    if (moderation) attachModeration(this, typeof moderation === 'object' ? moderation : {});
   }
 
   /** Boleh menjadi MC? Mode terbuka: semua; mode terbatas: hanya pemilik/MC yang terverifikasi. */

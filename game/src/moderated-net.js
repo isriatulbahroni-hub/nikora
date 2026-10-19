@@ -60,7 +60,7 @@ export function attachModeration(net, { endpoint = '/api/moderate', storage, fet
 
   const origSend = net.sendChat.bind(net);
   async function report(text) {
-    if (!modToken) return notice(BLOCK_MESSAGE); // moderasi server mati: tetap tahan pesannya
+    if (!modToken) return origSend(text); // moderasi server mati (tanpa MODERATION_SECRET): perilaku lama, pesan terkirim
     try {
       const res = await post(endpoint, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ modToken, text }) });
       const verdict = await res.json();
