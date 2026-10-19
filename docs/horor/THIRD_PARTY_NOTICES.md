@@ -63,6 +63,8 @@ Jika kode dari repo-repo tersebut disalin, tambahkan teks lengkapnya di sini pad
   - `src/03-textures.js` -> `game/src/horor/horor-core.js` (canvasTex, speckle, worldUV)
   - `src/05a-builder.js` -> `game/src/horor/horor-room.js` (kelas Room: dinding, pintu, gerbang, lampu, kamera tetap)
   - `src/02-audio.js` -> `game/src/horor/horor-audio.js` (mesin suara WebAudio: bus, reverb per ruangan, drone ambience, langkah, pintu, kena/tembak; semua disintesis, tanpa berkas audio)
+  - `src/06b-actors.js` (`updatePlayer`, `turnTo`) -> `game/src/horor/horor-player.js` (gerak pemain: kontrol tank dan relatif kamera dengan kunci arah, tabrakan, dorongan mundur, siklus langkah; model murid dan animasi dibuang)
+  - `src/01-core.js` (pemetaan aksi dan penggabungan arah digital + analog) -> `game/src/horor/horor-input.js` (keyboard + joystick layar; pola joystick melayang mengikuti game bulu tangkis repo ini)
 - Tujuan: pembangun ruangan, kamera tetap, dan dasar kontrol/AI game survival horror
 - Tidak dibawa: suara heroine di `audio/voice/` (dibuat dengan ElevenLabs, tunduk pada ketentuan ElevenLabs, bukan MIT), file string Mandarin/Jepang, cerita dan karakter yokai
 
