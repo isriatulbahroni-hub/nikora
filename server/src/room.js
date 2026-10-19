@@ -1,6 +1,7 @@
 import { normalizeMovement } from '../../game/src/game-rules.js';
 import { HALL, SEATS, resolveCollisions } from '../../game/src/hall-layout.js';
 import { RoomLocks } from '../../game/src/villa-doors.js';
+import { installLift, liftProgress } from '../../game/src/villa-lift.js';
 
 export const ROOM_RULES = Object.freeze({
   maxPlayers: 50,
@@ -36,6 +37,8 @@ export class Room {
     this.players = new Map();
     this.spawnCounter = 0;
     this.greetRequests = new Map(); // id penerima -> { from, kind, expires }
+    // Lift vila: kotak tabrakan poros dan titik lift ditambahkan ke dunia (idempoten, sama persis dengan klien).
+    if (this.rules.world?.levels) installLift(this.rules.world);
     // Kunci kamar villa (check-in, kunci, ketuk). Hanya untuk dunia bertingkat seperti villa;
     // dunia hasil proyek (editor) tidak punya `levels` sehingga tidak memakainya.
     this.locks = this.rules.world?.levels ? new RoomLocks(this.rules.world) : null;
@@ -171,10 +174,11 @@ export class Room {
   #applySit(p, sit) {
     if (sit === null || sit === undefined) {
       p.sit = null;
+      p.ride = null;
       return true;
     }
     const world = this.rules.world;
-    const spots = world ? world.spots : SEATS; // vila: kursi, sofa, dan tempat tidur
+    const spots = world ? world.spots : SEATS; // vila: kursi, sofa, tempat tidur, dan titik lift
     const range = world ? world.sitRange : HALL.sitRange;
     if (!Number.isInteger(sit) || sit < 0 || sit >= spots.length) return false;
     if (p.sit === sit) return true;
@@ -182,7 +186,10 @@ export class Room {
     const seat = spots[sit];
     if (world && ((seat.level ?? 0) !== p.level || p.stair != null)) return false; // harus di lantai yang sama
     if (Math.hypot(seat.x - p.x, seat.z - p.z) > range + 0.6) return false; // toleransi latensi
+    // lift melayani satu penumpang pada satu waktu
+    if (seat.kind === 'lift') for (const other of this.players.values()) if (other !== p && other.ride) return false;
     p.sit = sit;
+    p.ride = null;
     p.x = seat.x;
     p.z = seat.z;
     p.rot = seat.rot;
@@ -213,10 +220,29 @@ export class Room {
     }
   }
 
+  /** Penumpang lift: ketinggian mengikuti jadwal yang sama dengan klien; di tujuan pemain berdiri di lantai baru. */
+  #rideLift(p, spot, nowMs) {
+    p.ride ??= { t0: nowMs };
+    p.input = { x: 0, z: 0 };
+    const r = liftProgress(spot.level, spot.to, nowMs - p.ride.t0);
+    p.y = r.y;
+    if (!r.done) return;
+    p.level = spot.to;
+    p.stair = null;
+    p.sit = null;
+    p.ride = null;
+  }
+
   step(dt, nowMs = Date.now()) {
     if (!Number.isFinite(dt) || dt <= 0) return;
     const safeDt = Math.min(dt, 0.25);
     for (const p of this.players.values()) {
+      const liftSpot = p.sit !== null ? this.rules.world?.spots?.[p.sit] : null;
+      if (liftSpot?.kind === 'lift') {
+        this.#rideLift(p, liftSpot, nowMs);
+        continue;
+      }
+      if (p.ride) p.ride = null;
       if (p.sit !== null || p.act?.with) continue; // duduk atau sedang berpasangan: tidak bergerak
       const dx = p.input.x * this.rules.playerSpeed * safeDt;
       const dz = p.input.z * this.rules.playerSpeed * safeDt;
