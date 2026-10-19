@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { MOBA_ORIGIN_DEFAULT, mobaUrl, normalizeLobbyCode, resolveMobaOrigin } from './url.js';
+import { MOBA_ORIGIN_DEFAULT, mobaServicesFromSearch, mobaUrl, normalizeLobbyCode, resolveMobaOrigin } from './url.js';
 import moba from './index.js';
 
 test('kode lobi: 5 huruf, dijadikan huruf besar; selain itu ditolak', () => {
@@ -60,4 +60,12 @@ test('mode tab: pop-up diblokir -> pemain diberi tahu', async () => {
   const notes = [];
   moba.mount({ container: null, notice: (m) => notes.push(m), exit: () => {}, services: { mobaMode: 'tab', open: () => null } });
   assert.equal(notes.length, 1);
+});
+
+test('opsi dari query halaman: kode lobi dan mode, nilai tidak sah diabaikan', () => {
+  assert.deepEqual(mobaServicesFromSearch('?e=pesta-rina&moba=abcde&mobamode=TAB'), { mobaLobbyCode: 'ABCDE', mobaMode: 'tab' });
+  assert.deepEqual(mobaServicesFromSearch('?mobamode=frame'), { mobaMode: 'frame' });
+  assert.deepEqual(mobaServicesFromSearch('?moba=ab1de&mobamode=popup'), {});
+  assert.deepEqual(mobaServicesFromSearch(''), {});
+  assert.deepEqual(mobaServicesFromSearch(), {});
 });

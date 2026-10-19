@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 import { DOOR_HEIGHT } from './villa-layout.js';
-import { ARENA_WALL_HEIGHT, GAME_SIGNS, GAME_TERMINALS, GAMES, TERMINAL_RANGE, nearestTerminal } from './villa-gamewing.js';
+import { ARENA_WALL_HEIGHT, GAME_ROOMS, GAME_SIGNS, GAME_TERMINALS, GAMES, TERMINAL_RANGE, nearestTerminal } from './villa-gamewing.js';
 import { createVillaGames } from './villa-gameui.js';
 
 const newDoc = () => new JSDOM('<!doctype html><body></body>').window.document;
@@ -117,4 +117,29 @@ test('dispose membersihkan layar dan listener', async () => {
   const g = createVillaGames({ doc, decor: null });
   g.dispose();
   assert.equal(doc.querySelector('.vg'), null);
+});
+
+test('MOBA: kode lobi dan mode dari alamat halaman sampai ke permainan; services pemanggil menimpa', async () => {
+  const docAt = (search) => new JSDOM('<!doctype html><body></body>', { url: `https://villa.example.com/villa.html${search}` }).window.document;
+  const seen = [];
+  const loaders = { moba: async () => ({ default: { mount: (ctx) => { seen.push(ctx.services); return { destroy() {} }; } } }) };
+  const catalog = { ...GAMES, moba: { ...GAMES.moba, status: 'ready' } };
+  const [rx1, rz1, rx2, rz2] = GAME_ROOMS.find((r) => r.game === 'moba').rect;
+  const inMoba = { x: (rx1 + rx2) / 2, z: (rz1 + rz2) / 2, level: 0, stair: null, y: 0 };
+  const open = async (g) => g.open({ game: 'moba' }, inMoba);
+
+  const a = createVillaGames({ doc: docAt('?e=pesta-rina&moba=abcde&mobamode=tab'), decor: null, loaders, catalog, services: { quality: 'x' } });
+  await open(a);
+  assert.deepEqual(seen[0], { mobaLobbyCode: 'ABCDE', mobaMode: 'tab', quality: 'x' });
+  a.dispose();
+
+  const b = createVillaGames({ doc: docAt('?moba=abcde'), decor: null, loaders, catalog, services: { mobaLobbyCode: 'ZZZZZ' } });
+  await open(b);
+  assert.equal(seen[1].mobaLobbyCode, 'ZZZZZ');
+  b.dispose();
+
+  const c = createVillaGames({ doc: docAt(''), decor: null, loaders, catalog });
+  await open(c);
+  assert.deepEqual(seen[2], {});
+  c.dispose();
 });
