@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { COUNTRYSIDE, DOOR_HEIGHT, HALL_SEATING, HALL_WALL_HEIGHT, LEVEL_HEIGHT, ROOFS, STAIRS, WALL_HEIGHT, WALL_THICKNESS, hallChairPositions, levelY } from './villa-layout.js';
+import {
+  LEAF_THICKNESS, SLIDE_HEIGHT, SLIDE_OFFSET, SWING_HEIGHT, SWING_OPEN, doorLintelTop, isMainRoomDoor, slideDir, slideLeaves, slideSide, swingLeaves,
+} from './villa-door-panels.js';
 
 import {
   PALM_BEND, bedGeometries, broadleafTreeGeometry, carGeometries, chairGeometry, frondGeometry, lanternPostGeometry,
@@ -173,7 +176,7 @@ function buildWalls(walls, rooms, doors, parent, mats) {
   }
   // ambang di atas pintu + rangka kayu pintu
   for (const d of doors) {
-    const h = d.tall ? HALL_WALL_HEIGHT : WALL_HEIGHT;
+    const h = doorLintelTop(d, walls); // setinggi dinding di sebelahnya (dinding arena 4 m): tidak ada lubang di atas pintu
     const color = WALL_TINTS[(inRooms(d.x, d.z) ?? inRooms(d.orient === 'h' ? d.x : d.x + 0.3, d.orient === 'h' ? d.z + 0.3 : d.z))?.kind ?? 'grounds'] ?? WALL_TINTS.grounds;
     const lin = d.orient === 'h' ? { x: d.x, y: DOOR_HEIGHT, z: d.z, sx: d.width, sy: h - DOOR_HEIGHT, sz: T, color } : { x: d.x, y: DOOR_HEIGHT, z: d.z, sx: T, sy: h - DOOR_HEIGHT, sz: d.width, color };
     solid.push(lin);
@@ -194,41 +197,72 @@ function buildWalls(walls, rooms, doors, parent, mats) {
   parent.add(instanced(geo, mats.glass, glass, { castShadow: false, receiveShadow: false }));
 }
 
-/** Daun pintu yang membuka halus saat ada avatar mendekat (satu daun untuk pintu sempit, dua daun untuk pintu lebar). */
-function buildDoorLeaves(doors, level, parent, mats) {
+/**
+ * Daun pintu yang membuka halus saat ada avatar mendekat. Pintu ruang utama (aula pernikahan) diayun; semua pintu lain
+ * digeser di sepanjang dinding (sliding). Saat tertutup, daun menutup bukaan penuh tanpa celah: ukuran dan posisinya
+ * dihitung di villa-door-panels.js (dan diuji di villa-door-panels.test.js).
+ */
+function buildDoorLeaves(doors, level, parent, mats, rooms = [], walls = []) {
   const doorsOut = [];
-  const leafGeo = new THREE.BoxGeometry(1, DOOR_HEIGHT - 0.06, 0.06);
-  leafGeo.translate(0.5, (DOOR_HEIGHT - 0.06) / 2 + 0.02, 0);
+  const swingGeo = new THREE.BoxGeometry(1, SWING_HEIGHT, LEAF_THICKNESS);
+  swingGeo.translate(0.5, SWING_HEIGHT / 2, 0);
+  const slideGeo = new THREE.BoxGeometry(1, SLIDE_HEIGHT, LEAF_THICKNESS);
+  slideGeo.translate(0, SLIDE_HEIGHT / 2, 0);
+  const knobGeo = new THREE.SphereGeometry(0.035, 8, 6);
+  const pullGeo = new THREE.BoxGeometry(0.035, 0.55, 0.035);
   for (const d of doors) {
-    const along = d.orient === 'h' ? [d.width, 0.03, 0.55] : [0.55, 0.03, d.width];
-    block(along[0], along[1], along[2], mats.brass, d.x, 0.04, d.z, parent, { cast: false });
-    if (d.width > 3.2) continue; // gerbang lebar dibiarkan terbuka
-    const double = d.width > 2.0;
+    const horizontal = d.orient === 'h';
+    const at = (along, normal) => (horizontal ? [d.x + along, d.z + normal] : [d.x + normal, d.z + along]);
+    const sill = horizontal ? [d.width, 0.03, 0.55] : [0.55, 0.03, d.width];
+    block(sill[0], sill[1], sill[2], mats.brass, d.x, 0.04, d.z, parent, { cast: false });
     const leaves = [];
-    const make = (hingeAlong, dirSign, openDir) => {
-      const lw = (double ? d.width / 2 : d.width) - 0.08;
-      const pivot = new THREE.Group();
-      const mesh = new THREE.Mesh(leafGeo, mats.door);
-      mesh.scale.x = lw;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      pivot.add(mesh);
-      const handle = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), mats.brass);
-      handle.position.set(lw - 0.12, 1.05, 0.05);
-      pivot.add(handle);
-      if (d.orient === 'h') pivot.position.set(d.x + hingeAlong, 0.02, d.z);
-      else pivot.position.set(d.x, 0.02, d.z + hingeAlong);
-      const closed = d.orient === 'h' ? (dirSign > 0 ? 0 : Math.PI) : dirSign > 0 ? -Math.PI / 2 : Math.PI / 2;
-      pivot.rotation.y = closed;
-      parent.add(pivot);
-      leaves.push({ pivot, closed, openDir });
-    };
-    const half = d.width / 2 - 0.04;
-    if (double) {
-      make(-half, +1, +1);
-      make(+half, -1, -1);
+    if (isMainRoomDoor(d, rooms)) {
+      // pintu ruang utama: diayun pada engsel di tiang rangka
+      for (const l of swingLeaves(d.width)) {
+        const pivot = new THREE.Group();
+        const mesh = new THREE.Mesh(swingGeo, mats.door);
+        mesh.scale.x = l.length;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        pivot.add(mesh);
+        for (const face of [1, -1]) {
+          const knob = new THREE.Mesh(knobGeo, mats.brass);
+          knob.position.set(l.knob, 1.05, face * 0.05);
+          pivot.add(knob);
+        }
+        // daun mengarah ke +sepanjang (dir +1) atau -sepanjang (dir -1); pintu 'h' memanjang di x, pintu 'v' di z
+        const closed = horizontal ? (l.dir > 0 ? 0 : Math.PI) : l.dir > 0 ? -Math.PI / 2 : Math.PI / 2;
+        const [px, pz] = at(l.hinge, l.normal);
+        pivot.position.set(px, 0, pz);
+        pivot.rotation.y = closed;
+        parent.add(pivot);
+        leaves.push({ node: pivot, apply: (open) => { pivot.rotation.y = closed + l.dir * open * SWING_OPEN; } });
+      }
     } else {
-      make(-half, +1, +1);
+      // pintu lain: daun digantung di depan dinding (di luar tonjolan rangka) dan digeser sejajar dinding
+      const side = slideSide(d, rooms);
+      for (const l of slideLeaves(d.width, slideDir(d, walls))) {
+        const group = new THREE.Group();
+        const [gx, gz] = at(0, side * (SLIDE_OFFSET + l.normal));
+        group.position.set(gx, 0, gz);
+        group.rotation.y = horizontal ? 0 : -Math.PI / 2; // sumbu x lokal = searah dinding
+        const slider = new THREE.Group();
+        const mesh = new THREE.Mesh(slideGeo, mats.door);
+        mesh.scale.x = l.span[1] - l.span[0];
+        mesh.position.x = (l.span[0] + l.span[1]) / 2;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        slider.add(mesh);
+        const gripX = l.dir > 0 ? l.span[0] + 0.12 : l.span[1] - 0.12; // pegangan di tepi yang berlawanan dengan arah geser
+        for (const face of [1, -1]) {
+          const pull = new THREE.Mesh(pullGeo, mats.brass);
+          pull.position.set(gripX, 1.05, face * (LEAF_THICKNESS / 2 + 0.02));
+          slider.add(pull);
+        }
+        group.add(slider);
+        parent.add(group);
+        leaves.push({ node: group, apply: (open) => { slider.position.x = l.dir * open * l.travel; } });
+      }
     }
     doorsOut.push({ x: d.x, z: d.z, y: levelY(level), leaves, open: 0 });
   }
@@ -242,15 +276,14 @@ function buildDoorLeaves(doors, level, parent, mats) {
         }
       }
       door.open += ((near ? 1 : 0) - door.open) * (1 - Math.exp(-7 * delta));
-      const angle = door.open * 1.75;
+      // lepas ke nilai ujung: pintu yang sudah menutup harus benar-benar rapat (bukan 0,001 dari tertutup)
+      if (!near && door.open < 0.002) door.open = 0;
+      else if (near && door.open > 0.998) door.open = 1;
       // daun pintu yang terlalu dekat kamera disembunyikan agar tidak menutupi layar (kamera di ambang pintu)
       const hide = cam && Math.abs(cam.y - door.y - 1.2) < 2.5 && Math.hypot(cam.x - door.x, cam.z - door.z) < 1.6;
       for (const l of door.leaves) {
-        l.pivot.visible = !hide;
-        // pintu 'h': +angle memutar ke utara; pintu 'v': +angle memutar ke timur (dua daun bercermin)
-        const horizontal = Math.abs(l.closed) < 0.01 || Math.abs(Math.abs(l.closed) - Math.PI) < 0.01;
-        if (horizontal) l.pivot.rotation.y = l.closed + (Math.abs(l.closed) < 0.01 ? angle : -angle);
-        else l.pivot.rotation.y = l.closed + (l.closed < 0 ? angle : -angle);
+        l.node.visible = !hide;
+        l.apply(door.open);
       }
     }
   };
@@ -943,7 +976,7 @@ const TERRACE_PLANTS = {
 function buildUpperLevel(level, data, group, mats, floors, rand) {
   buildFloors(data.rooms, level, group, mats, floors);
   buildWalls(data.walls, data.rooms, data.doors, group, mats);
-  const updateDoors = buildDoorLeaves(data.doors, level, group, mats);
+  const updateDoors = buildDoorLeaves(data.doors, level, group, mats, data.rooms, data.walls);
   buildRailings(data.rooms, group, mats);
   buildProps(data.props, group, mats, rand);
   const plants = [];
@@ -1134,7 +1167,7 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
   buildFloors(groundLevel.rooms, 0, root, mats, floors);
 
   buildWalls(groundLevel.walls, groundLevel.rooms, groundLevel.doors, root, mats);
-  const doorUpdaters = [buildDoorLeaves(groundLevel.doors, 0, root, mats)];
+  const doorUpdaters = [buildDoorLeaves(groundLevel.doors, 0, root, mats, groundLevel.rooms, groundLevel.walls)];
   buildPerimeter(world, root, mats, rand);
   buildHall(root, mats, rand);
   buildPoolAndGarden(root, mats, anim);
