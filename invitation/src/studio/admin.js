@@ -35,7 +35,7 @@ export function adminView({ api, role }) {
 
   const email = input({ type: 'email', name: 'email', autocomplete: 'off', required: true, placeholder: 'email klien', 'aria-label': 'Email klien' });
   const pass = input({ type: 'text', name: 'password', autocomplete: 'off', spellcheck: 'false', maxlength: '72', placeholder: 'kata sandi sementara (min. 8)', 'aria-label': 'Kata sandi sementara' });
-  const makeAdmin = input({ type: 'checkbox', name: 'makeAdmin', 'aria-label': 'Jadikan admin' });
+  const makeAdmin = h('input', { type: 'checkbox', name: 'makeAdmin', 'aria-label': 'Jadikan admin' });
   const generate = h('button', { class: 's-btn s-small s-ghost', type: 'button', text: 'Buat sandi acak', onclick: () => { try { pass.value = randomPassword(); } catch (err) { msg.textContent = err.message; } } });
   const submit = h('button', { class: 's-btn', type: 'submit', text: 'Buat akun' });
   const form = h('form', { class: 's-group', novalidate: true },

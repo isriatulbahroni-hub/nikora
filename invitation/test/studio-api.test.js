@@ -62,10 +62,31 @@ test('signIn: sesi tersimpan; kata sandi salah -> pesan Indonesia', async () => 
   await assert.rejects(() => bad.signIn('a@b.c', 'x'), /Email atau kata sandi salah/);
 });
 
-test('signUp: tanpa token -> perlu konfirmasi email', async () => {
-  const c = createClient({ url: 'https://x.supabase.co', key: 'anon', store: memStore(), fetchImpl: async () => res(200, { user: { id: 'u2' } }) });
-  const r = await c.signUp('a@b.c', 'rahasia1');
-  assert.equal(r.needsConfirm, true);
+test('klien tidak menyediakan signUp: akun hanya dibuat admin lewat server', () => {
+  const c = createClient({ url: 'https://x.supabase.co', key: 'anon', store: memStore(), fetchImpl: async () => res(200, {}) });
+  assert.equal(c.signUp, undefined);
+});
+
+test('staffRole: peran staf aktif milik sendiri; pelanggan biasa null; tanpa sesi null tanpa jaringan', async () => {
+  const live = JSON.stringify({ access_token: 't', refresh_token: 'r', expires_at: 9999999999, user: { id: 'u-9' } });
+  const urls = [];
+  const staff = createClient({ url: 'https://x.supabase.co', key: 'anon', store: memStore(live), fetchImpl: async (u) => { urls.push(u); return res(200, [{ role: 'admin' }]); } });
+  assert.equal(await staff.staffRole(), 'admin');
+  assert.match(urls[0], /staff\?user_id=eq\.u-9&active=eq\.true&select=role&limit=1$/);
+  const plain = createClient({ url: 'https://x.supabase.co', key: 'anon', store: memStore(live), fetchImpl: async () => res(200, []) });
+  assert.equal(await plain.staffRole(), null);
+  let hit = 0;
+  const anon = createClient({ url: 'https://x.supabase.co', key: 'anon', store: memStore(), fetchImpl: async () => { hit++; return res(200, []); } });
+  assert.equal(await anon.staffRole(), null);
+  assert.equal(hit, 0);
+});
+
+test('accessToken: token yang masih berlaku dipakai apa adanya; tanpa sesi ditolak', async () => {
+  const live = JSON.stringify({ access_token: 'segar', refresh_token: 'r', expires_at: 9999999999, user: { id: 'u1' } });
+  const c = createClient({ url: 'https://x.supabase.co', key: 'anon', store: memStore(live), fetchImpl: async () => { throw new Error('tidak boleh ke jaringan'); } });
+  assert.equal(await c.accessToken(), 'segar');
+  const none = createClient({ url: 'https://x.supabase.co', key: 'anon', store: memStore(), fetchImpl: async () => res(200, {}) });
+  await assert.rejects(() => none.accessToken(), /masuk dulu/);
 });
 
 test('token kedaluwarsa diperbarui; gagal diperbarui -> sesi dihapus', async () => {
