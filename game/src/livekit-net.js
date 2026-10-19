@@ -18,6 +18,7 @@ const DANCE_MS = 45_000;
 const GESTURE_MS = 1800;
 const GESTURES = ['wave', 'bow', 'spin']; // gestur solo dari Cermin Gerak
 const REMOTE_ACTS = [...KINDS, 'dance', 'spin'];
+const POSE_NAME = /^[a-z_]{1,16}$/; // nama gerakan duduk/shalat di masjid (mis. "bersila", "sujud"); hanya huruf kecil dan garis bawah
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -237,7 +238,7 @@ export class LiveKitNet {
     if (m.t === 's') {
       const prev = this.remotes.get(id) ?? this.#blank(participant);
       const kind = REMOTE_ACTS.includes(m.a) ? m.a : null;
-      this.remotes.set(id, {
+      const next = {
         ...prev,
         name: participant.name || prev.name,
         x: num(m.x, prev.x),
@@ -250,7 +251,11 @@ export class LiveKitNet {
         av: Array.isArray(m.v) ? sanitizeConfig(m.v) : prev.av,
         au: Number.isInteger(m.u) && m.u >= 0 && m.u < 4 ? m.u : prev.au, // bagian hari pengirim untuk aura
         role: roleOf(participant), // dari metadata token (ditandatangani server), bukan dari isi pesan
-      });
+      };
+      // Gerakan duduk/shalat (masjid): hanya ada bila pengirim sedang melakukannya; pesan tanpa "q" berarti berdiri biasa.
+      if (typeof m.q === 'string' && POSE_NAME.test(m.q)) next.pose = m.q;
+      else delete next.pose;
+      this.remotes.set(id, next);
       // Dua orang di kursi yang sama: id lebih besar mengalah.
       if (this.self.sit !== null && Number.isInteger(m.i) && m.i === this.self.sit && id < this.id) this.self.sit = null;
       this.#emit('state', { t: 'state', players: this.players });
@@ -327,15 +332,15 @@ export class LiveKitNet {
     this.room.localParticipant.publishData(enc.encode(JSON.stringify(obj)), opts).catch(() => {});
   }
 
-  /** Isi pesan state kita (sama untuk heartbeat, gerak dekat, dan gerak jauh). */
+  /** Isi pesan state kita (sama untuk heartbeat, gerak dekat, dan gerak jauh). "q" hanya ada saat sedang duduk/shalat di masjid. */
   #statePayload() {
     const s = this.self;
-    return { t: 's', x: +s.x.toFixed(2), z: +s.z.toFixed(2), y: +(s.y ?? 0).toFixed(2), r: +s.rot.toFixed(2), i: s.sit, a: s.act, w: s.with, v: s.av, u: s.au };
+    return { t: 's', x: +s.x.toFixed(2), z: +s.z.toFixed(2), y: +(s.y ?? 0).toFixed(2), r: +s.rot.toFixed(2), i: s.sit, a: s.act, w: s.with, v: s.av, u: s.au, ...(s.pose ? { q: s.pose } : {}) };
   }
 
   #remember() {
     const s = this.self;
-    this.snapshot = { x: s.x, z: s.z, y: s.y ?? 0, r: s.rot, i: s.sit, a: s.act, w: s.with, v: s.av, u: s.au };
+    this.snapshot = { x: s.x, z: s.z, y: s.y ?? 0, r: s.rot, i: s.sit, a: s.act, w: s.with, v: s.av, u: s.au, q: s.pose ?? null };
   }
 
   #publishState(opts) {
@@ -347,7 +352,7 @@ export class LiveKitNet {
   #moved() {
     const s = this.self;
     const n = this.snapshot;
-    return !n || Math.abs(s.x - n.x) > MOVE_EPS || Math.abs(s.z - n.z) > MOVE_EPS || Math.abs((s.y ?? 0) - n.y) > MOVE_EPS || Math.abs(s.rot - n.r) > MOVE_EPS || s.sit !== n.i || s.act !== n.a || s.with !== n.w || s.av !== n.v;
+    return !n || Math.abs(s.x - n.x) > MOVE_EPS || Math.abs(s.z - n.z) > MOVE_EPS || Math.abs((s.y ?? 0) - n.y) > MOVE_EPS || Math.abs(s.rot - n.r) > MOVE_EPS || s.sit !== n.i || s.act !== n.a || s.with !== n.w || s.av !== n.v || (s.pose ?? null) !== n.q;
   }
 
   /** Gerak: yang dekat menerima 10x/dtk, yang jauh 2x/dtk. Diam (tidak berubah) tidak mengirim apa pun selain heartbeat. */
@@ -385,6 +390,15 @@ export class LiveKitNet {
   /** Avatar buatan pemain (array wire). Disiarkan segera lalu ikut tiap heartbeat untuk tamu yang baru masuk. */
   setAvatar(wire) {
     this.self.av = Array.isArray(wire) ? wire.slice(0, 6) : null;
+    this.#publishState({ reliable: true });
+  }
+
+  /** Gerakan duduk bersila/shalat di masjid (nama dari masjid-posture-data.js); null = berdiri. Disiarkan segera dan ikut tiap heartbeat. */
+  setPose(name) {
+    const q = typeof name === 'string' && POSE_NAME.test(name) ? name : null;
+    if ((this.self.pose ?? null) === q) return;
+    if (q) this.self.pose = q;
+    else delete this.self.pose;
     this.#publishState({ reliable: true });
   }
 

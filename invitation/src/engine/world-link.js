@@ -1,18 +1,19 @@
 /** Penghubung undangan -> dunia 3D. Link dunia membawa slug acara (ruang bersama) dan nama tamu. */
 /** Tempat acara 3D yang bisa dipilih pemilik undangan. Menambah tempat baru = satu entri di WORLDS, WORLD_LABELS, dan WORLD_PAGES
- *  (serta satu entri di game/src/venues.js dan satu halaman dunia di game/). */
-export const WORLDS = ['villa', 'royal', 'hall'];
+ *  (serta satu entri di game/src/venues.js, satu ruang di ROOMS pada game/src/token-issuer.js, dan satu halaman dunia di game/). */
+export const WORLDS = ['villa', 'royal', 'hall', 'masjid'];
 export const WORLD_LABELS = Object.freeze({
   villa: 'Villa (pernikahan)',
   royal: 'The Royal Wedding · Istana Cinta',
   hall: 'Aula',
+  masjid: 'Masjid Agung NIKORA',
 });
-const WORLD_PAGES = Object.freeze({ villa: 'villa.html', royal: 'royal.html', hall: '' });
+const WORLD_PAGES = Object.freeze({ villa: 'villa.html', royal: 'royal.html', hall: '', masjid: 'masjid.html' });
 /** Halaman dunia untuk tempat tertentu; tempat tidak dikenal jatuh ke villa (perilaku lama). */
 export const worldPage = (world) => WORLD_PAGES[world] ?? WORLD_PAGES.villa;
 export const DEFAULT_WORLD_URL = 'https://nikora-ten.vercel.app';
 
-/** Pernikahan -> villa; acara lain -> aula. Pemilik undangan bisa menimpa lewat extra.world. */
+/** Pernikahan -> villa; acara lain -> aula. Pemilik undangan bisa menimpa lewat extra.world (mis. memilih Masjid). */
 export function defaultWorld(eventType) {
   return eventType === 'pernikahan' ? 'villa' : 'hall';
 }

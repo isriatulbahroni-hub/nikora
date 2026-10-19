@@ -39,9 +39,17 @@ test('roomFor: ruang per acara dan per dunia; tanpa acara/slug tak valid memakai
   assert.equal(roomFor('lain', 'ab-cd'), 'evt-ab-cd-hall');
 });
 
+test('roomFor: Masjid punya ruang sendiri, tidak bercampur dengan aula untuk acara yang sama', () => {
+  assert.equal(roomFor('masjid'), 'nikora-masjid');
+  assert.equal(roomFor('masjid', 'tazkirah-akbar'), 'evt-tazkirah-akbar-masjid');
+  assert.notEqual(roomFor('masjid', 'tazkirah-akbar'), roomFor('hall', 'tazkirah-akbar'));
+});
+
 test('issueToken: token masuk ke ruang acara; slug aneh ditolak; acara yang tidak ada di Supabase ditolak', async () => {
   const a = await issueToken({ env: ENV, name: 'Budi', world: 'villa', event: 'dimas-rani' });
   assert.equal(jwt(a.token).video.room, 'evt-dimas-rani-villa');
+  const m = await issueToken({ env: ENV, name: 'Budi', world: 'masjid', event: 'tazkirah-akbar' });
+  assert.equal(jwt(m.token).video.room, 'evt-tazkirah-akbar-masjid');
   assert.deepEqual(await issueToken({ env: ENV, event: '../../x' }), { enabled: false, reason: 'event' });
   const withDb = { ...ENV, SUPABASE_URL: 'https://x.supabase.co', SUPABASE_ANON_KEY: 'anon' };
   const none = async () => ({ ok: true, json: async () => [] });
@@ -135,4 +143,11 @@ test('issueToken: ruang umum (tanpa acara) memakai kunci acara kosong', async ()
   assert.equal(r.role, 'mc');
   const wrong = await issueToken({ env, name: 'MC', world: 'villa', key: deriveRoleKey(SECRET, 'acara-a', 'mc') });
   assert.equal(wrong.role, 'guest');
+});
+
+test('issueToken: kunci peran acara berlaku juga di Masjid (kunci diturunkan dari slug, bukan dari dunia)', async () => {
+  const env = { ...LK, EVENT_ROLE_SECRET: SECRET };
+  const r = await issueToken({ env, name: 'Ustadz', world: 'masjid', event: 'acara-a', key: deriveRoleKey(SECRET, 'acara-a', 'mc') });
+  assert.equal(r.role, 'mc');
+  assert.equal(claims(r.token).video.room, 'evt-acara-a-masjid');
 });
