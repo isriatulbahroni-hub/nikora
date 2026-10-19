@@ -565,3 +565,8 @@ body[data-input=touch] .chat-box{bottom:calc(var(--dock) + 180px + env(safe-area
 
 .notice{position:absolute;z-index:9;left:50%;transform:translateX(-50%);bottom:calc(var(--dock) + 140px + env(safe-area-inset-bottom));max-width:min(360px,calc(100% - 28px));padding:10px 14px;border-radius:14px;background:rgba(29,23,34,.92);border:1px solid var(--line);color:var(--ink);font:500 .85rem/1.35 system-ui,sans-serif;text-align:center;pointer-events:none}
 .notice[hidden]{display:none}
+
+/* Alat kamera aula: zoom masuk/keluar dan pusatkan (muncul setelah masuk) */
+.cam-tools{position:absolute;z-index:6;right:calc(10px + env(safe-area-inset-right));top:50%;transform:translateY(-50%);display:none;flex-direction:column;gap:8px;padding:8px;border:1px solid var(--line);border-radius:26px;background:rgba(29,23,34,.82);backdrop-filter:blur(8px)}
+body.joined .cam-tools{display:flex}
+.cam-tools .dock-btn{width:40px;height:40px;font-size:1.15rem}
