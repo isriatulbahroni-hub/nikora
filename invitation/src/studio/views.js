@@ -20,35 +20,23 @@ export const titleOf = (i) => (i.event_type === 'pernikahan' ? [i.groom, i.bride
 const field = (label, input, error) => h('label', { class: 's-field' }, h('span', { text: label }), input, h('small', { class: 's-err', role: 'alert', text: error || '' }));
 const input = (props) => h('input', { class: 's-input', ...props });
 
-/** Halaman masuk / daftar. */
+/** Halaman masuk. Tidak ada pendaftaran sendiri: akun dibuat oleh admin. */
 export function loginView({ client, onDone }) {
-  let mode = 'masuk';
   const email = input({ type: 'email', name: 'email', autocomplete: 'email', required: true, 'aria-label': 'Email' });
   const pass = input({ type: 'password', name: 'password', minlength: '6', autocomplete: 'current-password', required: true, 'aria-label': 'Kata sandi' });
   const msg = h('p', { class: 's-msg', role: 'status', 'aria-live': 'polite' });
   const submit = h('button', { class: 's-btn', type: 'submit', text: 'Masuk' });
-  const toggle = h('button', { class: 's-link', type: 'button', text: 'Belum punya akun? Daftar' });
-  toggle.addEventListener('click', () => {
-    mode = mode === 'masuk' ? 'daftar' : 'masuk';
-    submit.textContent = mode === 'masuk' ? 'Masuk' : 'Daftar';
-    toggle.textContent = mode === 'masuk' ? 'Belum punya akun? Daftar' : 'Sudah punya akun? Masuk';
-    pass.setAttribute('autocomplete', mode === 'masuk' ? 'current-password' : 'new-password');
-    msg.textContent = '';
-  });
   const form = h('form', { class: 's-card', novalidate: true },
     h('h1', { text: 'Studio Undangan' }),
     h('p', { class: 's-sub', text: 'Masuk untuk membuat undangan dan membagikan link ke tamu.' }),
-    field('Email', email), field('Kata sandi', pass), msg, submit, toggle);
+    field('Email', email), field('Kata sandi', pass), msg, submit,
+    h('p', { class: 's-sub', text: 'Belum punya akun? Hubungi admin untuk dibuatkan akun.' }));
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     submit.disabled = true;
     msg.textContent = 'Memproses...';
     try {
-      if (mode === 'masuk') await client.signIn(email.value, pass.value);
-      else {
-        const r = await client.signUp(email.value, pass.value);
-        if (r.needsConfirm) { msg.textContent = 'Akun dibuat. Cek email Anda untuk konfirmasi, lalu masuk.'; submit.disabled = false; return; }
-      }
+      await client.signIn(email.value, pass.value);
       onDone();
     } catch (err) {
       msg.textContent = err.message;
