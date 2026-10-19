@@ -1,8 +1,10 @@
 // Lokasi acara yang bisa dipilih pemilik undangan (invitations.extra.world). Menambah lokasi baru
-// (hotel, taman, dll.) = satu entri di sini + satu halaman dunia.
+// (hotel, taman, dll.) = satu entri di sini + satu halaman dunia + satu ruang di ROOMS (token-issuer.js)
+// + satu entri di invitation/src/engine/world-link.js.
 export const VENUES = Object.freeze({
   villa: { label: 'NIKORA Wedding Villa', page: 'villa.html' },
   royal: { label: 'The Royal Wedding · Istana Cinta', page: 'royal.html' },
   hall: { label: 'Aula Resepsi', page: './' },
+  masjid: { label: 'Masjid Agung NIKORA', page: 'masjid.html' },
 });
 export const venueLabel = (world) => VENUES[world]?.label ?? VENUES.hall.label;
