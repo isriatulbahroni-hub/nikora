@@ -31,13 +31,15 @@ test('worldUrl: membawa slug dan nama tamu; demo tanpa slug; base kustom; label 
 
 import { WORLDS, WORLD_LABELS, worldPage, worldOfRow } from '../src/engine/world-link.js';
 
-test('tempat acara: Istana Cinta terdaftar, setiap tempat punya label dan halaman', () => {
-  assert.deepEqual([...WORLDS], ['villa', 'royal', 'hall']);
+test('tempat acara: Istana Cinta dan Masjid terdaftar, setiap tempat punya label dan halaman', () => {
+  assert.deepEqual([...WORLDS], ['villa', 'royal', 'hall', 'masjid']);
   for (const w of WORLDS) assert.ok(WORLD_LABELS[w], w);
   assert.match(WORLD_LABELS.royal, /Istana Cinta/);
+  assert.match(WORLD_LABELS.masjid, /Masjid/);
   assert.equal(worldPage('villa'), 'villa.html');
   assert.equal(worldPage('royal'), 'royal.html');
   assert.equal(worldPage('hall'), '');
+  assert.equal(worldPage('masjid'), 'masjid.html');
   assert.equal(worldPage('asing'), 'villa.html');          // tak dikenal = perilaku lama (villa)
   assert.equal(worldPage(undefined), 'villa.html');
 });
@@ -56,8 +58,21 @@ test('buildView + worldUrl: pemilik memilih Istana Cinta -> tamu masuk ke royal.
   assert.equal(new URL(worldUrl(buildView({ invitation: { slug: 'demo', event_type: 'pernikahan', extra: { world: 'royal' } } }))).searchParams.has('e'), false);
 });
 
+test('buildView + worldUrl: tazkirah yang memilih Masjid -> tamu masuk ke masjid.html membawa slug dan nama', () => {
+  const inv = { slug: 'tazkirah-akbar', event_type: 'tazkirah', extra: { world: 'masjid' } };
+  const v = buildView({ invitation: inv, query: { to: 'Ibu Siti' } });
+  assert.equal(v.world, 'masjid');
+  const u = new URL(worldUrl(v));
+  assert.equal(u.origin + u.pathname, 'https://nikora-ten.vercel.app/masjid.html');
+  assert.equal(u.searchParams.get('e'), 'tazkirah-akbar');
+  assert.equal(u.searchParams.get('to'), 'Ibu Siti');
+  // tanpa pilihan pemilik, jenis acara yang sama tetap ke aula (Masjid hanya lewat pilihan pemilik)
+  assert.equal(buildView({ invitation: { slug: 'tazkirah-akbar', event_type: 'tazkirah' } }).world, 'hall');
+});
+
 test('worldOfRow: pilihan pemilik, lalu jenis acara; tanpa info = undefined (tautan lama tetap villa)', () => {
   assert.equal(worldOfRow({ event_type: 'pernikahan', extra: { world: 'royal' } }), 'royal');
+  assert.equal(worldOfRow({ event_type: 'tazkirah', extra: { world: 'masjid' } }), 'masjid');
   assert.equal(worldOfRow({ event_type: 'pernikahan', extra: {} }), 'villa');
   assert.equal(worldOfRow({ event_type: 'ulang_tahun', extra: null }), 'hall');
   assert.equal(worldOfRow({ event_type: 'pernikahan', extra: { world: 'javascript:x' } }), 'villa');
