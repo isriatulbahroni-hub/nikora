@@ -92,10 +92,12 @@ export async function issueToken({ env = process.env, name, world, event, key: r
   const modSecret = moderationSecret(env);
   const deviceHash = modSecret && typeof deviceId === 'string' && DEVICE_ID.test(deviceId) ? hashDevice(modSecret, deviceId) : null;
   const evKey = isEventSlug(event) ? event : '-';
+  let modConfig = null; // pengaturan pemilik acara, supaya filter di browser sama dengan di server
   if (deviceHash) {
     try {
       const st = store ?? storeFromEnv(env, fetchImpl);
       if (st && (await st.isBanned(evKey, deviceHash))) return { enabled: false, reason: 'banned' };
+      modConfig = (await st?.getSettings?.(evKey)) ?? null;
     } catch (error) {
       console.error('[token] cek blokir gagal', error?.message);
     }
@@ -103,12 +105,13 @@ export async function issueToken({ env = process.env, name, world, event, key: r
   const id = randomUUID().slice(0, 8);
   const rs = roleSecret(env);
   const role = rs ? verifyRoleKey(rs, isEventSlug(event) ? event : '', roleKey) ?? 'guest' : 'guest';
-  const at = new AccessToken(key, secret, { identity: id, name: cleanName(name), ttl: '2h', ...(role === 'guest' ? {} : { metadata: JSON.stringify({ role }) }) });
+  const guestName = cleanName(name);
+  const at = new AccessToken(key, secret, { identity: id, name: guestName, ttl: '2h', ...(role === 'guest' ? {} : { metadata: JSON.stringify({ role }) }) });
   const room = roomFor(world, event);
   at.addGrant({ roomJoin: true, room, canPublish: true, canPublishData: true, canSubscribe: true });
   // restricted: bila rahasia peran dipasang, hanya pemilik/MC terverifikasi yang boleh membuka panggung
   return {
     enabled: true, url, token: await at.toJwt(), id, role, restricted: Boolean(rs),
-    ...(deviceHash ? { modToken: newModToken(modSecret, { id, room, ev: evKey, dh: deviceHash }) } : {}),
+    ...(deviceHash ? { modToken: newModToken(modSecret, { id, room, ev: evKey, dh: deviceHash, nm: guestName }), ...(modConfig ? { modConfig } : {}) } : {}),
   };
 }

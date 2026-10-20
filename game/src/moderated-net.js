@@ -37,6 +37,7 @@ export function attachModeration(net, { endpoint = '/api/moderate', storage, fet
   const post = fetchImpl ?? ((...a) => globalThis.fetch(...a));
   const deviceId = getDeviceId(storage ?? defaultStorage(), rand);
   let modToken = null;
+  let modConfig = null; // { level, allow, extra } dari pemilik acara (lewat token)
   const notice = onNotice ?? ((text) => {
     const msg = { t: 'chat', id: 'sistem', name: 'Sistem', text, ts: Date.now() };
     for (const fn of net.handlers?.chat ?? []) fn(msg);
@@ -55,6 +56,7 @@ export function attachModeration(net, { endpoint = '/api/moderate', storage, fet
       throw new Error('Anda dikeluarkan dari acara ini.');
     }
     modToken = typeof cred?.modToken === 'string' ? cred.modToken : null;
+    modConfig = cred?.modConfig && typeof cred.modConfig === 'object' ? cred.modConfig : null;
     return res;
   };
 
@@ -76,7 +78,7 @@ export function attachModeration(net, { endpoint = '/api/moderate', storage, fet
   }
   net.sendChat = (text) => {
     if (typeof text !== 'string') return;
-    if (!findProfanity(text, { level }).flagged) return origSend(text);
+    if (!findProfanity(text, { level: modConfig?.level ?? level, allow: modConfig?.allow ?? [], extra: modConfig?.extra ?? [] }).flagged) return origSend(text);
     report(text);
   };
 
