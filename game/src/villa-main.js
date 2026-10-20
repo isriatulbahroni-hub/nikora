@@ -18,9 +18,10 @@ import { placeTvs } from './room-tv.js';
 import { createTvView } from './room-tv-view.js';
 import { mountRoomTvUi } from './room-tv-ui.js';
 import { createVillaGames } from './villa-gameui.js';
-import { inCab, installLift, liftCameraBoxes, liftProgress, liftSpotFor } from './villa-lift.js';
+import { LIFT, inCab, installLift, liftCameraBoxes, liftProgress, liftRider, liftSpotFor } from './villa-lift.js';
 import { buildLiftWorld } from './villa-lift-world.js';
 import { mountLiftUi } from './villa-lift-ui.js';
+import { playLiftChime } from './villa-lift-sound.js';
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
 function applyQuality(renderer, scene, q) {
@@ -85,7 +86,7 @@ function readInput() {
   return len > 1 ? { x: x / len, z: z / len } : { x, z };
 }
 
-const hooks = { action: () => {}, map: () => {}, mic: () => {}, camera: () => {}, locked: () => false };
+const hooks = { action: () => {}, map: () => {}, mic: () => {}, camera: () => {}, floor: () => {}, locked: () => false };
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const CAM_LIMITS = Object.freeze({ minPitch: 0.06, maxPitch: 1.5, minDist: 1.5, maxDist: 70 });
 // Sudut kamera siap pakai: Orang ketiga (setinggi manusia), Lebar, Udara, dan Atas
@@ -133,6 +134,7 @@ function setupInput(canvas, camState) {
       e.preventDefault();
     } else if (!e.repeat && k === 'm') hooks.map();
     else if (!e.repeat && k === 'c') hooks.camera();
+    else if (!e.repeat && (k === '1' || k === '2' || k === '3')) hooks.floor(Number(k) - 1); // di dalam kabin lift: pilih lantai
     else if (k === '[') camState.yaw += 0.12;
     else if (k === ']') camState.yaw -= 0.12;
     else if (k === '-') camState.dist = clamp(camState.dist * 1.1, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
@@ -291,6 +293,8 @@ function createMinimap() {
       l.fillStyle = MAP_COLORS[r.kind] ?? '#ddd';
       rect(r.kind === 'stair' && level > 0 ? r.landing : r.rect);
     }
+    l.fillStyle = '#e8c46e'; // lift mewah di lobi timur laut: tampak di tiap lantai
+    l.fillRect(px(LIFT.x - LIFT.half), pz(LIFT.z - LIFT.half), LIFT.half * 2 * sx, LIFT.half * 2 * sz);
     l.fillStyle = '#5a4a3a';
     for (const w of data.walls) {
       if (w.orient === 'h') l.fillRect(px(w.a), pz(w.coord) - 0.6, (w.b - w.a) * sx, 1.2);
@@ -493,6 +497,7 @@ async function start() {
     liftRide = { spot, t0: now };
   };
   const liftUi = mountLiftUi({ levels: world.levels.map((l) => l.level), onPick: startRide });
+  hooks.floor = (to) => startRide(to); // tombol keyboard 1-3 (hanya berlaku di dalam kabin)
   const setActLabel = (() => {
     let last = '';
     return (text) => {
@@ -723,6 +728,14 @@ async function start() {
     games.tick(me); // menutup permainan bila pemain keluar ruangan atau ruang ditutup
     // lift: ketinggian pemain mengikuti jadwal yang sama dengan server; tiba = berdiri di lantai tujuan
     let liftNow = null;
+    if (liftRide && multiplayer) {
+      // dua orang menekan tombol hampir bersamaan: yang id-nya lebih besar mengalah (server juga menolaknya)
+      const other = liftRider(world, multiplayer.net.players, multiplayer.net.id);
+      if (other && multiplayer.net.id > other.id) {
+        standUp();
+        toast('Lift sedang dipakai');
+      }
+    }
     if (liftRide) {
       const elapsed = performance.now() - liftRide.t0;
       const ride = liftProgress(liftRide.spot.level, liftRide.spot.to, elapsed);
@@ -735,6 +748,7 @@ async function start() {
         liftRide = null;
         liftNow = null;
         standUp();
+        playLiftChime(); // "ting" saat tiba
       }
     }
     if (seat !== null && !liftRide && Math.hypot(input.x, input.z) > 0.35) standUp(); // bergerak = berdiri
