@@ -40,6 +40,11 @@ import { createDoorView } from './villa-door-view.js';
 import { VOICE_CROWD, VoiceChat } from './voice.js';
 import { buildVillaWorld } from './villa-world.js';
 import { createVillaSky } from './villa-sky.js';
+import { Fleet } from './vehicle-fleet.js';
+import { createVehicleView } from './vehicle-view.js';
+import { buildHotelWorld } from './hotel-world.js';
+import { FLOOR_NAMES, HOTEL_LEVEL_COUNT, HOTEL_SITE, hotelLevelY, liftAt, rideLift, surfaceAt } from './hotel-layout.js';
+import { mountLiftPanel, mountSpeedHud } from './hotel-ui.js';
 import './emoji-reactions.css';
 import { setupEmojiReactions } from './emoji-reactions-ui.js';
 
@@ -338,6 +343,14 @@ async function start() {
 
   const scene = new THREE.Scene();
   const built = buildVillaWorld(scene, world, { renderer });
+  const hotel = buildHotelWorld(scene); // NIKORA Grand Hotel: menara 15 lantai di ujung jalan raya selatan villa
+  const hotelWorld = hotel.world;
+  const inHotelSite = (x, z) => x > HOTEL_SITE.minX && x < HOTEL_SITE.maxX && z > HOTEL_SITE.minZ && z < HOTEL_SITE.maxZ;
+  const hotelOccCache = new Map();
+  const hotelOccluders = (level) => {
+    if (!hotelOccCache.has(level)) hotelOccCache.set(level, inflateBoxes(hotel.occluders(level), CAM_PAD));
+    return hotelOccCache.get(level);
+  };
   // Kunci kamar: dibuat setelah tersambung (null = offline, semua kamar terbuka). Daun pintu dan lampu status ikut kondisinya.
   let doors = null;
   let doorUi = null;
@@ -423,11 +436,58 @@ async function start() {
   let shownFacing = 0; // arah hadap yang tampil: berputar halus menuju `facing`
   let speedNow = 0; // laju nyata (m/s) yang dihaluskan; menentukan gaya jalan
   const actBtn = $('act-button');
+  let fleet = null; // armada mobil (dibuat sesudah jaringan siap)
   const poseFor = (id) => {
+    const car = fleet?.seatPose(id); // id duduk >= 1000 = kursi mobil
+    if (car) return car;
     const spot = world.spots[id];
     return spot ? spotPose(spot) : null;
   };
   let multiplayer = null;
+  fleet = new Fleet({
+    selfId: 'local',
+    now: () => performance.now(),
+    env: { colliders: [...world.colliders, ...hotelWorld.levels[0].colliders], surfaceAt },
+    send: (msg, opts) => multiplayer?.net.sendCar?.(msg, opts),
+  });
+  const carView = createVehicleView({ scene, fleet });
+  const speedHud = mountSpeedHud();
+  const carCam = { saved: null };
+  let hotelLevel = 0; // lantai hotel tempat pemain berada (me.level tetap 0: level villa)
+  const lift = { active: false, from: 0, to: 0, t0: 0, ms: 0 };
+  const rideTo = (level) => {
+    if (lift.active || fleet.mine || !inHotelSite(me.x, me.z)) return;
+    const r = rideLift({ x: me.x, z: me.z, level: hotelLevel }, level);
+    if (r) Object.assign(lift, { active: true, from: hotelLevel, to: level, t0: performance.now(), ms: r.travelMs });
+  };
+  const liftPanel = mountLiftPanel({ levelCount: HOTEL_LEVEL_COUNT, names: FLOOR_NAMES, onPick: rideTo });
+  const settleOutside = (p) => (inHotelSite(p.x, p.z) ? hotelWorld.move({ x: p.x, z: p.z, level: 0 }, 0, 0) : world.constrain({ x: p.x, z: p.z }));
+  fleet.onEvicted = () => {
+    toast('Kursi itu sudah diisi orang lain');
+    if (carCam.saved) Object.assign(camState, carCam.saved);
+    carCam.saved = null;
+  };
+  const boardCar = () => {
+    if (lift.active || me.stair !== null || hotelLevel !== 0) return false;
+    const hit = fleet.board({ x: me.x, z: me.z });
+    if (!hit) return false;
+    carCam.saved = { dist: camState.dist, pitch: camState.pitch };
+    camState.dist = 9;
+    camState.pitch = 0.34;
+    toast(hit.seat === 0 ? 'Kamu mengemudi: W/↑ gas · S/↓ rem & mundur · A/D setir · E turun' : 'Kamu duduk di mobil · E turun');
+    return true;
+  };
+  const leaveCar = () => {
+    const out = fleet.leave();
+    if (!out) return false;
+    const p = settleOutside(out);
+    me.x = p.x;
+    me.z = p.z;
+    me.y = 0;
+    if (carCam.saved) Object.assign(camState, carCam.saved);
+    carCam.saved = null;
+    return true;
+  };
   const occupiedSpots = () => {
     const set = new Set();
     if (multiplayer) for (const p of multiplayer.net.players) if (p.id !== multiplayer.net.id && p.sit != null) set.add(p.sit);
@@ -450,6 +510,8 @@ async function start() {
   };
   hooks.action = () => {
     if (games.locksInput) return;
+    if (fleet.mine) return leaveCar();
+    if (seat === null && boardCar()) return;
     if (seat !== null) return standUp();
     const terminal = games.nearTerminal(me); // mesin permainan di ruang game
     if (terminal) return games.open(terminal, me);
@@ -648,6 +710,14 @@ async function start() {
       multiplayer = session;
       if (!session && netStatus === 'Menyambung…') netStatus = 'Offline';
       session?.net.setAvatar?.(toWire(avatarConfig));
+      if (session) {
+        fleet.selfId = session.net.id;
+        session.net.on('left', (m) => { if (m?.id) fleet.dropPlayer(m.id); });
+        if (session.net.sendCar) { // hanya LiveKit; server WebSocket lama tidak mengenal mobil bersama
+          session.net.on('car', ({ from, msg }) => fleet.receive(from, msg));
+          session.net.carSnapshot = () => fleet.snapshot();
+        }
+      }
       setupVoice(session);
       setupParty(session);
       setupEmojiReactions({ session, avatar }); // stiker emoji: gerak badan, efek, dan suara (online: terlihat semua tamu)
@@ -683,22 +753,53 @@ async function start() {
     const delta = Math.min(rawMs / 1000, 0.05);
     last = time;
 
-    const input = games.locksInput ? { x: 0, z: 0 } : readInput(); // permainan terbuka: avatar diam
+    const inHotel = !fleet.mine && inHotelSite(me.x, me.z);
+    if (!inHotel && !lift.active) hotelLevel = 0;
+    const rawInput = games.locksInput || lift.active ? { x: 0, z: 0 } : readInput(); // permainan terbuka / lift jalan: avatar diam
+    const inCar = fleet.mine !== null;
+    const input = inCar ? { x: 0, z: 0 } : rawInput; // di mobil: joystick/tombol mengemudi, bukan berjalan
+    fleet.update(delta);
+    if (fleet.driving) fleet.drive({ throttle: -rawInput.z, steer: rawInput.x }, delta);
+    carView.update(delta);
+    if (inCar) {
+      const sp = fleet.seatPose(fleet.sitId);
+      me.x = sp.x;
+      me.z = sp.z;
+      me.y = 0;
+      me.level = 0;
+      hotelLevel = 0;
+      facing = sp.rotY;
+      // kamera mengikuti dari belakang mobil kecuali pemain sedang menggeser kamera
+      if (!camInput.dragging && time - camInput.lastDrag > 1500) camState.yaw += wrapAngle(fleet.cars[fleet.mine.index].heading + Math.PI - camState.yaw) * (1 - Math.exp(-2.5 * delta));
+    }
+    speedHud.set(fleet.driving ? fleet.driving.speed * 3.6 : null);
+    if (lift.active) {
+      const p = Math.min(1, (performance.now() - lift.t0) / lift.ms);
+      const e = p * p * (3 - 2 * p);
+      me.y = hotelLevelY(lift.from) + (hotelLevelY(lift.to) - hotelLevelY(lift.from)) * e;
+      if (p >= 1) {
+        lift.active = false;
+        hotelLevel = lift.to;
+        me.y = hotelLevelY(hotelLevel);
+        toast(`Lantai ${hotelLevel + 1} · ${FLOOR_NAMES[hotelLevel]}`);
+      }
+    }
+    liftPanel.update(inHotel && !lift.active && !!liftAt(me.x, me.z), hotelLevel);
     games.tick(me); // menutup permainan bila pemain keluar ruangan atau ruang ditutup
     if (seat !== null && Math.hypot(input.x, input.z) > 0.35) standUp(); // bergerak = berdiri
     let move = cameraRelative(input, camNow.yaw); // relatif terhadap arah kamera
     // bantuan pintu: bila melaju ke arah bukaan pintu, digeser halus ke garis tengahnya (vektor yang sama dikirim ke server)
     if (seat === null && me.stair === null) move = doorAssist(me, move, world.levels[me.level]?.doors ?? []);
-    const moving = seat === null && (move.x !== 0 || move.z !== 0);
+    const moving = seat === null && !inCar && (move.x !== 0 || move.z !== 0);
     let travelled = 0;
     if (moving) {
       const before = { x: me.x, z: me.z };
       const stepX = move.x * PLAYER_SPEED * delta;
       const stepZ = move.z * PLAYER_SPEED * delta;
-      const next = doors ? doors.move(me, stepX, stepZ) : world.move(me, stepX, stepZ); // pintu kamar terkunci menahan yang tidak berhak masuk
+      const next = inHotel ? hotelWorld.move({ x: me.x, z: me.z, level: hotelLevel }, stepX, stepZ) : doors ? doors.move(me, stepX, stepZ) : world.move(me, stepX, stepZ); // pintu kamar terkunci menahan yang tidak berhak masuk; hotel punya dunianya sendiri
       me.x = next.x;
       me.z = next.z;
-      me.level = next.level;
+      me.level = inHotel ? 0 : next.level;
       me.stair = next.stair;
       me.y = next.y;
       travelled = Math.hypot(me.x - before.x, me.z - before.z);
@@ -757,9 +858,9 @@ async function start() {
     botRacket.rotation.x = swing.bot > 0 ? -1.7 * Math.sin((1 - swing.bot / SWING_TIME) * Math.PI) : 0;
 
     if (multiplayer) {
-      multiplayer.sendInput(seat === null ? move.x : 0, seat === null ? move.z : 0, facing, time, seat, { x: me.x, z: me.z, y: me.y });
+      multiplayer.sendInput(seat === null ? move.x : 0, seat === null ? move.z : 0, facing, time, seat ?? fleet.sitId, { x: me.x, z: me.z, y: me.y });
       const mine = multiplayer.net.players.find((p) => p.id === multiplayer.net.id);
-      if (mine && seat === null && (Math.hypot(mine.x - me.x, mine.z - me.z) > SNAP_DISTANCE || Math.abs((mine.y ?? me.y) - me.y) > 1.5)) {
+      if (mine && seat === null && !inCar && !lift.active && (Math.hypot(mine.x - me.x, mine.z - me.z) > SNAP_DISTANCE || Math.abs((mine.y ?? me.y) - me.y) > 1.5)) {
         me.x = mine.x;
         me.z = mine.z;
         if (mine.y !== undefined && Math.abs(mine.y - me.y) > 1.5) {
@@ -790,8 +891,8 @@ async function start() {
     }
 
     // avatar lokal: berjalan, duduk, atau berbaring
-    const pose = seat !== null ? poseFor(seat) : null;
-    const k = 1 - Math.exp(-14 * delta);
+    const pose = inCar ? fleet.seatPose(fleet.sitId) : seat !== null ? poseFor(seat) : null;
+    const k = pose?.snap ? 1 : 1 - Math.exp(-14 * delta); // kursi mobil: tempel (mobil melaju cepat)
     if (pose) {
       avatar.position.x += (pose.x - avatar.position.x) * k;
       avatar.position.z += (pose.z - avatar.position.z) * k;
@@ -812,7 +913,7 @@ async function start() {
     avatar.rotation.x += avatar.userData.tilt ?? 0; // applyPose menimpa rotation.x, tambahkan kemiringan tidur sesudahnya
 
     // cahaya dalam ruangan menyala halus saat pemain berada di dalam bangunan (juga dipakai untuk memendekkan lengan kamera)
-    const inside = !me.stair && roomAt(me.x, me.z, me.level).indoor;
+    const inside = inHotel ? hotelWorld.roomAt(me.x, me.z, hotelLevel).indoor : !me.stair && roomAt(me.x, me.z, me.level).indoor;
     indoorK += ((inside ? 1 : 0) - indoorK) * (1 - Math.exp(-3 * delta));
 
     // kamera mengorbit pemain: yaw bebas 360°, pitch dari hampir sejajar tanah sampai pandangan atas
@@ -828,12 +929,13 @@ async function start() {
     const want = camNow.dist * fit * indoorCut;
     const eye = { x: me.x, y: me.y + 1.45, z: me.z };
     // bila kamera terhalang dinding, naikkan sudutnya (halus) supaya ruangan dan avatar tetap terlihat
-    const camPose = choosePose(eye, camNow.yaw, camNow.pitch, want, occluders);
+    const occNow = inHotel ? hotelOccluders(hotelLevel) : occluders;
+    const camPose = choosePose(eye, camNow.yaw, camNow.pitch, want, occNow);
     camPitch = camPitch === null ? camPose.pitch : camPitch + (camPose.pitch - camPitch) * (1 - Math.exp(-6 * delta));
     const cp = Math.cos(camPitch);
     const dir = { x: Math.sin(camNow.yaw) * cp, y: Math.sin(camPitch), z: Math.cos(camNow.yaw) * cp };
     // keselamatan: dengan sudut yang sedang dihaluskan, kamera tetap tidak boleh menembus penghalang
-    const { dist: freeArm } = resolveCameraDistance(eye, dir, want, occluders, CAM_ARM);
+    const { dist: freeArm } = resolveCameraDistance(eye, dir, want, occNow, CAM_ARM);
     // dinding/atap: kamera mundur ke depan penghalang seketika; saat bebas kembali perlahan (tanpa loncatan)
     camArm = camArm === 0 || freeArm < camArm ? freeArm : camArm + (freeArm - camArm) * (1 - Math.exp(-4 * delta));
     // lengan terjepit saat pemain berjalan (mis. mundur ke arah dinding di belakang kamera): kamera berputar pelan ke belakang pemain
@@ -871,13 +973,14 @@ async function start() {
 
     const near = nearestSpot();
     const terminal = seat === null && !games.locksInput ? games.nearTerminal(me) : null;
-    setActLabel(games.locksInput ? '' : seat !== null ? 'Berdiri' : terminal ? terminal.label : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : practiceLabel());
+    setActLabel(games.locksInput ? '' : inCar ? 'Turun' : seat === null && !lift.active && hotelLevel === 0 && fleet.nearest(me) ? 'Naik Mobil' : seat !== null ? 'Berdiri' : terminal ? terminal.label : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : practiceLabel());
 
-    const place = me.stair ? { id: 'stair', name: 'Tangga' } : roomAt(me.x, me.z, me.level);
-    const placeKey = `${place.id}@${me.level}`;
+    const place = inHotel ? hotelWorld.roomAt(me.x, me.z, hotelLevel) : me.stair ? { id: 'stair', name: 'Tangga' } : roomAt(me.x, me.z, me.level);
+    const shownLevel = inHotel ? hotelLevel : me.level;
+    const placeKey = `${place.id}@${shownLevel}`;
     if (placeKey !== placeId) {
       placeId = placeKey;
-      $('place').textContent = me.level > 0 ? `Lantai ${me.level + 1} · ${place.name}` : place.name;
+      $('place').textContent = shownLevel > 0 ? `Lantai ${shownLevel + 1} · ${place.name}` : place.name;
       const warn = games.entered(place.id);
       if (warn) toast(warn);
     }
@@ -891,7 +994,7 @@ async function start() {
     state: () => ({
       badminton: { phase: practice.phase, score: practice.score },
       x: me.x, z: me.z, y: me.y, level: me.level, stair: me.stair, place: roomAt(me.x, me.z, me.level), online: !!multiplayer, others: multiplayer ? multiplayer.view.count : 0,
-      seat, game: games.state(), action: actBtn.hidden ? '' : actBtn.textContent, mapVisible: !mapCanvas.hidden, skyPhase: sky.phase(),
+      seat, hotelLevel, car: fleet.mine, game: games.state(), action: actBtn.hidden ? '' : actBtn.textContent, mapVisible: !mapCanvas.hidden, skyPhase: sky.phase(),
     }),
     sky: () => sky.info(),
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio(), canvas: [renderer.domElement.width, renderer.domElement.height] }),
