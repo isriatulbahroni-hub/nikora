@@ -1,7 +1,7 @@
 import { normalizeMovement } from '../../game/src/game-rules.js';
 import { HALL, SEATS, resolveCollisions } from '../../game/src/hall-layout.js';
 import { RoomLocks } from '../../game/src/villa-doors.js';
-import { installLift, liftProgress } from '../../game/src/villa-lift.js';
+import { inCab, installLift, liftProgress } from '../../game/src/villa-lift.js';
 
 export const ROOM_RULES = Object.freeze({
   maxPlayers: 50,
@@ -186,8 +186,11 @@ export class Room {
     const seat = spots[sit];
     if (world && ((seat.level ?? 0) !== p.level || p.stair != null)) return false; // harus di lantai yang sama
     if (Math.hypot(seat.x - p.x, seat.z - p.z) > range + 0.6) return false; // toleransi latensi
-    // lift melayani satu penumpang pada satu waktu
-    if (seat.kind === 'lift') for (const other of this.players.values()) if (other !== p && other.ride) return false;
+    if (seat.kind === 'lift') {
+      if (!inCab(p)) return false; // lift hanya bisa dipakai dari dalam kabin (klien menampilkan panel lantai hanya di sana)
+      // lift melayani satu penumpang pada satu waktu
+      for (const other of this.players.values()) if (other !== p && other.ride) return false;
+    }
     p.sit = sit;
     p.ride = null;
     p.x = seat.x;

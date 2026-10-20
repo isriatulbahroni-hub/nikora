@@ -58,6 +58,15 @@ test('lift: titik lift dari lantai lain ditolak', () => {
   assert.equal(p.sit, null);
 });
 
+test('lift: ditolak bila pemain di luar kabin, walau masih dalam jangkauan titik lift', () => {
+  const { world, room, p } = setup();
+  p.z = LIFT.z + 1.8; // tepat di depan pintu kabin: dekat titik lift tetapi belum di dalam
+  assert.equal(room.setInput('a', { x: 0, z: 0, rot: 0, seq: 1, sit: liftSpotFor(world, 0, 1).id }), false);
+  assert.equal(p.sit, null);
+  p.z = LIFT.z + 0.5; // di dalam kabin
+  assert.equal(room.setInput('a', { x: 0, z: 0, rot: 0, seq: 2, sit: liftSpotFor(world, 0, 1).id }), true);
+});
+
 test('lift: berdiri di tengah perjalanan membatalkan jadwal', () => {
   const { world, room, p } = setup();
   room.setInput('a', { x: 0, z: 0, rot: 0, seq: 1, sit: liftSpotFor(world, 0, 1).id });
