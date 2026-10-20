@@ -63,16 +63,16 @@ test('ikon: semua nama menghasilkan SVG tersembunyi dari pembaca layar; label me
   assert.ok(icon('tidak-ada').querySelector('path'));
 });
 
-test('kerangka: menu lengkap, yang aktif ditandai, Editor/Template membawa undangan terakhir, ada menu ponsel', () => {
+test('kerangka: menu lengkap, yang aktif ditandai, Editor/Template/Check-in membawa undangan terakhir, ada menu ponsel', () => {
   const shell = shellView({ active: 'tamu', email: 'a@b.c', slug: 'rani-dimas', onSignOut() {}, content: document.createElement('div') });
   document.body.append(shell);
-  assert.deepEqual(NAV.map((n) => n.id), ['dashboard', 'tamu', 'editor', 'template', 'pengaturan', 'bantuan']);
-  assert.equal(shell.querySelectorAll('.st-side a').length, 6);
-  assert.equal(shell.querySelectorAll('.st-bnav a').length, 6);
+  assert.deepEqual(NAV.map((n) => n.id), ['dashboard', 'tamu', 'checkin', 'editor', 'template', 'pengaturan', 'bantuan']);
+  assert.equal(shell.querySelectorAll('.st-side a').length, 7);
+  assert.equal(shell.querySelectorAll('.st-bnav a').length, 7);
   assert.equal(shell.querySelector('.st-side a.is-active').textContent, 'Tamu');
   assert.equal(shell.querySelector('.st-side a.is-active').getAttribute('aria-current'), 'page');
   const hrefs = [...shell.querySelectorAll('.st-side a')].map((a) => a.getAttribute('href'));
-  assert.ok(hrefs.includes('#/editor/rani-dimas') && hrefs.includes('#/template/rani-dimas') && hrefs.includes('#/tamu/rani-dimas'));
+  assert.ok(hrefs.includes('#/editor/rani-dimas') && hrefs.includes('#/template/rani-dimas') && hrefs.includes('#/tamu/rani-dimas') && hrefs.includes('#/checkin/rani-dimas'));
   assert.equal(shell.querySelector('.st-exit').textContent, 'Keluar');
   assert.equal(shell.querySelector('.st-chip').getAttribute('title'), 'a@b.c');
   const bare = shellView({ active: 'dashboard', email: '', slug: null, onSignOut() {}, content: document.createElement('div') });
