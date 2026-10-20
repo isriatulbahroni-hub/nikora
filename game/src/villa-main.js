@@ -18,6 +18,10 @@ import { placeTvs } from './room-tv.js';
 import { createTvView } from './room-tv-view.js';
 import { mountRoomTvUi } from './room-tv-ui.js';
 import { createVillaGames } from './villa-gameui.js';
+import { LIFT, inCab, installLift, liftCameraBoxes, liftProgress, liftRider, liftSpotFor } from './villa-lift.js';
+import { buildLiftWorld } from './villa-lift-world.js';
+import { mountLiftUi } from './villa-lift-ui.js';
+import { playLiftChime } from './villa-lift-sound.js';
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
 function applyQuality(renderer, scene, q) {
@@ -47,7 +51,8 @@ const PLAYER_SPEED = 5.2; // harus sama dengan server (ROOM_RULES.playerSpeed)
 const SNAP_DISTANCE = 2.5; // jika posisi klien menyimpang dari server lebih dari ini, ikuti server
 const CAM_PAD = 0.3; // kamera diperlakukan sebagai bola beradius ini terhadap penghalang
 const CAM_ARM = Object.freeze({ margin: 0.08, minDist: 0.9 });
-const world = getVillaWorld();
+const world = installLift(getVillaWorld()); // lift: kotak tabrakan poros + titik lift (sama persis dengan server)
+const sitSpots = world.spots.filter((s) => s.kind !== 'lift'); // titik duduk/tidur; titik lift hanya dipakai lewat panel lift
 const $ = (id) => document.getElementById(id);
 
 function showError(message, detail = '') {
@@ -81,7 +86,7 @@ function readInput() {
   return len > 1 ? { x: x / len, z: z / len } : { x, z };
 }
 
-const hooks = { action: () => {}, map: () => {}, mic: () => {}, camera: () => {}, locked: () => false };
+const hooks = { action: () => {}, map: () => {}, mic: () => {}, camera: () => {}, floor: () => {}, locked: () => false };
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const CAM_LIMITS = Object.freeze({ minPitch: 0.06, maxPitch: 1.5, minDist: 1.5, maxDist: 70 });
 // Sudut kamera siap pakai: Orang ketiga (setinggi manusia), Lebar, Udara, dan Atas
@@ -129,6 +134,7 @@ function setupInput(canvas, camState) {
       e.preventDefault();
     } else if (!e.repeat && k === 'm') hooks.map();
     else if (!e.repeat && k === 'c') hooks.camera();
+    else if (!e.repeat && (k === '1' || k === '2' || k === '3')) hooks.floor(Number(k) - 1); // di dalam kabin lift: pilih lantai
     else if (k === '[') camState.yaw += 0.12;
     else if (k === ']') camState.yaw -= 0.12;
     else if (k === '-') camState.dist = clamp(camState.dist * 1.1, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
@@ -287,6 +293,8 @@ function createMinimap() {
       l.fillStyle = MAP_COLORS[r.kind] ?? '#ddd';
       rect(r.kind === 'stair' && level > 0 ? r.landing : r.rect);
     }
+    l.fillStyle = '#e8c46e'; // lift mewah di lobi timur laut: tampak di tiap lantai
+    l.fillRect(px(LIFT.x - LIFT.half), pz(LIFT.z - LIFT.half), LIFT.half * 2 * sx, LIFT.half * 2 * sz);
     l.fillStyle = '#5a4a3a';
     for (const w of data.walls) {
       if (w.orient === 'h') l.fillRect(px(w.a), pz(w.coord) - 0.6, (w.b - w.a) * sx, 1.2);
@@ -338,6 +346,8 @@ async function start() {
 
   const scene = new THREE.Scene();
   const built = buildVillaWorld(scene, world, { renderer });
+  // Lift mewah di lobi timur laut (lantai 1-3): melubangi pelat lantai, memasang poros kaca dan kabin.
+  const lift = buildLiftWorld(scene, world, { root: built.root });
   // Kunci kamar: dibuat setelah tersambung (null = offline, semua kamar terbuka). Daun pintu dan lampu status ikut kondisinya.
   let doors = null;
   let doorUi = null;
@@ -352,7 +362,7 @@ async function start() {
   const court = buildBadmintonCourt(scene); // lapangan bulu tangkis (letak + net penghalang ada di villa-layout.js)
   const camera = new THREE.PerspectiveCamera(48, 1, 0.12, 320);
   // penghalang kamera diperbesar sebesar CAM_PAD: kamera diperlakukan sebagai bola, bukan titik
-  const occluders = inflateBoxes([...buildCameraOccluders(world), ...extraCameraOccluders(world)], CAM_PAD);
+  const occluders = inflateBoxes([...buildCameraOccluders(world), ...extraCameraOccluders(world), ...liftCameraBoxes()], CAM_PAD);
   let camArm = 0; // panjang lengan kamera yang sudah dihaluskan (dipendekkan seketika saat terhalang)
   let camPitch = null; // sudut kamera efektif (dinaikkan halus saat terhalang)
   const indoorLight = new THREE.PointLight(0xffe2b8, 0, 17, 1.4);
@@ -417,25 +427,36 @@ async function start() {
   camera.position.set(me.x, 14, me.z + 11);
 
   // ---------- duduk / tidur ----------
-  let seat = null; // id titik duduk/tidur yang sedang dipakai
+  let seat = null; // id titik duduk/tidur/lift yang sedang dipakai
   let seatSince = 0;
+  let liftRide = null; // perjalanan lift lokal: { spot, t0 } (seat berisi id titik lift selama perjalanan)
   let facing = 0; // arah hadap tujuan (dikirim ke server)
   let shownFacing = 0; // arah hadap yang tampil: berputar halus menuju `facing`
   let speedNow = 0; // laju nyata (m/s) yang dihaluskan; menentukan gaya jalan
   const actBtn = $('act-button');
+  let multiplayer = null;
   const poseFor = (id) => {
     const spot = world.spots[id];
-    return spot ? spotPose(spot) : null;
+    if (!spot) return null;
+    if (spot.kind === 'lift') {
+      // penumpang lift berdiri di kabin; ketinggiannya mengikuti pemain itu (lokal: me.y, pemain lain: dari server/LiveKit)
+      const rider = id === seat ? me : multiplayer?.net.players.find((p) => p.sit === id);
+      return { x: spot.x, z: spot.z, y: rider?.y ?? levelY(spot.level), rotY: spot.rot, tilt: 0 };
+    }
+    return spotPose(spot);
   };
-  let multiplayer = null;
   const occupiedSpots = () => {
     const set = new Set();
     if (multiplayer) for (const p of multiplayer.net.players) if (p.id !== multiplayer.net.id && p.sit != null) set.add(p.sit);
     return set;
   };
-  const nearestSpot = () => (seat === null ? findNearestSpot(me, world.spots, occupiedSpots()) : null);
+  const nearestSpot = () => (seat === null ? findNearestSpot(me, sitSpots, occupiedSpots()) : null);
   const standUp = () => {
     if (seat === null) return;
+    if (liftRide) {
+      liftRide = null; // perjalanan dibatalkan: kembali ke ketinggian lantai asal
+      me.y = levelY(me.level);
+    }
     seat = null;
   };
   const sitDown = (now) => {
@@ -450,6 +471,7 @@ async function start() {
   };
   hooks.action = () => {
     if (games.locksInput) return;
+    if (liftRide) return; // sedang di dalam lift: tidak bisa berdiri sebelum tiba
     if (seat !== null) return standUp();
     const terminal = games.nearTerminal(me); // mesin permainan di ruang game
     if (terminal) return games.open(terminal, me);
@@ -457,6 +479,25 @@ async function start() {
     return practiceAction(); // jauh dari kursi/kasur/mesin: tombol dipakai untuk bulu tangkis bila dekat lapangan
   };
   actBtn.addEventListener('click', () => hooks.action());
+  // Lift: pemain yang berdiri di kabin memilih lantai tujuan; titik lift dipakai lewat mekanisme duduk (server memvalidasi)
+  const startRide = (to) => {
+    if (seat !== null || me.stair !== null || games.locksInput || !inCab(me)) return;
+    if (!lift.idle) {
+      toast('Lift sedang dipakai');
+      return;
+    }
+    const spot = liftSpotFor(world, me.level, to);
+    if (!spot) return;
+    const now = performance.now();
+    seat = spot.id;
+    seatSince = now;
+    me.x = spot.x;
+    me.z = spot.z;
+    facing = spot.rot;
+    liftRide = { spot, t0: now };
+  };
+  const liftUi = mountLiftUi({ levels: world.levels.map((l) => l.level), onPick: startRide });
+  hooks.floor = (to) => startRide(to); // tombol keyboard 1-3 (hanya berlaku di dalam kabin)
   const setActLabel = (() => {
     let last = '';
     return (text) => {
@@ -685,7 +726,32 @@ async function start() {
 
     const input = games.locksInput ? { x: 0, z: 0 } : readInput(); // permainan terbuka: avatar diam
     games.tick(me); // menutup permainan bila pemain keluar ruangan atau ruang ditutup
-    if (seat !== null && Math.hypot(input.x, input.z) > 0.35) standUp(); // bergerak = berdiri
+    // lift: ketinggian pemain mengikuti jadwal yang sama dengan server; tiba = berdiri di lantai tujuan
+    let liftNow = null;
+    if (liftRide && multiplayer) {
+      // dua orang menekan tombol hampir bersamaan: yang id-nya lebih besar mengalah (server juga menolaknya)
+      const other = liftRider(world, multiplayer.net.players, multiplayer.net.id);
+      if (other && multiplayer.net.id > other.id) {
+        standUp();
+        toast('Lift sedang dipakai');
+      }
+    }
+    if (liftRide) {
+      const elapsed = performance.now() - liftRide.t0;
+      const ride = liftProgress(liftRide.spot.level, liftRide.spot.to, elapsed);
+      me.y = ride.y;
+      liftNow = { spot: liftRide.spot, elapsed };
+      if (ride.done) {
+        me.level = liftRide.spot.to;
+        me.y = levelY(me.level);
+        me.stair = null;
+        liftRide = null;
+        liftNow = null;
+        standUp();
+        playLiftChime(); // "ting" saat tiba
+      }
+    }
+    if (seat !== null && !liftRide && Math.hypot(input.x, input.z) > 0.35) standUp(); // bergerak = berdiri
     let move = cameraRelative(input, camNow.yaw); // relatif terhadap arah kamera
     // bantuan pintu: bila melaju ke arah bukaan pintu, digeser halus ke garis tengahnya (vektor yang sama dikirim ke server)
     if (seat === null && me.stair === null) move = doorAssist(me, move, world.levels[me.level]?.doors ?? []);
@@ -807,7 +873,7 @@ async function start() {
       avatar.userData.tilt = (avatar.userData.tilt ?? 0) * (1 - k);
       avatar.rotation.y = shownFacing;
     }
-    avatar.userData.seated = pose !== null && pose.tilt === 0;
+    avatar.userData.seated = pose !== null && pose.tilt === 0 && !liftRide; // di lift berdiri, bukan duduk
     applyPose(avatar, speedNow > 0.6 && !pose ? 'walk' : null, time / 1000, delta, speedNow);
     avatar.rotation.x += avatar.userData.tilt ?? 0; // applyPose menimpa rotation.x, tambahkan kemiringan tidur sesudahnya
 
@@ -850,6 +916,8 @@ async function start() {
     if (multiplayer) for (const g of multiplayer.view.avatarGroups()) updateLabel(g, camera); // nama pemain lain: ukuran tetap di layar
     const actors = [{ x: me.x, z: me.z, y: me.y }];
     if (multiplayer) for (const p of multiplayer.net.players) if (p.id !== multiplayer.net.id) actors.push({ x: p.x, z: p.z, y: p.y ?? 0 });
+    lift.update({ delta, me, localRide: liftNow, players: multiplayer ? multiplayer.net.players : [], selfId: multiplayer ? multiplayer.net.id : null });
+    liftUi.update({ show: seat === null && !games.locksInput && inCab(me), level: me.level, busy: !lift.idle });
     built.update(me.x, me.z, delta, actors, camera.position);
     sky.update(me.x, me.z); // sesudah built.update: arah matahari/bulan mengikuti jam menimpa arah tetap dari dunia
     const qChange = quality.setFloor(lowQuality ? 2 : screen?.controller?.state?.src ? 1 : 0) ?? quality.tick(performance.now());
@@ -871,7 +939,7 @@ async function start() {
 
     const near = nearestSpot();
     const terminal = seat === null && !games.locksInput ? games.nearTerminal(me) : null;
-    setActLabel(games.locksInput ? '' : seat !== null ? 'Berdiri' : terminal ? terminal.label : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : practiceLabel());
+    setActLabel(games.locksInput || liftRide ? '' : seat !== null ? 'Berdiri' : terminal ? terminal.label : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : practiceLabel());
 
     const place = me.stair ? { id: 'stair', name: 'Tangga' } : roomAt(me.x, me.z, me.level);
     const placeKey = `${place.id}@${me.level}`;
@@ -892,6 +960,7 @@ async function start() {
       badminton: { phase: practice.phase, score: practice.score },
       x: me.x, z: me.z, y: me.y, level: me.level, stair: me.stair, place: roomAt(me.x, me.z, me.level), online: !!multiplayer, others: multiplayer ? multiplayer.view.count : 0,
       seat, game: games.state(), action: actBtn.hidden ? '' : actBtn.textContent, mapVisible: !mapCanvas.hidden, skyPhase: sky.phase(),
+      lift: { riding: liftRide ? liftRide.spot.to : null, idle: lift.idle },
     }),
     sky: () => sky.info(),
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio(), canvas: [renderer.domElement.width, renderer.domElement.height] }),
