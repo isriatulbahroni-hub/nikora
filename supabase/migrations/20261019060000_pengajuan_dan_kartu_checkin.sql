@@ -7,6 +7,10 @@
 --  * Kartu berupa kode acak 12 karakter, terikat ke satu undangan, punya masa berlaku, dan bisa dicabut.
 --  * cek_kartu_checkin() boleh dipanggil siapa pun (dunia 3D memakainya) dan hanya mengembalikan data bila kode cocok,
 --    belum dicabut, dan belum kedaluwarsa. Tidak ada cara membaca tabel kartu tanpa menjadi pemilik acara atau staf.
+--
+-- Catatan: migrasi ini sudah diterapkan ke proyek "Undangan digital" dalam tiga tahap (pengajuan_dan_kartu_checkin,
+-- kunci_hak_tabel_checkin, perbaiki_kebijakan_ajukan_checkin) dan diuji dengan skenario peran (pemilik, staf, anon) yang
+-- dibatalkan otomatis. File ini adalah hasil akhirnya dan aman dijalankan ulang.
 
 create table if not exists public.checkin_requests (
   id bigint generated always as identity primary key,
@@ -40,6 +44,16 @@ create table if not exists public.checkin_cards (
 create index if not exists checkin_cards_slug_idx on public.checkin_cards (slug, created_at desc);
 alter table public.checkin_cards enable row level security;
 
+-- Hitungan pengajuan yang menunggu dipisah ke fungsi security definer. Subkueri ke tabel yang sama di dalam kebijakannya
+-- sendiri membuat Postgres menolak dengan "infinite recursion detected in policy".
+create or replace function public.jumlah_pengajuan_menunggu(p_slug text)
+returns int
+language sql stable security definer set search_path = public as $$
+  select count(*)::int from public.checkin_requests where slug = p_slug and status = 'menunggu'
+$$;
+revoke all on function public.jumlah_pengajuan_menunggu(text) from public, anon, authenticated;
+grant execute on function public.jumlah_pengajuan_menunggu(text) to authenticated;
+
 -- ---------- kebijakan baris ----------
 drop policy if exists "pemilik ajukan check-in" on public.checkin_requests;
 create policy "pemilik ajukan check-in" on public.checkin_requests for insert to authenticated
@@ -47,7 +61,7 @@ create policy "pemilik ajukan check-in" on public.checkin_requests for insert to
     requested_by = auth.uid() and status = 'menunggu'
     and decided_by is null and decided_at is null and decision_note is null
     and exists (select 1 from public.invitations i where i.slug = checkin_requests.slug and i.owner_id = auth.uid())
-    and (select count(*) from public.checkin_requests r where r.slug = checkin_requests.slug and r.status = 'menunggu') < 30
+    and public.jumlah_pengajuan_menunggu(checkin_requests.slug) < 30
   );
 
 drop policy if exists "pemilik dan staf baca pengajuan" on public.checkin_requests;
@@ -64,11 +78,14 @@ create policy "pemilik dan staf baca kartu" on public.checkin_cards for select t
   using (public.is_staff() or exists (select 1 from public.invitations i where i.slug = checkin_cards.slug and i.owner_id = auth.uid()));
 
 -- Hak akses tabel: anon tidak punya apa-apa; pemilik hanya boleh mengubah kolom status pengajuan; kartu hanya bisa dibaca.
+-- TRUNCATE tidak ditahan RLS, jadi hak yang tidak dipakai dicabut juga.
 revoke all on public.checkin_requests from anon;
 revoke all on public.checkin_cards from anon;
 revoke update on public.checkin_requests from authenticated;
 grant update (status) on public.checkin_requests to authenticated;
+revoke delete, truncate, references, trigger on public.checkin_requests from authenticated;
 revoke insert, update, delete on public.checkin_cards from authenticated;
+revoke truncate, references, trigger on public.checkin_cards from authenticated;
 
 -- ---------- fungsi untuk staf ----------
 create or replace function public.setujui_pengajuan_checkin(p_request_id bigint, p_room_label text default null, p_expires_at timestamptz default null)
