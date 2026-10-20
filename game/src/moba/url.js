@@ -1,7 +1,7 @@
 // Alamat MOBA untuk dunia villa/tempat acara. Murni string (tanpa DOM) supaya mudah diuji.
 // Server MOBA (fork claude-of-legends) membuka lobi privat lewat /?join=KODE, kode 5 huruf yang dibuat server.
 
-export const MOBA_ORIGIN_DEFAULT = 'https://moba.roneysagita.online';
+export const MOBA_ORIGIN_DEFAULT = 'https://roney.biz.id';
 
 const CODE_SHAPE = /^[A-Za-z]{5}$/;
 

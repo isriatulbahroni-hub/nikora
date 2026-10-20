@@ -7,7 +7,7 @@
 //   mobaMode       'frame' (bawaan, tampil di layar permainan villa) atau 'tab' (tab baru)
 //   doc            dokumen untuk uji
 //
-// Catatan: bila halaman villa dan server MOBA berbeda situs (mis. vercel.app vs roneysagita.online), Safari/iOS
+// Catatan: bila halaman villa dan server MOBA berbeda situs (mis. vercel.app vs roney.biz.id), Safari/iOS
 // memblokir cookie pihak ketiga di dalam iframe sehingga login MOBA bisa gagal; pakai mobaMode 'tab',
 // atau layani villa dari subdomain situs yang sama dengan MOBA.
 //
