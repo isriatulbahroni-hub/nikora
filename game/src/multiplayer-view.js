@@ -90,13 +90,14 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
         // duduk: pose duduk (tilt 0) atau, tanpa poseFor (aula), titik duduk apa pun; berbaring (tilt != 0) bukan duduk
         group.userData.seated = pose ? pose.tilt === 0 : target.sit != null;
         applyPose(group, avatar.act ?? (speed > 0.8 ? 'walk' : null), time, delta);
-        group.position.x += (tx - group.position.x) * k;
-        group.position.z += (tz - group.position.z) * k;
-        group.rotation.y += (shortestAngle(group.rotation.y, pose ? pose.rotY : target.rot) - group.rotation.y) * k;
+        const kp = pose?.snap ? 1 : k; // kursi mobil yang melaju: tempel ke kursi (interpolasi akan membuat penumpang tertinggal di luar mobil)
+        group.position.x += (tx - group.position.x) * kp;
+        group.position.z += (tz - group.position.z) * kp;
+        group.rotation.y += (shortestAngle(group.rotation.y, pose ? pose.rotY : target.rot) - group.rotation.y) * kp;
         // applyPose menulis rotation.x (membungkuk) tiap frame: tambahkan kemiringan tidur sesudahnya
         group.userData.tilt = (group.userData.tilt ?? 0) + ((pose ? pose.tilt : 0) - (group.userData.tilt ?? 0)) * k;
         group.rotation.x += group.userData.tilt;
-        group.position.y += ((pose ? pose.y : (target.y ?? 0) + (target.sit == null ? 0 : HALL.seatedDrop)) - group.position.y) * k;
+        group.position.y += ((pose ? pose.y : (target.y ?? 0) + (target.sit == null ? 0 : HALL.seatedDrop)) - group.position.y) * kp;
       }
     },
     avatarGroups() {
