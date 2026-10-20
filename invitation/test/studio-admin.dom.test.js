@@ -109,7 +109,6 @@ test('galat dari server tampil sebagai pesan, tombol aktif lagi, tidak ada data 
 test('nonaktifkan: batal di konfirmasi tidak memanggil server; setuju memanggil dan memuat ulang', async () => {
   const { v, f } = await mount('admin', { id: 'me', role: 'admin' });
   window.confirm = () => false;
-  buttonsOf(rowOf(v, 'klien@x.id'));
   [...rowOf(v, 'klien@x.id').querySelectorAll('button')].find((b) => b.textContent === 'Nonaktifkan').click();
   await tick();
   assert.deepEqual(f.calls, []);
@@ -171,14 +170,14 @@ test('createAdminApi: membawa token sesi, mengirim JSON, galat server menjadi pe
   await assert.rejects(() => createAdminApi({ client, fetchImpl: async () => ({ ok: false, status: 500, json: async () => { throw new Error('x'); } }) }).list(), /gagal \(500\)/);
 });
 
-test('menu Admin: tersembunyi untuk pelanggan, muncul antara Template dan Pengaturan untuk staf', () => {
+test('menu Admin: tersembunyi untuk pelanggan, muncul tepat sebelum Pengaturan untuk staf', () => {
   const hrefs = (el) => [...el.querySelectorAll('.st-nav-item')].map((a) => a.getAttribute('href'));
   const plain = shellView({ active: 'dashboard', email: 'a@b.c', onSignOut() {}, content: null });
   assert.equal(hrefs(plain).length, NAV.length);
   assert.ok(!hrefs(plain).includes('#/admin'));
   const staff = shellView({ active: 'admin', email: 'a@b.c', onSignOut() {}, content: null, isAdmin: true });
   const labels = [...staff.querySelectorAll('.st-nav-item span')].map((s) => s.textContent);
-  assert.deepEqual(labels, ['Dashboard', 'Tamu', 'Editor', 'Template', 'Admin', 'Pengaturan', 'Bantuan']);
+  assert.deepEqual(labels, ['Dashboard', 'Tamu', 'Check-in', 'Editor', 'Template', 'Admin', 'Pengaturan', 'Bantuan']);
   assert.equal(staff.querySelectorAll('.st-bnav-item').length, NAV.length + 1);
   assert.equal(staff.querySelector('.st-nav-item.is-active').getAttribute('href'), '#/admin');
 });
