@@ -78,7 +78,7 @@ test('storeFromEnv butuh service role; supabaseStore memanggil REST dengan benar
   assert.deepEqual(await st.addStrike('nikah', 'h', 3), { strikes: 2, banned: false });
   assert.equal(await st.isBanned('nikah', 'h'), true);
   assert.match(calls[0][0], /\/rest\/v1\/rpc\/moderation_strike$/);
-  assert.deepEqual(JSON.parse(calls[0][1].body), { p_event: 'nikah', p_device: 'h', p_max: 3 });
+  assert.deepEqual(JSON.parse(calls[0][1].body), { p_event: 'nikah', p_device: 'h', p_max: 3, p_name: null });
   assert.match(calls[1][0], /guest_moderation\?event=eq\.nikah&device_hash=eq\.h/);
   assert.equal(calls[1][1].headers.Authorization, 'Bearer svc');
 });
