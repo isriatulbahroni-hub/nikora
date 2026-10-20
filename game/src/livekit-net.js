@@ -2,6 +2,8 @@
 // (satu ruang yang sama dengan suara). API-nya sama dengan NetClient supaya main.js dan multiplayer-view.js tidak berubah.
 // Konsekuensi: tidak ada server otoritatif (tiap klien memegang posisinya sendiri), cukup untuk ruang sosial.
 import { sanitizeConfig } from './avatar-config.js';
+import { attachModeration } from './moderated-net.js';
+import { attachCard } from './card-net.js';
 
 const TOPIC = 'orbit';
 const STATE_INTERVAL_MS = 100;
@@ -18,6 +20,7 @@ const DANCE_MS = 45_000;
 const GESTURE_MS = 1800;
 const GESTURES = ['wave', 'bow', 'spin']; // gestur solo dari Cermin Gerak
 const REMOTE_ACTS = [...KINDS, 'dance', 'spin'];
+const POSE_NAME = /^[a-z_]{1,16}$/; // nama gerakan duduk/shalat di masjid (mis. "bersila", "sujud"); hanya huruf kecil dan garis bawah
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -46,7 +49,9 @@ export function roleOf(participant) {
 }
 
 export class LiveKitNet {
-  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl, world, event, key, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  // moderation: pasang moderasi obrolan (lihat moderated-net.js). Bawaan: aktif hanya di browser (ada `window`),
+  // sehingga tes di Node tidak berubah. Tanpa MODERATION_SECRET di server, moderasi tidak melakukan apa pun.
+  constructor({ LiveKit, now = () => Date.now(), tokenUrl = '/api/token', fetchImpl, world, event, key, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), moderation = typeof window !== 'undefined' } = {}) {
     this.key = key || undefined; // kunci pemilik/MC (diperiksa server); tamu biasa tidak punya
     this.role = 'guest';
     this.restricted = false; // true bila server mewajibkan peran untuk membuka panggung
@@ -65,7 +70,7 @@ export class LiveKitNet {
     this.fetch = fetchImpl ?? ((...args) => globalThis.fetch(...args));
     this.room = null;
     this.id = null;
-    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [], party: [], screen: [], 'screen-track': [], status: [], rejoined: [] };
+    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [], party: [], screen: [], 'screen-track': [], status: [], rejoined: [], car: [] };
     this.self = { id: null, name: 'Tamu', x: 0, z: 9.4, y: 0, rot: 0, sit: null, act: null, with: null, until: 0, av: null, au: null };
     this.remotes = new Map();
     this.screenTracks = new Map(); // id peserta -> { video, audio } untuk Layar Tancap
@@ -74,6 +79,8 @@ export class LiveKitNet {
     this.lastSent = 0;
     this.lastChatAt = 0;
     this.timer = null;
+    attachCard(this); // kartu check-in kamar: kode dari ?card= dikirim ke server; net.hasCard(id) dipakai room-doors.js (lihat card-net.js)
+    if (moderation) attachModeration(this, typeof moderation === 'object' ? moderation : {});
   }
 
   /** Boleh menjadi MC? Mode terbuka: semua; mode terbatas: hanya pemilik/MC yang terverifikasi. */
@@ -129,6 +136,9 @@ export class LiveKitNet {
     room.on(RoomEvent.ParticipantConnected, (p) => {
       // Beri tahu pendatang baru posisi kita segera (tanpa menunggu heartbeat).
       this.#publishState({ to: [p.identity], reliable: true });
+      // dan keadaan mobil yang bergeser/terisi menurut kita (carSnapshot dipasang oleh villa-main.js)
+      const cars = this.carSnapshot?.();
+      if (Array.isArray(cars) && cars.length) this.#send({ t: 'v', k: 'n', cars }, { to: [p.identity], reliable: true });
     });
     room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
       const source = pub?.source ?? track.source;
@@ -237,7 +247,7 @@ export class LiveKitNet {
     if (m.t === 's') {
       const prev = this.remotes.get(id) ?? this.#blank(participant);
       const kind = REMOTE_ACTS.includes(m.a) ? m.a : null;
-      this.remotes.set(id, {
+      const next = {
         ...prev,
         name: participant.name || prev.name,
         x: num(m.x, prev.x),
@@ -250,7 +260,11 @@ export class LiveKitNet {
         av: Array.isArray(m.v) ? sanitizeConfig(m.v) : prev.av,
         au: Number.isInteger(m.u) && m.u >= 0 && m.u < 4 ? m.u : prev.au, // bagian hari pengirim untuk aura
         role: roleOf(participant), // dari metadata token (ditandatangani server), bukan dari isi pesan
-      });
+      };
+      // Gerakan duduk/shalat (masjid): hanya ada bila pengirim sedang melakukannya; pesan tanpa "q" berarti berdiri biasa.
+      if (typeof m.q === 'string' && POSE_NAME.test(m.q)) next.pose = m.q;
+      else delete next.pose;
+      this.remotes.set(id, next);
       // Dua orang di kursi yang sama: id lebih besar mengalah.
       if (this.self.sit !== null && Number.isInteger(m.i) && m.i === this.self.sit && id < this.id) this.self.sit = null;
       this.#emit('state', { t: 'state', players: this.players });
@@ -263,6 +277,8 @@ export class LiveKitNet {
       this.#emit('party', { from: id, msg: m });
     } else if (m.t === 'sc') {
       this.#emit('screen', { from: id, msg: m });
+    } else if (m.t === 'v') {
+      this.#emit('car', { from: id, msg: m });
     }
   }
 
@@ -327,15 +343,15 @@ export class LiveKitNet {
     this.room.localParticipant.publishData(enc.encode(JSON.stringify(obj)), opts).catch(() => {});
   }
 
-  /** Isi pesan state kita (sama untuk heartbeat, gerak dekat, dan gerak jauh). */
+  /** Isi pesan state kita (sama untuk heartbeat, gerak dekat, dan gerak jauh). "q" hanya ada saat sedang duduk/shalat di masjid. */
   #statePayload() {
     const s = this.self;
-    return { t: 's', x: +s.x.toFixed(2), z: +s.z.toFixed(2), y: +(s.y ?? 0).toFixed(2), r: +s.rot.toFixed(2), i: s.sit, a: s.act, w: s.with, v: s.av, u: s.au };
+    return { t: 's', x: +s.x.toFixed(2), z: +s.z.toFixed(2), y: +(s.y ?? 0).toFixed(2), r: +s.rot.toFixed(2), i: s.sit, a: s.act, w: s.with, v: s.av, u: s.au, ...(s.pose ? { q: s.pose } : {}) };
   }
 
   #remember() {
     const s = this.self;
-    this.snapshot = { x: s.x, z: s.z, y: s.y ?? 0, r: s.rot, i: s.sit, a: s.act, w: s.with, v: s.av, u: s.au };
+    this.snapshot = { x: s.x, z: s.z, y: s.y ?? 0, r: s.rot, i: s.sit, a: s.act, w: s.with, v: s.av, u: s.au, q: s.pose ?? null };
   }
 
   #publishState(opts) {
@@ -347,7 +363,7 @@ export class LiveKitNet {
   #moved() {
     const s = this.self;
     const n = this.snapshot;
-    return !n || Math.abs(s.x - n.x) > MOVE_EPS || Math.abs(s.z - n.z) > MOVE_EPS || Math.abs((s.y ?? 0) - n.y) > MOVE_EPS || Math.abs(s.rot - n.r) > MOVE_EPS || s.sit !== n.i || s.act !== n.a || s.with !== n.w || s.av !== n.v;
+    return !n || Math.abs(s.x - n.x) > MOVE_EPS || Math.abs(s.z - n.z) > MOVE_EPS || Math.abs((s.y ?? 0) - n.y) > MOVE_EPS || Math.abs(s.rot - n.r) > MOVE_EPS || s.sit !== n.i || s.act !== n.a || s.with !== n.w || s.av !== n.v || (s.pose ?? null) !== n.q;
   }
 
   /** Gerak: yang dekat menerima 10x/dtk, yang jauh 2x/dtk. Diam (tidak berubah) tidak mengirim apa pun selain heartbeat. */
@@ -388,9 +404,23 @@ export class LiveKitNet {
     this.#publishState({ reliable: true });
   }
 
+  /** Gerakan duduk bersila/shalat di masjid (nama dari masjid-posture-data.js); null = berdiri. Disiarkan segera dan ikut tiap heartbeat. */
+  setPose(name) {
+    const q = typeof name === 'string' && POSE_NAME.test(name) ? name : null;
+    if ((this.self.pose ?? null) === q) return;
+    if (q) this.self.pose = q;
+    else delete this.self.pose;
+    this.#publishState({ reliable: true });
+  }
+
   /** Pesan Party Room (panggung, angkat tangan). Tanpa server otoritatif: validasi dilakukan tiap penerima. */
   sendParty(msg) {
     this.#send({ ...msg, t: 'p' }, { reliable: true });
+  }
+
+  /** Pesan mobil (pose pengemudi, naik/turun, snapshot). Pose: tidak andal (10x/dtk); naik/turun: andal. Validasi dilakukan tiap penerima. */
+  sendCar(msg, { reliable = false, to } = {}) {
+    this.#send(msg, { reliable, ...(to ? { to } : {}) });
   }
 
   /** Pesan Layar Tancap (operator, putar/jeda, sinkron). Validasi dilakukan tiap penerima. */
