@@ -1,0 +1,4 @@
+/* Daftar gerakan pratinjau (klip Mixamo) di atas tombol Lambai/Joget pada editor avatar. */
+.stage-clips{position:absolute;left:8px;right:8px;bottom:48px;display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.stage-clips::-webkit-scrollbar{display:none}
+.stage-clips .stage-chip{flex:0 0 auto;white-space:nowrap}

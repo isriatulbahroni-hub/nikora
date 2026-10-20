@@ -1,9 +1,11 @@
 // Editor avatar ala pemilihan hero: pratinjau 3D (putar, zoom, reset, pose) + tab pilihan + acak + foto wajah (dengan layar potong) + unduh 3D.
 import * as THREE from 'three';
 import './avatar-editor.css';
+import './avatar-editor-clips.css';
 import { ACCESSORIES, CHARACTERS, HAIR_COLORS, HAIR_STYLES, OUTFITS, SKINS, randomConfig, sanitizeConfig } from './avatar-config.js';
 import { applyPose, createAvatar, setAvatarConfig } from './avatar.js';
 import { FACE_STYLES, applyFacePhoto, cropSquare, faceCanvasFromImage, skinIndexFromCanvas, thumbnailDataUrl } from './avatar-face.js';
+import { PREVIEW_CLIPS } from './avatar-editor-clips.js';
 
 const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
 const STYLE_LABEL = { asli: 'Asli', royal: 'Royal', kartun: 'Kartun' };
@@ -25,6 +27,7 @@ export function createAvatarEditor({
   let cfg = sanitizeConfig(initial);
   let tab = TABS[0].id;
   let previewAct = null; // null | 'wave' | 'dance'
+  let previewClip = null; // null | id klip Mixamo (anims/extra); hanya berlaku untuk model manusia
   let clock = 0;
   let renderer = null;
   let scene;
@@ -112,6 +115,10 @@ export function createAvatarEditor({
   }
 
   function apply() {
+    if (cfg.m === 0 && previewClip) { // avatar Sederhana tidak punya rangka Mixamo: gerakan dihentikan
+      previewClip = null;
+      syncPoseButtons();
+    }
     if (avatar) {
       setAvatarConfig(avatar, cfg);
       if (face) applyFacePhoto(avatar, face); // rambut/aksesori dibangun ulang: foto dan posisi kacamata dipasang lagi
@@ -284,11 +291,38 @@ export function createAvatarEditor({
   });
 
   // ---- Pose pratinjau dan reset kamera (tombol ada di .editor-stage pada index.html) ----
+  function syncPoseButtons() {
+    stage?.querySelectorAll('[data-pose]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pose === previewAct)));
+    stage?.querySelectorAll('[data-clip]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.clip === previewClip)));
+  }
   function setPose(act) {
     previewAct = previewAct === act ? null : act;
-    stage?.querySelectorAll('[data-pose]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.pose === previewAct)));
+    previewClip = null;
+    syncPoseButtons();
+  }
+  function setClip(id) {
+    if (cfg.m === 0) { // klip Mixamo hanya bisa dimainkan model manusia
+      onNotice('Gerakan lengkap hanya untuk karakter Michelle. Pilih Michelle dulu.');
+      return;
+    }
+    previewClip = previewClip === id ? null : id;
+    previewAct = null;
+    syncPoseButtons();
   }
   stage?.querySelectorAll('[data-pose]').forEach((b) => b.addEventListener('click', () => setPose(b.dataset.pose)));
+  const clipsEl = stage?.querySelector('[data-clips]');
+  if (clipsEl) {
+    for (const c of PREVIEW_CLIPS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'stage-chip';
+      b.dataset.clip = c.id;
+      b.setAttribute('aria-pressed', 'false');
+      b.textContent = `${c.icon} ${c.label}`;
+      b.addEventListener('click', () => setClip(c.id));
+      clipsEl.append(b);
+    }
+  }
   const resetView = () => {
     camDist = CAM.rest;
     if (avatar) avatar.rotation.y = Math.PI - 0.5;
@@ -368,6 +402,8 @@ export function createAvatarEditor({
       camera.updateProjectionMatrix();
     }
     clock += dt;
+    const human = avatar.userData.human;
+    if (human) human.forcedClip = previewClip; // diset tiap frame supaya tetap berlaku saat model manusia baru selesai dimuat
     applyPose(avatar, previewAct, clock, dt);
     if (!dragging && touches.size === 0) avatar.rotation.y += dt * 0.6;
     placeCamera();
