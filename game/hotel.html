@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#14110d" />
+    <title>NIKORA Grand Hotel | ORBIT</title>
+    <style>
+      :root { font-family: ui-sans-serif, 'Segoe UI', sans-serif; color: #fff; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #bcd9ee; touch-action: none; user-select: none; -webkit-user-select: none; }
+      #hotel-root, #hotel-root canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+      .hud { position: fixed; z-index: 5; pointer-events: none; text-shadow: 0 0 3px rgba(0,0,0,.55), 0 1px 8px rgba(0,0,0,.6); }
+      .title { top: max(12px, env(safe-area-inset-top)); left: 16px; max-width: calc(100vw - 230px); }
+      .title strong { display: block; font-size: 18px; letter-spacing: .12em; font-weight: 600; }
+      .title span { font-size: 11px; opacity: .85; }
+      .place { top: calc(max(12px, env(safe-area-inset-top)) + 46px); left: 14px; max-width: calc(100vw - 28px); padding: 5px 12px; border-radius: 999px; background: rgba(20,17,13,.68); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: none; }
+      .topbar { position: fixed; z-index: 7; top: max(10px, env(safe-area-inset-top)); right: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+      .rbs { display: flex; gap: 8px; }
+      .rb { width: 48px; height: 52px; border-radius: 14px; border: 1px solid rgba(231,199,106,.45); background: rgba(20,17,13,.7); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; cursor: pointer; opacity: .92; }
+      .rb .ic { font-size: 19px; line-height: 1; }
+      .rb .lb { font-size: 10px; font-weight: 600; line-height: 1; }
+      .rb[aria-pressed="true"] { background: #c9a24b; color: #1a1306; opacity: 1; }
+      #minimap { position: fixed; z-index: 6; top: calc(max(10px, env(safe-area-inset-top)) + 66px); right: 10px; width: 176px; height: 147px; border-radius: 10px; background: rgba(20,17,13,.5); border: 1px solid rgba(231,199,106,.45); opacity: .94; pointer-events: none; }
+      #minimap[hidden] { display: none; }
+      .hint { bottom: max(10px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .9; white-space: nowrap; }
+      .panel { position: fixed; z-index: 10; top: calc(max(10px, env(safe-area-inset-top)) + 66px); left: 10px; width: min(300px, 86vw); max-height: 70vh; overflow: auto; padding: 0 12px 12px; border-radius: 14px; background: rgba(20,17,13,.95); border: 1px solid rgba(231,199,106,.4); font-size: 13px; }
+      .panel[hidden] { display: none; }
+      .panel-head { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: center; margin: 0 -12px 8px; padding: 12px; background: rgba(20,17,13,.99); }
+      .panel-head button { background: none; border: 0; color: #fff; font-size: 16px; cursor: pointer; }
+      .place-group { margin: 12px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #e7c76a; }
+      .place-group:first-child { margin-top: 2px; }
+      .place-btn { display: block; width: 100%; text-align: left; margin: 0 0 6px; padding: 9px 12px; border-radius: 10px; border: 0; background: rgba(255,255,255,.12); color: #fff; font: 500 13px ui-sans-serif, sans-serif; cursor: pointer; }
+      .place-btn:hover, .place-btn:active { background: #c9a24b; color: #1a1306; }
+      .toast { position: fixed; z-index: 9; left: 50%; bottom: 140px; transform: translateX(-50%); padding: 8px 14px; border-radius: 12px; background: rgba(20,17,13,.9); font-size: 13px; max-width: 86vw; text-align: center; display: none; }
+      /* layar saat lift berjalan */
+      .lift-fade { position: fixed; z-index: 25; inset: 0; display: grid; place-items: center; background: rgba(10,8,5,.55); opacity: 0; pointer-events: none; transition: opacity .35s; }
+      .lift-fade.on { opacity: 1; pointer-events: auto; }
+      .lift-fade span { padding: 10px 20px; border-radius: 12px; border: 1px solid #c9a24b; background: rgba(20,17,13,.85); color: #e7c76a; font: 600 15px ui-sans-serif, sans-serif; letter-spacing: .04em; text-align: center; max-width: 86vw; }
+      .joy-zone { position: fixed; z-index: 6; left: 0; bottom: 0; width: 55%; height: 45%; touch-action: none; display: none; }
+      @media (pointer: coarse) { .joy-zone { display: block; } .hint { display: none; } .toast { bottom: calc(max(28px, env(safe-area-inset-bottom)) + 150px); } }
+      @media (max-width: 460px) {
+        .title strong { font-size: 15px; letter-spacing: .08em; white-space: nowrap; }
+        .rbs { gap: 5px; }
+        .rb { width: 44px; height: 50px; }
+        #minimap, .panel { top: calc(max(10px, env(safe-area-inset-top)) + 62px); }
+      }
+      .joy-base { position: absolute; left: 28px; bottom: max(28px, env(safe-area-inset-bottom)); width: 124px; height: 124px; border-radius: 50%; background: rgba(255,255,255,.18); border: 2px solid rgba(255,255,255,.4); }
+      .joy-knob { position: absolute; left: 50%; top: 50%; width: 54px; height: 54px; margin: -27px 0 0 -27px; border-radius: 50%; background: rgba(255,255,255,.75); box-shadow: 0 2px 8px rgba(0,0,0,.35); }
+      #hotel-error { position: fixed; z-index: 40; inset: 0; display: none; place-items: center; padding: 24px; background: rgba(20,17,13,.94); text-align: center; }
+      #hotel-error pre { white-space: pre-wrap; font-size: 12px; opacity: .8; }
+    </style>
+  </head>
+  <body>
+    <div id="hotel-root"></div>
+    <div class="hud title"><strong>NIKORA GRAND HOTEL</strong><span>Menara 15 lantai</span></div>
+    <div class="hud place" id="place">Drop-off &amp; Valet</div>
+    <div class="topbar">
+      <div class="rbs">
+        <button id="places-button" class="rb" type="button" aria-label="Jelajah ke ruangan" title="Jelajah (J)"><span class="ic">&#128205;</span><span class="lb">Jelajah</span></button>
+        <button id="cam-button" class="rb" type="button" aria-label="Ganti sudut kamera" title="Sudut kamera (C)"><span class="ic">&#127909;</span><span class="lb">Kamera</span></button>
+        <button id="map-button" class="rb" type="button" aria-label="Tampilkan peta" aria-pressed="true" title="Peta (M)"><span class="ic">&#128506;</span><span class="lb">Peta</span></button>
+      </div>
+    </div>
+    <canvas id="minimap" width="220" height="184"></canvas>
+    <div id="places-panel" class="panel" hidden>
+      <div class="panel-head"><strong>Jelajah ke ruangan</strong><button id="places-close" type="button" aria-label="Tutup">&#10005;</button></div>
+      <div id="places-list"></div>
+    </div>
+    <div class="lift-fade" id="lift-fade"><span id="lift-msg"></span></div>
+    <div class="hud hint">WASD: jalan · masuk kabin lift (inti bangunan) lalu pilih lantai · seret: putar kamera · scroll: zoom · C: sudut · M: peta · J: jelajah</div>
+    <div class="toast" id="toast"></div>
+    <div class="joy-zone" id="joy-zone"><div class="joy-base" id="joy-base"><div class="joy-knob" id="joy-knob"></div></div></div>
+    <div id="hotel-error"><div><h2>Tidak bisa memulai</h2><p id="hotel-error-text"></p><pre id="hotel-error-detail"></pre></div></div>
+    <script type="module" src="/src/hotel-main.js"></script>
+  </body>
+</html>
