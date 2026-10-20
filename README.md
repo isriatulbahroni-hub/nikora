@@ -2,6 +2,18 @@
 
 > Dokumen ini adalah rancangan induk dan roadmap produk, bukan bukti bahwa seluruh fitur telah diimplementasikan atau diuji. Prototipe game offline Fase 2 kini berada di `game/`; unit test dan production build lulus, tetapi audit implementasi penuh serta browser E2E/manual belum selesai dan gate Fase 2 belum lulus.
 
+## NIKORA — Rencana pemilik (baca dulu sebelum melanjutkan pekerjaan)
+
+Dunia undangan pernikahan virtual NIKORA (villa, aula, royal, masjid, dan hotel) sedang dikembangkan di `game/`. Rencana pemilik yang harus diikuti oleh siapa pun yang melanjutkan (termasuk Claude lain) — **ini rencana, bukan status implementasi**:
+
+- **Hotel NIKORA 1000 lantai** dengan arsitektur paling canggih, bukan hotel biasa, terasa seperti dunia nyata. Hotel di kode saat ini masih menara 15 lantai berdesain lama dan harus diganti.
+- Hotel jauh dari tempat acara dan berada di tengah-tengah empat tempat acara (villa, aula, royal, masjid). Tiap tempat acara terhubung langsung ke hotel, tetapi antar-tempat acara tidak saling terhubung.
+- Perpindahan tempat acara ↔ hotel memakai **mobil**: 500 mobil termewah per tempat acara. Admin harus tahu asal acara tiap tamu dan siapa memakai mobil; tamu tidak boleh masuk hotel atau mengemudi tanpa persetujuan admin; mobil tak terpakai dinonaktifkan sesuai jumlah pengguna.
+- Ruangan game dari villa dipindah ke hotel. Kamar luas dan lengkap (maks. 2 orang), kontrol TV/AC/lampu, akses kamar lewat izin pemesan, suara TV tidak keluar kamar. Kolam renang berdesain berbeda-beda, taman indah (burung siang, pancuran malam), parkir berarsitektur canggih.
+- Cari fitur di GitHub dulu sebelum menulis dari awal. Kerjakan lewat branch dan PR.
+
+Rincian lengkap dan status aktual: [`docs/HOTEL_RENCANA.md`](docs/HOTEL_RENCANA.md).
+
 One digital universe. Infinite experiences.
 
 ## Play, explore, create, work, and grow in one living ecosystem.
