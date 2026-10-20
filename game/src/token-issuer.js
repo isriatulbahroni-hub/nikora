@@ -1,5 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { AccessToken } from 'livekit-server-sdk';
+import { DEVICE_ID, hashDevice, moderationSecret, newModToken, storeFromEnv } from './moderation-server.js';
 
 export const LIVEKIT_VARS = ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'];
 
@@ -43,7 +44,7 @@ export function verifyRoleKey(secret, event, key) {
 }
 
 export const VOICE_ROOM = 'orbit-hall';
-export const ROOMS = Object.freeze({ hall: VOICE_ROOM, villa: 'nikora-villa', royal: 'nikora-royal' });
+export const ROOMS = Object.freeze({ hall: VOICE_ROOM, villa: 'nikora-villa', royal: 'nikora-royal', masjid: 'nikora-masjid' });
 
 /** Hanya nama dunia yang dikenal yang diterima; selain itu jatuh ke aula. */
 const EVENT_SLUG = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
@@ -72,13 +73,55 @@ export async function eventExists(slug, { env = process.env, fetchImpl = (...a) 
   }
 }
 
+/**
+ * Kartu check-in kamar. Kartu diterbitkan admin lewat Studio (tabel checkin_cards di Supabase) dan diperiksa di server
+ * lewat fungsi database cek_kartu_checkin. Hasil yang sah masuk ke metadata token LiveKit (bertanda tangan server),
+ * sehingga klien lain bisa percaya bahwa pemegangnya memang punya kartu.
+ * Aktif hanya bila CHECKIN_CARD_REQUIRED=1 dan acara ditentukan; selain itu perilaku lama (check-in bebas) tidak berubah.
+ */
+export const CARD_REQUIRED_VAR = 'CHECKIN_CARD_REQUIRED';
+export const cardRequired = (env) => /^(1|true|yes|on)$/i.test(readEnv(env, CARD_REQUIRED_VAR));
+
+/** Kode kartu: 12 karakter heksadesimal (sama dengan batasan di database). Pemisah dan huruf kecil diterima. Selain itu '' (ditolak). */
+export function normalizeCard(value) {
+  if (typeof value !== 'string' || value.length > 24) return '';
+  const code = value.toUpperCase().replace(/[^0-9A-Z]/g, '');
+  return /^[0-9A-F]{12}$/.test(code) ? code : '';
+}
+
+/**
+ * Periksa kartu untuk satu acara. Hasil: { ok: true, room, until } atau { ok: false, reason: 'format' | 'invalid' | 'unavailable' }.
+ * Gagal memeriksa (jaringan/DB/konfigurasi) TIDAK PERNAH dianggap sah: berbeda dengan eventExists, kartu gagal-tertutup.
+ */
+export async function verifyCard(slug, code, { env = process.env, fetchImpl = (...a) => globalThis.fetch(...a) } = {}) {
+  const clean = normalizeCard(code);
+  if (!isEventSlug(slug) || !clean) return { ok: false, reason: 'format' };
+  const url = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+  const key = env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY;
+  if (!url || !key) return { ok: false, reason: 'unavailable' };
+  try {
+    const res = await fetchImpl(`${url.replace(/\/+$/, '')}/rest/v1/rpc/cek_kartu_checkin`, {
+      method: 'POST',
+      headers: { apikey: key, Authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ p_slug: slug, p_code: clean }),
+    });
+    if (!res.ok) return { ok: false, reason: 'unavailable' };
+    const rows = await res.json();
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row) return { ok: false, reason: 'invalid' };
+    return { ok: true, room: typeof row.label_kamar === 'string' ? row.label_kamar.slice(0, 40) : '', until: row.berlaku_sampai || null };
+  } catch {
+    return { ok: false, reason: 'unavailable' };
+  }
+}
+
 export function cleanName(raw) {
   if (typeof raw !== 'string') return 'Tamu';
   return raw.replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 24) || 'Tamu';
 }
 
 /** Terbitkan identitas + token LiveKit untuk satu tamu. { enabled:false } bila LiveKit belum dikonfigurasi. */
-export async function issueToken({ env = process.env, name, world, event, key: roleKey, fetchImpl } = {}) {
+export async function issueToken({ env = process.env, name, world, event, key: roleKey, card: cardCode, deviceId, store, fetchImpl } = {}) {
   const [url, key, secret] = LIVEKIT_VARS.map((name) => readEnv(env, name));
   const missing = LIVEKIT_VARS.filter((_, i) => ![url, key, secret][i]);
   // Hanya NAMA variabel yang kurang yang dikirim (tidak pernah nilainya), supaya salah konfigurasi bisa didiagnosis dari HP.
@@ -86,11 +129,39 @@ export async function issueToken({ env = process.env, name, world, event, key: r
   if (event !== undefined && event !== null && event !== '') {
     if (!isEventSlug(event) || !(await eventExists(event, { env, ...(fetchImpl ? { fetchImpl } : {}) }))) return { enabled: false, reason: 'event' };
   }
+  // Moderasi (opsional, aktif hanya bila MODERATION_SECRET dipasang): tamu yang sudah diblokir di acara ini tidak diberi token.
+  // Gagal memeriksa (jaringan/DB) tidak menghalangi masuk, sama seperti eventExists.
+  const modSecret = moderationSecret(env);
+  const deviceHash = modSecret && typeof deviceId === 'string' && DEVICE_ID.test(deviceId) ? hashDevice(modSecret, deviceId) : null;
+  const evKey = isEventSlug(event) ? event : '-';
+  let modConfig = null; // pengaturan pemilik acara, supaya filter di browser sama dengan di server
+  if (deviceHash) {
+    try {
+      const st = store ?? storeFromEnv(env, fetchImpl);
+      if (st && (await st.isBanned(evKey, deviceHash))) return { enabled: false, reason: 'banned' };
+      modConfig = (await st?.getSettings?.(evKey)) ?? null;
+    } catch (error) {
+      console.error('[token] cek blokir gagal', error?.message);
+    }
+  }
   const id = randomUUID().slice(0, 8);
   const rs = roleSecret(env);
   const role = rs ? verifyRoleKey(rs, isEventSlug(event) ? event : '', roleKey) ?? 'guest' : 'guest';
-  const at = new AccessToken(key, secret, { identity: id, name: cleanName(name), ttl: '2h', ...(role === 'guest' ? {} : { metadata: JSON.stringify({ role }) }) });
-  at.addGrant({ roomJoin: true, room: roomFor(world, event), canPublish: true, canPublishData: true, canSubscribe: true });
+  const guestName = cleanName(name);
+  // Kartu check-in: hanya untuk acara tertentu dan hanya bila diwajibkan. Tanpa kode tidak ada pemeriksaan (tamu tetap bisa masuk dunia,
+  // hanya tidak bisa check-in kamar).
+  const needCard = isEventSlug(event) && cardRequired(env);
+  const cardResult = needCard && typeof cardCode === 'string' && cardCode.trim() ? await verifyCard(event, cardCode, { env, ...(fetchImpl ? { fetchImpl } : {}) }) : null;
+  const meta = {};
+  if (role !== 'guest') meta.role = role;
+  if (cardResult?.ok) meta.card = { rm: cardResult.room };
+  const at = new AccessToken(key, secret, { identity: id, name: guestName, ttl: '2h', ...(Object.keys(meta).length ? { metadata: JSON.stringify(meta) } : {}) });
+  const room = roomFor(world, event);
+  at.addGrant({ roomJoin: true, room, canPublish: true, canPublishData: true, canSubscribe: true });
   // restricted: bila rahasia peran dipasang, hanya pemilik/MC terverifikasi yang boleh membuka panggung
-  return { enabled: true, url, token: await at.toJwt(), id, role, restricted: Boolean(rs) };
+  return {
+    enabled: true, url, token: await at.toJwt(), id, role, restricted: Boolean(rs),
+    ...(needCard ? { cardRequired: true, ...(cardResult ? { card: cardResult } : {}) } : {}),
+    ...(deviceHash ? { modToken: newModToken(modSecret, { id, room, ev: evKey, dh: deviceHash, nm: guestName }), ...(modConfig ? { modConfig } : {}) } : {}),
+  };
 }
