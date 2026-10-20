@@ -139,6 +139,14 @@ export const HOTEL_ZONES = Object.freeze([
   { id: 'hotel_parking', name: 'Parkir Tamu Hotel', kind: 'parking', rect: HOTEL_PARKING },
 ]);
 
+// Penghalang tetap di halaman: air mancur dan tiang kanopi drop-off (juga digambar hotel-world.js).
+export const HOTEL_FOUNTAIN = Object.freeze({ x: 0, z: 396, r: 3.2 });
+export const HOTEL_CANOPY = Object.freeze({ rect: [-18, 406, 18, 420], height: 6.4, pillars: Object.freeze([[-15, 410], [15, 410], [-15, 418], [15, 418]]) });
+const FIXED_COLLIDERS = Object.freeze([
+  { minX: HOTEL_FOUNTAIN.x - HOTEL_FOUNTAIN.r, maxX: HOTEL_FOUNTAIN.x + HOTEL_FOUNTAIN.r, minZ: HOTEL_FOUNTAIN.z - HOTEL_FOUNTAIN.r, maxZ: HOTEL_FOUNTAIN.z + HOTEL_FOUNTAIN.r },
+  ...HOTEL_CANOPY.pillars.map(([x, z]) => ({ minX: x - 0.5, maxX: x + 0.5, minZ: z - 0.5, maxZ: z + 0.5 })),
+]);
+
 // Slot parkir tamu (2 baris x 6) dan titik drop-off; dipakai untuk menaruh mobil.
 export const HOTEL_CAR_SPOTS = Object.freeze([
   ...[0, 1].flatMap((row) => [0, 1, 2, 3, 4, 5].map((i) => ({ id: `hp_${row}_${i}`, x: 52 + row * 24, z: 392 + i * 11, heading: Math.PI / 2 }))),
@@ -165,7 +173,7 @@ export function getHotelWorld() {
     const doors = levelDoors(level);
     const walls = buildWallSegments(rooms.filter((r) => r.kind !== 'terrace'), doors);
     const props = levelProps(level);
-    const colliders = [...walls.map(wallToRect), ...props.map(propToRect)];
+    const colliders = [...walls.map(wallToRect), ...props.map(propToRect), ...(level === 0 ? FIXED_COLLIDERS : [])];
     levels.push(Object.freeze({ level, rooms, doors, walls, props, colliders }));
   }
   const inBuilding = (x, z, r) => x >= HOTEL_BUILDING[0] + r && x <= HOTEL_BUILDING[2] - r && z >= HOTEL_BUILDING[1] + r && z <= HOTEL_BUILDING[3] - r;

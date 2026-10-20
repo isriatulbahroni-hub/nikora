@@ -69,7 +69,7 @@ export class LiveKitNet {
     this.fetch = fetchImpl ?? ((...args) => globalThis.fetch(...args));
     this.room = null;
     this.id = null;
-    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [], party: [], screen: [], 'screen-track': [], status: [], rejoined: [] };
+    this.handlers = { welcome: [], state: [], left: [], chat: [], close: [], error: [], 'greet-req': [], 'greet-declined': [], voice: [], party: [], screen: [], 'screen-track': [], status: [], rejoined: [], car: [] };
     this.self = { id: null, name: 'Tamu', x: 0, z: 9.4, y: 0, rot: 0, sit: null, act: null, with: null, until: 0, av: null, au: null };
     this.remotes = new Map();
     this.screenTracks = new Map(); // id peserta -> { video, audio } untuk Layar Tancap
@@ -134,6 +134,9 @@ export class LiveKitNet {
     room.on(RoomEvent.ParticipantConnected, (p) => {
       // Beri tahu pendatang baru posisi kita segera (tanpa menunggu heartbeat).
       this.#publishState({ to: [p.identity], reliable: true });
+      // dan keadaan mobil yang bergeser/terisi menurut kita (carSnapshot dipasang oleh villa-main.js)
+      const cars = this.carSnapshot?.();
+      if (Array.isArray(cars) && cars.length) this.#send({ t: 'v', k: 'n', cars }, { to: [p.identity], reliable: true });
     });
     room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
       const source = pub?.source ?? track.source;
@@ -272,6 +275,8 @@ export class LiveKitNet {
       this.#emit('party', { from: id, msg: m });
     } else if (m.t === 'sc') {
       this.#emit('screen', { from: id, msg: m });
+    } else if (m.t === 'v') {
+      this.#emit('car', { from: id, msg: m });
     }
   }
 
@@ -409,6 +414,11 @@ export class LiveKitNet {
   /** Pesan Party Room (panggung, angkat tangan). Tanpa server otoritatif: validasi dilakukan tiap penerima. */
   sendParty(msg) {
     this.#send({ ...msg, t: 'p' }, { reliable: true });
+  }
+
+  /** Pesan mobil (pose pengemudi, naik/turun, snapshot). Pose: tidak andal (10x/dtk); naik/turun: andal. Validasi dilakukan tiap penerima. */
+  sendCar(msg, { reliable = false, to } = {}) {
+    this.#send(msg, { reliable, ...(to ? { to } : {}) });
   }
 
   /** Pesan Layar Tancap (operator, putar/jeda, sinkron). Validasi dilakukan tiap penerima. */
