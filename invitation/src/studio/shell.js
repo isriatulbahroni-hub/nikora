@@ -4,6 +4,7 @@ import { icon } from './icons.js';
 export const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: 'home', path: () => '#/dashboard' },
   { id: 'tamu', label: 'Tamu', icon: 'users', path: (slug) => (slug ? `#/tamu/${slug}` : '#/tamu') },
+  { id: 'checkin', label: 'Check-in', icon: 'check', path: (slug) => (slug ? `#/checkin/${slug}` : '#/checkin') },
   { id: 'editor', label: 'Editor', icon: 'pencil', path: (slug) => (slug ? `#/editor/${slug}` : '#/editor') },
   { id: 'template', label: 'Template', icon: 'layout', path: (slug) => (slug ? `#/template/${slug}` : '#/template') },
   { id: 'pengaturan', label: 'Pengaturan', icon: 'settings', path: () => '#/pengaturan' },
@@ -18,7 +19,8 @@ export const ADMIN_NAV = { id: 'admin', label: 'Admin', icon: 'user', path: () =
  * Menu Editor dan Template membawa undangan yang terakhir dibuka, jadi alurnya tersambung.
  */
 export function shellView({ active, email, slug, onSignOut, content, isAdmin = false }) {
-  const items = isAdmin ? [...NAV.slice(0, 4), ADMIN_NAV, ...NAV.slice(4)] : NAV;
+  const at = NAV.findIndex((n) => n.id === 'pengaturan'); // Admin tampil tepat sebelum Pengaturan
+  const items = isAdmin ? [...NAV.slice(0, at), ADMIN_NAV, ...NAV.slice(at)] : NAV;
   const link = (n, cls) => h('a', { class: `${cls}${n.id === active ? ' is-active' : ''}`, href: n.path(slug), 'aria-current': n.id === active ? 'page' : null },
     icon(n.icon, { size: cls === 'st-bnav-item' ? 22 : 20 }), h('span', { text: n.label }));
   return h('div', { class: 'st-app' },

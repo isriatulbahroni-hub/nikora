@@ -1,6 +1,6 @@
 import { SLUG } from './api.js';
 
-export const PAGES = ['dashboard', 'tamu', 'editor', 'template', 'undangan', 'buat', 'pengaturan', 'bantuan', 'admin'];
+export const PAGES = ['dashboard', 'tamu', 'checkin', 'editor', 'template', 'undangan', 'buat', 'pengaturan', 'bantuan', 'admin'];
 
 /** "#/editor/rani-dimas" -> { page: 'editor', slug: 'rani-dimas' }. Alamat tak dikenal kembali ke dashboard. */
 export function parseRoute(hash) {

@@ -1,6 +1,6 @@
 import './studio.css';
 import { createClient } from './api.js';
-import { loginView, createView, detailView } from './views.js';
+import { loginView, createView, detailView, titleOf } from './views.js';
 import { editorView } from './editor.js';
 import { dashboardView } from './dashboard.js';
 import { templateView } from './template.js';
@@ -12,6 +12,9 @@ import { parseRoute } from './route.js';
 import { leaveStudio, goodbyeView, hasUnsaved } from './exit.js';
 import { adminView } from './admin.js';
 import { createAdminApi } from './admin-api.js';
+import { createCheckinApi } from './checkin-api.js';
+import { checkinView } from './checkin.js';
+import { queueView } from './checkin-admin.js';
 import { h } from '../engine/dom.js';
 
 const KEY = 'orbit.studio.session';
@@ -75,7 +78,8 @@ async function render() {
   const session = client.session();
   const email = session.user && session.user.email;
   const role = await staffRole();
-  const ACTIVE = { dashboard: 'dashboard', undangan: 'dashboard', buat: 'dashboard', tamu: 'tamu', editor: 'editor', template: 'template', pengaturan: 'pengaturan', bantuan: 'bantuan', admin: 'admin' };
+  const checkinApi = createCheckinApi({ client, url: import.meta.env.VITE_SUPABASE_URL, key: import.meta.env.VITE_SUPABASE_ANON_KEY });
+  const ACTIVE = { dashboard: 'dashboard', undangan: 'dashboard', buat: 'dashboard', tamu: 'tamu', checkin: 'checkin', editor: 'editor', template: 'template', pengaturan: 'pengaturan', bantuan: 'bantuan', admin: 'admin' };
   const shell = (content) => root.replaceChildren(shellView({ active: ACTIVE[page], email, slug: cur, onSignOut: signOut, content, isAdmin: Boolean(role) }));
   const setContent = (node) => { const m = document.getElementById('st-main'); if (m) m.replaceChildren(node); };
   const hrefs = { editor: (s) => `#/editor/${s}`, template: (s) => `#/template/${s}`, tamu: (s) => `#/tamu/${s}`, detail: (s) => `#/undangan/${s}` };
@@ -86,7 +90,7 @@ async function render() {
     if (page === 'bantuan') return setContent(helpView());
     if (page === 'admin') {
       if (!role) return setContent(note('Halaman ini hanya untuk admin.', () => go('#/dashboard')));
-      return setContent(adminView({ api: createAdminApi({ client }), role }));
+      return setContent(h('div', {}, queueView({ api: checkinApi }), adminView({ api: createAdminApi({ client }), role })));
     }
     if (page === 'buat') return setContent(createView({ client, onCreated: (s) => go(`#/template/${s}`), onCancel: () => go('#/dashboard') }));
     const items = await client.myInvitations();
@@ -95,9 +99,10 @@ async function render() {
       return setContent(dashboardView({ items, stats, hrefs, onDelete: (slugs) => client.deleteInvitations(slugs) }));
     }
     if (page === 'tamu') return setContent(guestsView({ client, items, slug: cur, inviteBase, worldBase, onPick: (s) => go(`#/tamu/${s}`) }));
-    const need = { editor: ['Editor', 'Pilih undangan yang ingin diisi.'], template: ['Template & amplop', 'Pilih undangan untuk memilih amplop dan suasananya.'], undangan: ['Bagikan', 'Pilih undangan.'] }[page];
+    const need = { editor: ['Editor', 'Pilih undangan yang ingin diisi.'], template: ['Template & amplop', 'Pilih undangan untuk memilih amplop dan suasananya.'], undangan: ['Bagikan', 'Pilih undangan.'], checkin: ['Check-in tamu', 'Pilih undangan untuk mengajukan check-in tamu yang menginap.'] }[page];
     if (!slug) return setContent(pickerView({ title: need[0], lead: need[1], items, hrefFor: (s) => `#/${page}/${s}` }));
     if (!items.some((i) => i.slug === slug)) return setContent(note('Undangan itu tidak ditemukan di akunmu.', () => go('#/dashboard')));
+    if (page === 'checkin') return setContent(checkinView({ api: checkinApi, slug, title: titleOf(items.find((i) => i.slug === slug)) }));
     if (page === 'undangan') return setContent(detailView({ client, slug, inviteBase, worldBase, world: worldOfRow(items.find((i) => i.slug === slug)), onBack: () => go('#/dashboard'), onDeleted: () => go('#/dashboard'), onEdit: () => go(`#/editor/${slug}`) }));
     if (page === 'editor') return setContent(editorView({ client, slug, inviteBase, onBack: () => go(`#/undangan/${slug}`) }));
     if (page === 'template') {
