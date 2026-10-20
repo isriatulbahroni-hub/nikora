@@ -31,6 +31,10 @@ export function defaultCars() {
   return out.map((c, k) => ({ ...c, color: PALETTE[k % PALETTE.length] }));
 }
 
+/** Tiap halaman (vila, hotel) punya ruang LiveKit sendiri, jadi masing-masing hanya membuat mobil di wilayahnya (indeks kursi dihitung per halaman). */
+export const villaCars = () => defaultCars().filter((c) => c.id.startsWith('villa_'));
+export const hotelCars = () => defaultCars().filter((c) => c.id.startsWith('hotel_'));
+
 const r2 = (n) => Math.round(n * 100) / 100;
 
 export class Fleet {

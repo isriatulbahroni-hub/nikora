@@ -44,7 +44,7 @@ export function verifyRoleKey(secret, event, key) {
 }
 
 export const VOICE_ROOM = 'orbit-hall';
-export const ROOMS = Object.freeze({ hall: VOICE_ROOM, villa: 'nikora-villa', royal: 'nikora-royal', masjid: 'nikora-masjid' });
+export const ROOMS = Object.freeze({ hall: VOICE_ROOM, villa: 'nikora-villa', royal: 'nikora-royal', masjid: 'nikora-masjid', hotel: 'nikora-hotel' });
 
 /** Hanya nama dunia yang dikenal yang diterima; selain itu jatuh ke aula. */
 const EVENT_SLUG = /^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/;
