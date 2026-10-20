@@ -22,6 +22,7 @@ import { LIFT, inCab, installLift, liftCameraBoxes, liftProgress, liftRider, lif
 import { buildLiftWorld } from './villa-lift-world.js';
 import { mountLiftUi } from './villa-lift-ui.js';
 import { playLiftChime } from './villa-lift-sound.js';
+import { CAB_CAM, cabBlendStep, cabCameraPose, cabLatchNext, mix, smoothstep } from './villa-lift-camera.js';
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
 function applyQuality(renderer, scene, q) {
@@ -717,6 +718,8 @@ async function start() {
   let placeId = '';
   let voiceTick = 0;
   let partyTick = 0;
+  let cabLatch = false; // mode kamera kabin lift (dengan histeresis di ambang kabin)
+  let cabBlend = 0; // 0 = kamera orbit biasa, 1 = kamera sudut kabin
 
   function frame(time) {
     requestAnimationFrame(frame);
@@ -861,7 +864,8 @@ async function start() {
     if (pose) {
       avatar.position.x += (pose.x - avatar.position.x) * k;
       avatar.position.z += (pose.z - avatar.position.z) * k;
-      avatar.position.y += (pose.y - avatar.position.y) * k;
+      // di dalam lift tinggi avatar persis mengikuti lantai kabin (dihaluskan, kaki akan tertinggal di bawah/atas lantai kabin)
+      avatar.position.y = liftRide ? pose.y : avatar.position.y + (pose.y - avatar.position.y) * k;
       avatar.userData.tilt = (avatar.userData.tilt ?? 0) + (pose.tilt - (avatar.userData.tilt ?? 0)) * k;
       avatar.rotation.y = pose.rotY;
       shownFacing = pose.rotY;
@@ -905,12 +909,34 @@ async function start() {
     // lengan terjepit saat pemain berjalan (mis. mundur ke arah dinding di belakang kamera): kamera berputar pelan ke belakang pemain
     const swingCam = blockedSwing({ arm: camArm, want, moving, dragging: camInput.dragging || time - camInput.lastDrag < 700, pitch: camNow.pitch });
     if (swingCam > 0) camState.yaw += clamp(wrapAngle(facing - camState.yaw) * 1.6 * swingCam, -1.8, 1.8) * delta;
-    camera.position.set(eye.x + dir.x * camArm, eye.y + dir.y * camArm, eye.z + dir.z * camArm);
+    const orbitPos = { x: eye.x + dir.x * camArm, y: eye.y + dir.y * camArm, z: eye.z + dir.z * camArm };
     // lengan kamera sangat pendek (menempel dinding): pandangan dialihkan ke depan agar ruangan terlihat, bukan lantai
     const look = forwardBlend(camArm);
     const ahead = { x: eye.x - Math.sin(camNow.yaw) * 6, y: eye.y - 0.3, z: eye.z - Math.cos(camNow.yaw) * 6 };
-    camera.lookAt(me.x + (ahead.x - me.x) * look, me.y + 1.2 + (ahead.y - (me.y + 1.2)) * look, me.z + (ahead.z - me.z) * look);
-    avatar.visible = camArm > 0.7; // kamera terlalu dekat: avatar tidak menutupi layar
+    const orbitAt = { x: me.x + (ahead.x - me.x) * look, y: me.y + 1.2 + (ahead.y - (me.y + 1.2)) * look, z: me.z + (ahead.z - me.z) * look };
+    // di dalam kabin lift (berdiri atau naik): kamera pindah halus ke sudut kabin, tidak terjepit dinding atau perabot
+    cabLatch = cabLatchNext(cabLatch, me);
+    cabBlend = cabBlendStep(cabBlend, cabLatch || liftRide !== null, delta);
+    const baseFov = clamp(48 + (1.2 - camera.aspect) * 26, 48, 62);
+    if (cabBlend > 0) {
+      const s = smoothstep(cabBlend);
+      const cab = cabCameraPose(me.y);
+      camera.position.set(mix(orbitPos.x, cab.pos.x, s), mix(orbitPos.y, cab.pos.y, s), mix(orbitPos.z, cab.pos.z, s));
+      camera.lookAt(mix(orbitAt.x, cab.target.x, s), mix(orbitAt.y, cab.target.y, s), mix(orbitAt.z, cab.target.z, s));
+      const fov = mix(baseFov, Math.max(baseFov, CAB_CAM.fov), s);
+      if (Math.abs(camera.fov - fov) > 0.01) {
+        camera.fov = fov;
+        camera.updateProjectionMatrix();
+      }
+    } else {
+      camera.position.set(orbitPos.x, orbitPos.y, orbitPos.z);
+      camera.lookAt(orbitAt.x, orbitAt.y, orbitAt.z);
+      if (Math.abs(camera.fov - baseFov) > 0.01) {
+        camera.fov = baseFov;
+        camera.updateProjectionMatrix();
+      }
+    }
+    avatar.visible = camArm > 0.7 || cabBlend > 0.5; // kamera terlalu dekat: avatar tidak menutupi layar (di kabin avatar selalu tampak)
     indoorLight.intensity = 26 * indoorK;
     indoorLight.position.set(me.x, me.y + 2.3, me.z);
     if (multiplayer) for (const g of multiplayer.view.avatarGroups()) updateLabel(g, camera); // nama pemain lain: ukuran tetap di layar
