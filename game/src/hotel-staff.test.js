@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { GUEST_LEVEL_COUNT, HOTEL_PARKING, hotelRoomsAtLevel } from './hotel-layout.js';
 import {
   STAFF, STAFF_ROLES, STAFF_TOTAL, SHIFTS, CLEAN_MS, onDuty, cleanerForLevel, cleanerLevels, housekeeperState, parkingState, staffOnLevel, dutySummary,
+  staffConfig, staffActFor, pickNearby, STAFF_VIEW_MAX, STAFF_VIEW_RADIUS,
 } from './hotel-staff.js';
 
 const inRect = (r, x, z) => x >= r[0] - 1e-6 && x <= r[2] + 1e-6 && z >= r[1] - 1e-6 && z <= r[3] + 1e-6;
@@ -126,4 +127,41 @@ test('petugas parkir muncul di lantai 0 hanya saat bertugas', () => {
   assert.ok(day.length >= 1);
   assert.equal(new Set(day.map((s) => s.id)).size, day.length);
   assert.equal(day.length, STAFF.filter((s) => s.role === 'parking' && onDuty(s, 10)).length);
+});
+
+test('seragam: tiap peran punya warna sendiri, konfigurasi sah dan deterministik', () => {
+  const byRole = new Map();
+  for (const s of STAFF) {
+    const cfg = staffConfig(s);
+    assert.deepEqual(cfg, staffConfig(s));
+    assert.equal(cfg.m, 0, 'petugas memakai avatar sederhana (murah)');
+    if (!byRole.has(s.role)) byRole.set(s.role, new Set());
+    byRole.get(s.role).add(cfg.o);
+  }
+  for (const [role, outfits] of byRole) assert.equal(outfits.size, 1, `${role} harus satu warna seragam`);
+  const colors = [...byRole.values()].map((set) => [...set][0]);
+  assert.equal(new Set(colors).size, colors.length, 'tiap peran berseragam beda');
+  assert.equal(staffConfig(STAFF.find((s) => s.role === 'parking')).a, 6, 'petugas parkir memakai topi');
+  const skins = new Set(STAFF.filter((s) => s.role === 'housekeeping').map((s) => staffConfig(s).s));
+  assert.ok(skins.size > 1, 'kulit bervariasi antar petugas');
+});
+
+test('staffActFor memetakan tugas ke pose', () => {
+  assert.equal(staffActFor('walking'), 'walk');
+  assert.equal(staffActFor('cleaning'), 'bow');
+  assert.equal(staffActFor('directing'), 'wave');
+  assert.equal(staffActFor('standing'), null);
+});
+
+test('pickNearby: dalam radius, terdekat dahulu, dibatasi jumlahnya', () => {
+  const list = Array.from({ length: 30 }, (_, i) => ({ id: `s${String(i).padStart(2, '0')}`, x: i * 3, z: 0 }));
+  const me = { x: 0, z: 0 };
+  const picked = pickNearby(list, me);
+  assert.equal(picked.length, STAFF_VIEW_MAX);
+  assert.deepEqual(picked.map((s) => s.id), list.slice(0, STAFF_VIEW_MAX).map((s) => s.id));
+  assert.ok(pickNearby(list, me, 10, 99).every((s) => Math.hypot(s.x, s.z) <= 10));
+  assert.equal(pickNearby(list, { x: 1000, z: 0 }).length, 0);
+  assert.ok(STAFF_VIEW_RADIUS > 0);
+  // petugas di lobi pada siang hari tidak melebihi batas
+  assert.ok(pickNearby(staffOnLevel(0, 10), { x: 0, z: 404 }).length <= STAFF_VIEW_MAX);
 });
