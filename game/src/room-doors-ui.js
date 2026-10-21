@@ -53,7 +53,7 @@ export function mountRoomDoorsUi({ doors, doc = document }) {
     row.className = 'door-row';
     if (model.kind === 'free') {
       title.textContent = `${model.s.name} · kosong`;
-      row.append(button('🔑 Check-in', 'checkin'));
+      row.append(button(model.card ? '🔑 Check-in (butuh kartu)' : '🔑 Check-in', 'checkin'));
     } else if (model.kind === 'own') {
       title.textContent = `${model.s.name} · kamarmu (${model.s.locked ? 'terkunci' : 'terbuka'})${model.sleeping ? ' · tidur' : ''}`;
       row.append(
@@ -68,11 +68,20 @@ export function mountRoomDoorsUi({ doors, doc = document }) {
     panel.hidden = false;
   }
 
+  /** Minta kode kartu check-in dari admin (dikirim pemilik acara). Server memeriksanya saat masuk ulang. */
+  function askCard() {
+    const win = doc.defaultView;
+    const code = win && typeof win.prompt === 'function' ? win.prompt('Masukkan kode kartu check-in dari admin.\nContoh: A1B2-C3D4-E5F6') : null;
+    if (code && typeof doors.applyCard === 'function') doors.applyCard(code);
+  }
+
   panel.addEventListener('click', (e) => {
     const act = e.target?.dataset?.act;
     if (!act || !lastMe) return;
-    if (act === 'checkin') doors.checkIn(lastMe);
-    else if (act === 'checkout') doors.checkOut();
+    if (act === 'checkin') {
+      const r = doors.checkIn(lastMe);
+      if (r && r.reason === 'need-card') askCard();
+    } else if (act === 'checkout') doors.checkOut();
     else if (act === 'lock') doors.setLocked(true);
     else if (act === 'unlock') doors.setLocked(false);
     else if (act === 'knock') doors.knock(lastMe);
@@ -90,10 +99,10 @@ export function mountRoomDoorsUi({ doors, doc = document }) {
     } else if (near) {
       const s = near.room;
       const st = doors.status(s);
-      if (!s.owner && !own) model = { kind: 'free', s };
+      if (!s.owner && !own) model = { kind: 'free', s, card: typeof doors.needsCard === 'function' && doors.needsCard() === true };
       else if (s.owner && !st.mine && s.locked && !st.canEnter) model = { kind: 'locked', s };
     }
-    const key = model ? `${model.kind}|${model.s.id}|${model.s.locked}|${model.sleeping ? 1 : 0}` : '';
+    const key = model ? `${model.kind}|${model.s.id}|${model.s.locked}|${model.sleeping ? 1 : 0}|${model.card ? 1 : 0}` : '';
     if (key !== lastKey) {
       lastKey = key;
       draw(model);

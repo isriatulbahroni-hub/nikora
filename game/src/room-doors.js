@@ -5,6 +5,10 @@
 //    (topik 'orbit-room'); tiap klien menegakkan kunci pada geraknya sendiri. Kooperatif: klien yang dimodifikasi bisa
 //    menembusnya, sama seperti posisi dan duduk di transport ini.
 //  - WebSocket (?server=): server otoritatif yang memutuskan; klien hanya meniru supaya geraknya tidak tersentak.
+//
+// Kartu check-in (opsional): bila server mewajibkan (net.hasCard dari card-net.js), check-in hanya untuk pemegang kartu yang
+// diterbitkan admin. Pemegang kartu dikenali dari metadata token LiveKit (bertanda tangan server), jadi klien lain menolak
+// pernyataan kepemilikan kamar dari peserta tanpa kartu. Tanpa net.hasCard (atau bila tidak diwajibkan) perilaku lama tidak berubah.
 import { RoomLocks, doorNear } from './villa-doors.js';
 import { LEVEL_HEIGHT } from './villa-layout.js';
 
@@ -27,6 +31,10 @@ export const REASONS = Object.freeze({
   'already-allowed': 'Kamu sudah boleh masuk.',
   expired: 'Ketukan itu sudah kedaluwarsa.',
   'no-room': 'Kamu belum punya kamar.',
+  'need-card': 'Check-in butuh kartu dari admin. Minta pemilik acara mengirim kode kartumu.',
+  'card-format': 'Format kode kartu salah. Kode terdiri dari 12 huruf/angka.',
+  'card-ok': 'Kartu check-in diterima. Silakan check-in.',
+  'card-bad': 'Kartu tidak sah, sudah dicabut, atau kedaluwarsa.',
 });
 
 const fail = (reason) => ({ ok: false, reason });
@@ -41,6 +49,7 @@ export function createRoomDoors({ net, world, now = () => Date.now(), onKnock = 
   let lastBeat = 0;
   let sleeping = false;
   let claim = null; // kamar yang baru kita ambil: untuk mengetahui bila kalah rebutan
+  let awaitingCard = false; // kode kartu baru dikirim, menunggu masuk ulang dengan token baru
   const lastKnockAt = new Map();
 
   const selfId = () => net.id;
@@ -48,6 +57,8 @@ export function createRoomDoors({ net, world, now = () => Date.now(), onKnock = 
   const ownRoom = () => (mine() ? locks.state.get(mine()) : null);
   const nameOf = (id) => net.players.find((p) => p.id === id)?.name ?? 'Tamu';
   const notice = (reason) => onNotice(REASONS[reason] ?? 'Tidak bisa dilakukan sekarang.');
+  // Tanpa kewajiban kartu (atau transport tanpa net.hasCard) semua orang dianggap boleh.
+  const hasCard = (id) => (typeof net.hasCard === 'function' ? net.hasCard(id) : true);
 
   // ---------- P2P ----------
   const sendP2P = (msg, to) => {
@@ -70,6 +81,8 @@ export function createRoomDoors({ net, world, now = () => Date.now(), onKnock = 
   function handleP2P(from, m) {
     if (!m || typeof m !== 'object' || from === selfId()) return;
     if (m.k === 'st' && typeof m.room === 'string') {
+      // Peserta tanpa kartu tidak bisa menguasai kamar di tampilan kita (bila kartu diwajibkan).
+      if (!hasCard(from)) return;
       const applied = locks.applyOwnerState(from, m.room, m.locked === true, Array.isArray(m.allow) ? m.allow.slice(0, 24) : [], now());
       if (applied && claim && mine() !== claim) {
         claim = null;
@@ -99,6 +112,14 @@ export function createRoomDoors({ net, world, now = () => Date.now(), onKnock = 
       }
       handleP2P(participant.identity, m);
     });
+    // Setelah memakai kode kartu baru, LiveKitNet masuk ulang dengan token yang memuat hasil pemeriksaan kartu.
+    if (typeof net.applyCard === 'function') {
+      net.on('rejoined', () => {
+        if (!awaitingCard) return;
+        awaitingCard = false;
+        notice(hasCard(selfId()) ? 'card-ok' : 'card-bad');
+      });
+    }
   } else {
     // ---------- WebSocket: server otoritatif ----------
     net.on('rooms', (m) => locks.applySnapshot(m.rooms, now()));
@@ -123,6 +144,10 @@ export function createRoomDoors({ net, world, now = () => Date.now(), onKnock = 
     if (!p2p) {
       net.sendRoom({ act: 'checkin', room: near.room.id });
       return pending;
+    }
+    if (!hasCard(selfId())) {
+      notice('need-card');
+      return fail('need-card');
     }
     const r = locks.checkIn(selfId(), near.room.id, me, now());
     if (!r.ok) {
@@ -200,6 +225,18 @@ export function createRoomDoors({ net, world, now = () => Date.now(), onKnock = 
     return r;
   }
 
+  /** Pakai kode kartu check-in dari admin. false bila transport tidak mendukung atau format kode salah. */
+  function applyCard(code) {
+    if (typeof net.applyCard !== 'function') return false;
+    if (!net.applyCard(code)) {
+      notice('card-format');
+      return false;
+    }
+    awaitingCard = true;
+    onNotice('Memeriksa kartu check-in…');
+    return true;
+  }
+
   /** Dipanggil tiap frame: tidur = kamar sendiri otomatis terkunci (mode server melakukannya sendiri). */
   function setSleeping(on) {
     if (on === sleeping) return;
@@ -246,6 +283,9 @@ export function createRoomDoors({ net, world, now = () => Date.now(), onKnock = 
     setLocked,
     knock,
     reply,
+    applyCard,
+    /** true bila check-in kamar butuh kartu yang belum kita punya (untuk tombol Check-in). */
+    needsCard: () => p2p && !hasCard(selfId()),
     setSleeping,
     nearDoor: (me) => doorNear(locks.rooms, me, locks.rules.doorRange),
     insideOwn: (me) => {
