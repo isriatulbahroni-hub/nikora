@@ -21,6 +21,11 @@ import { createVillaGames } from './villa-gameui.js';
 import { LIFT, inCab, installLift, liftCameraBoxes, liftProgress, liftRider, liftSpotFor } from './villa-lift.js';
 import { buildLiftWorld } from './villa-lift-world.js';
 import { mountLiftUi } from './villa-lift-ui.js';
+import { Fleet, villaCars } from './vehicle-fleet.js';
+import { createVehicleView } from './vehicle-view.js';
+import { createCarRide } from './car-ride.js';
+import { mountSpeedHud } from './hotel-ui.js';
+import { surfaceAt } from './hotel-layout.js';
 import { playLiftChime } from './villa-lift-sound.js';
 import { CAB_CAM, cabBlendStep, cabCameraPose, cabLatchNext, mix, smoothstep } from './villa-lift-camera.js';
 // Kualitas grafis adaptif: turunkan resolusi render bila HP tersendat (lebih-lebih saat video layar diputar).
@@ -349,6 +354,9 @@ async function start() {
   const built = buildVillaWorld(scene, world, { renderer });
   // Lift mewah di lobi timur laut (lantai 1-3): melubangi pelat lantai, memasang poros kaca dan kabin.
   const lift = buildLiftWorld(scene, world, { root: built.root });
+  // Mobil bersama di parkir depan gerbang vila (6 mobil); jalan raya ke hotel (hotel.html) dimulai dari sini. Logika naik/turun/setir/izin admin: car-ride.js.
+  const fleet = new Fleet({ specs: villaCars(), selfId: 'lokal', env: { colliders: world.colliders, surfaceAt } });
+  const carView = createVehicleView({ scene, fleet });
   // Kunci kamar: dibuat setelah tersambung (null = offline, semua kamar terbuka). Daun pintu dan lampu status ikut kondisinya.
   let doors = null;
   let doorUi = null;
@@ -437,6 +445,8 @@ async function start() {
   const actBtn = $('act-button');
   let multiplayer = null;
   const poseFor = (id) => {
+    const car = fleet.seatPose(id); // id duduk >= 1000 = kursi mobil
+    if (car) return car;
     const spot = world.spots[id];
     if (!spot) return null;
     if (spot.kind === 'lift') {
@@ -470,13 +480,19 @@ async function start() {
     facing = spot.rot;
     return true;
   };
+  const carRide = createCarRide({
+    fleet, view: carView, hud: mountSpeedHud(), camState, exit: (p) => world.constrain(p), toast: (t) => toast(t),
+    isDragging: () => camInput.dragging || performance.now() - camInput.lastDrag < 1500,
+  });
   hooks.action = () => {
     if (games.locksInput) return;
     if (liftRide) return; // sedang di dalam lift: tidak bisa berdiri sebelum tiba
+    if (fleet.mine) return carRide.leave(me); // turun dari mobil
     if (seat !== null) return standUp();
     const terminal = games.nearTerminal(me); // mesin permainan di ruang game
     if (terminal) return games.open(terminal, me);
     if (nearestSpot()) return sitDown(performance.now());
+    if (me.level === 0 && me.stair === null && carRide.board(me)) return true; // mobil di parkir depan gerbang (butuh izin admin)
     return practiceAction(); // jauh dari kursi/kasur/mesin: tombol dipakai untuk bulu tangkis bila dekat lapangan
   };
   actBtn.addEventListener('click', () => hooks.action());
@@ -688,6 +704,7 @@ async function start() {
     .then(() => startMultiplayer({ scene, search: window.location.search, name, world: 'villa', poseFor, roleKey, onError: (m) => { netStatus = `Offline · ${m}`; } }))
     .then((session) => {
       multiplayer = session;
+      if (session) carRide.wire(session.net, me); // mobil bersama: pose dan kursi lewat LiveKit; peran bertanda tangan menentukan izin
       if (!session && netStatus === 'Menyambung…') netStatus = 'Offline';
       session?.net.setAvatar?.(toWire(avatarConfig));
       setupVoice(session);
@@ -727,7 +744,8 @@ async function start() {
     const delta = Math.min(rawMs / 1000, 0.05);
     last = time;
 
-    const input = games.locksInput ? { x: 0, z: 0 } : readInput(); // permainan terbuka: avatar diam
+    const rawInput = games.locksInput ? { x: 0, z: 0 } : readInput(); // permainan terbuka: avatar diam
+    const input = fleet.mine ? { x: 0, z: 0 } : rawInput; // di dalam mobil joystick = gas dan setir, bukan berjalan
     games.tick(me); // menutup permainan bila pemain keluar ruangan atau ruang ditutup
     // lift: ketinggian pemain mengikuti jadwal yang sama dengan server; tiba = berdiri di lantai tujuan
     let liftNow = null;
@@ -773,6 +791,9 @@ async function start() {
       travelled = Math.hypot(me.x - before.x, me.z - before.z);
       facing = Math.atan2(-move.x, -move.z);
     }
+    // mobil: pengemudi menjalankan fisika; pengemudi dan penumpang dipindah ke kursinya (juga dikirim ke pemain lain)
+    const car = carRide.step(me, { delta, rawInput });
+    if (car.riding) facing = car.facing;
     // laju nyata (bukan sekadar joystick ditekan): menabrak dinding = kaki berhenti, menyusur dinding = melambat
     speedNow += ((delta > 0 ? travelled / delta : 0) - speedNow) * (1 - Math.exp(-10 * delta));
 
@@ -826,9 +847,10 @@ async function start() {
     botRacket.rotation.x = swing.bot > 0 ? -1.7 * Math.sin((1 - swing.bot / SWING_TIME) * Math.PI) : 0;
 
     if (multiplayer) {
-      multiplayer.sendInput(seat === null ? move.x : 0, seat === null ? move.z : 0, facing, time, seat, { x: me.x, z: me.z, y: me.y });
+      const netSit = fleet.sitId ?? seat; // kursi mobil memakai id >= 1000 (vehicle-fleet.js)
+      multiplayer.sendInput(netSit === null ? move.x : 0, netSit === null ? move.z : 0, facing, time, netSit, { x: me.x, z: me.z, y: me.y });
       const mine = multiplayer.net.players.find((p) => p.id === multiplayer.net.id);
-      if (mine && seat === null && (Math.hypot(mine.x - me.x, mine.z - me.z) > SNAP_DISTANCE || Math.abs((mine.y ?? me.y) - me.y) > 1.5)) {
+      if (mine && seat === null && !car.riding && (Math.hypot(mine.x - me.x, mine.z - me.z) > SNAP_DISTANCE || Math.abs((mine.y ?? me.y) - me.y) > 1.5)) {
         me.x = mine.x;
         me.z = mine.z;
         if (mine.y !== undefined && Math.abs(mine.y - me.y) > 1.5) {
@@ -859,13 +881,15 @@ async function start() {
     }
 
     // avatar lokal: berjalan, duduk, atau berbaring
-    const pose = seat !== null ? poseFor(seat) : null;
+    const sitNow = fleet.sitId ?? seat;
+    const pose = sitNow !== null ? poseFor(sitNow) : null;
     const k = 1 - Math.exp(-14 * delta);
     if (pose) {
-      avatar.position.x += (pose.x - avatar.position.x) * k;
-      avatar.position.z += (pose.z - avatar.position.z) * k;
+      const kp = pose.snap ? 1 : k; // kursi mobil yang melaju: tempel ke kursi, jangan tertinggal
+      avatar.position.x += (pose.x - avatar.position.x) * kp;
+      avatar.position.z += (pose.z - avatar.position.z) * kp;
       // di dalam lift tinggi avatar persis mengikuti lantai kabin (dihaluskan, kaki akan tertinggal di bawah/atas lantai kabin)
-      avatar.position.y = liftRide ? pose.y : avatar.position.y + (pose.y - avatar.position.y) * k;
+      avatar.position.y = liftRide ? pose.y : avatar.position.y + (pose.y - avatar.position.y) * kp;
       avatar.userData.tilt = (avatar.userData.tilt ?? 0) + (pose.tilt - (avatar.userData.tilt ?? 0)) * k;
       avatar.rotation.y = pose.rotY;
       shownFacing = pose.rotY;
@@ -965,7 +989,8 @@ async function start() {
 
     const near = nearestSpot();
     const terminal = seat === null && !games.locksInput ? games.nearTerminal(me) : null;
-    setActLabel(games.locksInput || liftRide ? '' : seat !== null ? 'Berdiri' : terminal ? terminal.label : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : practiceLabel());
+    const carNear = seat === null && !fleet.mine && !liftRide && me.level === 0 && me.stair === null && !games.locksInput && fleet.nearest(me) !== null;
+    setActLabel(games.locksInput || liftRide ? '' : fleet.mine ? 'Turun' : seat !== null ? 'Berdiri' : terminal ? terminal.label : near ? (near.kind === 'sleep' ? 'Tidur' : 'Duduk') : carNear ? 'Naik' : practiceLabel());
 
     const place = me.stair ? { id: 'stair', name: 'Tangga' } : roomAt(me.x, me.z, me.level);
     const placeKey = `${place.id}@${me.level}`;
@@ -989,6 +1014,8 @@ async function start() {
       lift: { riding: liftRide ? liftRide.spot.to : null, idle: lift.idle },
     }),
     sky: () => sky.info(),
+    cars: () => fleet.cars.map((c) => ({ id: c.id, x: c.x, z: c.z, heading: c.heading, speed: c.speed, seats: c.seats.slice() })), // pengujian
+    board: () => carRide.board(me),
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio(), canvas: [renderer.domElement.width, renderer.domElement.height] }),
     cam: () => ({ yaw: camState.yaw, pitch: camState.pitch, dist: camState.dist, nowYaw: camNow.yaw }),
     remotes: () => (multiplayer ? multiplayer.view.avatarGroups().map((g) => ({ y: g.position.y, rx: g.rotation.x, ry: g.rotation.y })) : []),
