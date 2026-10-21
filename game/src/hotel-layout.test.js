@@ -18,12 +18,15 @@ test('hotel: 1000 lantai, tinggi 4,2 km, nama tiap lantai ada, lantai dibuat mal
   assert.equal(HOTEL_TOP_Y, 1000 * HOTEL_LEVEL_HEIGHT);
   const w = getHotelWorld();
   assert.equal(w.levels.length, 1000);
-  assert.equal(w.levels[500].rooms.length, 1 + GUESTS_PER_LEVEL);
+  assert.equal(w.levels[501].rooms.length, 1 + GUESTS_PER_LEVEL);
+  assert.equal(w.levels[500].rooms.length, 1 + 6, 'lantai 501 adalah Sky Lobby: inti + 6 petak');
   assert.equal(w.levels[1000], undefined);
   for (let l = 0; l < HOTEL_LEVEL_COUNT; l++) assert.ok(FLOOR_NAMES[l], `nama lantai ${l}`);
   assert.equal(floorName(0), 'Lobi & Restoran');
   assert.equal(floorName(4), 'Deluxe');
-  assert.equal(floorName(300), 'Premier');
+  assert.equal(floorName(301), 'Premier');
+  assert.equal(floorName(601), 'Grand Premier');
+  assert.equal(floorName(901), 'Royal Residence');
   assert.equal(floorName(50), 'Sky Lobby 1');
   assert.equal(floorName(998), 'Suite Eksekutif');
   assert.equal(floorName(TOP), 'Sky Level');
@@ -150,10 +153,10 @@ test('hotel: tembok kamar menghalangi, pintu kamar dari lorong bisa dimasuki, te
   for (let i = 0; i < 100; i++) t = w.move(t, -0.1, -0.1);
   assert.ok(t.x >= HOTEL_BUILDING[0] && t.z >= HOTEL_BUILDING[1]);
   // dan di lantai kamar jauh di atas pun berlaku sama
-  let u = { x: -33, z: 424, level: 700 };
+  let u = { x: -33, z: 424, level: 701 };
   for (let i = 0; i < 100; i++) u = w.move(u, -0.1, -0.1);
   assert.ok(u.x >= HOTEL_BUILDING[0] && u.z >= HOTEL_BUILDING[1]);
-  assert.equal(u.y, hotelLevelY(700));
+  assert.equal(u.y, hotelLevelY(701));
 });
 
 test('hotel: roomAt memberi nama ruang, halaman, dan jalan', () => {
