@@ -18,6 +18,44 @@ export const HOTEL_TOP_LEVEL = HOTEL_LEVEL_COUNT - 1;
 export const hotelLevelY = (level) => (level ?? 0) * HOTEL_LEVEL_HEIGHT;
 export const HOTEL_TOP_Y = HOTEL_LEVEL_COUNT * HOTEL_LEVEL_HEIGHT; // 4200 m: puncak menara (helipad di atapnya)
 
+// ---------------------------------------------------------------- taper menara
+// Menara meruncing per zona 50 lantai (tiap Sky Lobby). Denah satu zona sama untuk semua lantainya dan sama dengan skala
+// di ATAS zona itu, sehingga kulit kaca yang miring di dalam zona selalu berada di luar lantai. Podium dan zona 0 = 1,00.
+// Inti lift (16 x 16 m) tidak ikut mengecil; hanya bagian luarnya (kamar, petak publik) yang dipadatkan.
+export const TOWER_ZONE_LEVELS = 50;
+export const TOWER_TAPER = 0.3; // penyusutan total di puncak: skala akhir 1 - 0,3 = 0,70
+export const TOWER_CENTER = Object.freeze({ x: 0, z: 448 });
+export const TOWER_HALF = Object.freeze({ x: 36, z: 28 }); // setengah lebar/dalam denah dasar (HOTEL_BUILDING)
+/** Skala denah pada batas ke-k antar zona (k = 0..20): 1 di bawah, 1 - TOWER_TAPER di puncak (kurva t^1,5 = cekung). */
+export const towerScaleAt = (k) => (k <= 0 ? 1 : 1 - TOWER_TAPER * Math.pow(Math.min(1, (k * TOWER_ZONE_LEVELS) / (HOTEL_LEVEL_COUNT - 1)), 1.5));
+export const towerZone = (level) => Math.floor(Math.max(0, level) / TOWER_ZONE_LEVELS);
+/** Skala denah satu lantai: podium dan zona 0 = 1; zona lain = skala di batas atas zonanya. */
+export const towerScale = (level) => (level < PODIUM_LEVELS || towerZone(level) === 0 ? 1 : towerScaleAt(towerZone(level) + 1));
+const footprints = new Map();
+/** Persegi tapak satu lantai [minX, minZ, maxX, maxZ]; lantai 0..49 = HOTEL_BUILDING. */
+export function hotelFootprint(level = 0) {
+  const s = towerScale(level);
+  let f = footprints.get(s);
+  if (!f) {
+    f = Object.freeze([-TOWER_HALF.x * s, TOWER_CENTER.z - TOWER_HALF.z * s, TOWER_HALF.x * s, TOWER_CENTER.z + TOWER_HALF.z * s]);
+    footprints.set(s, f);
+  }
+  return f;
+}
+const squash = (v, c, half, s) => {
+  const core = 8; // setengah sisi inti
+  const d = v - c;
+  const a = Math.abs(d);
+  return a <= core ? v : c + Math.sign(d) * (core + ((a - core) * (half * s - core)) / (half - core));
+};
+/** Pemetaan titik denah dasar ke denah berskala (null bila skala 1). Inti tetap, bagian luar dipadatkan secara linear. */
+function planMap(level) {
+  const s = towerScale(level);
+  if (s === 1) return null;
+  return { x: (v) => squash(v, TOWER_CENTER.x, TOWER_HALF.x, s), z: (v) => squash(v, TOWER_CENTER.z, TOWER_HALF.z, s) };
+}
+const mapRect = (m, r) => (m ? [m.x(r[0]), m.z(r[1]), m.x(r[2]), m.z(r[3])] : r);
+
 // Tapak bangunan dan halaman.
 export const HOTEL_BUILDING = Object.freeze([-36, 420, 36, 476]);
 export const HOTEL_SITE = Object.freeze({ minX: -110, maxX: 110, minZ: 372, maxZ: 560 });
@@ -134,33 +172,47 @@ const CORE_ROOM = (level) => ({ id: `core_${level}`, name: 'Lift & Tangga', kind
 function guestCells(level) {
   const cells = [];
   let n = 1;
-  const add = (rect, door, bed) => cells.push({ id: `h${level + 1}_${String(n).padStart(2, '0')}`, name: `Kamar ${(level + 1) * 100 + n}`, kind: 'guest', level, rect, door, bed, no: n++ });
-  for (let i = 0; i < 12; i++) { const x = -36 + i * 6; add([x, 420, x + 6, 430], { x: x + 3, z: 430, orient: 'h', width: 1.6 }, { x: x + 3, z: 421.6 }); }
-  for (let i = 0; i < 12; i++) { const x = -36 + i * 6; add([x, 466, x + 6, 476], { x: x + 3, z: 466, orient: 'h', width: 1.6 }, { x: x + 3, z: 474.4 }); }
-  for (let i = 0; i < 5; i++) { const z = 430 + i * 7.2; add([-36, z, -26, z + 7.2], { x: -26, z: z + 3.6, orient: 'v', width: 1.6 }, { x: -34.4, z: z + 3.6 }); }
-  for (let i = 0; i < 5; i++) { const z = 430 + i * 7.2; add([26, z, 36, z + 7.2], { x: 26, z: z + 3.6, orient: 'v', width: 1.6 }, { x: 34.4, z: z + 3.6 }); }
-  return cells;
+  const add = (rect, door, bed, side) => cells.push({ id: `h${level + 1}_${String(n).padStart(2, '0')}`, name: `Kamar ${(level + 1) * 100 + n}`, kind: 'guest', level, rect, door, bed, no: n++, side });
+  for (let i = 0; i < 12; i++) { const x = -36 + i * 6; add([x, 420, x + 6, 430], { x: x + 3, z: 430, orient: 'h', width: 1.6 }, { x: x + 3, z: 421.6 }, 'n'); }
+  for (let i = 0; i < 12; i++) { const x = -36 + i * 6; add([x, 466, x + 6, 476], { x: x + 3, z: 466, orient: 'h', width: 1.6 }, { x: x + 3, z: 474.4 }, 's'); }
+  for (let i = 0; i < 5; i++) { const z = 430 + i * 7.2; add([-36, z, -26, z + 7.2], { x: -26, z: z + 3.6, orient: 'v', width: 1.6 }, { x: -34.4, z: z + 3.6 }, 'w'); }
+  for (let i = 0; i < 5; i++) { const z = 430 + i * 7.2; add([26, z, 36, z + 7.2], { x: 26, z: z + 3.6, orient: 'v', width: 1.6 }, { x: 34.4, z: z + 3.6 }, 'e'); }
+  const m = planMap(level);
+  if (!m) return cells.map(({ side, ...c }) => c);
+  // lantai meruncing: persegi kamar dipadatkan, pintu dan tempat tidur dihitung ulang dari persegi barunya
+  return cells.map(({ side, ...c }) => {
+    const r = mapRect(m, c.rect);
+    const mx = (r[0] + r[2]) / 2;
+    const mz = (r[1] + r[3]) / 2;
+    const door = side === 'n' ? { x: mx, z: r[3] } : side === 's' ? { x: mx, z: r[1] } : side === 'w' ? { x: r[2], z: mz } : { x: r[0], z: mz };
+    const bed = side === 'n' ? { x: mx, z: r[1] + 1.6 } : side === 's' ? { x: mx, z: r[3] - 1.6 } : side === 'w' ? { x: r[0] + 1.6, z: mz } : { x: r[2] - 1.6, z: mz };
+    return { ...c, rect: r, door: { ...c.door, ...door }, bed };
+  });
 }
 
 function levelRooms(level) {
   if (isGuestLevel(level)) return [CORE_ROOM(level), ...guestCells(level)];
   const prog = programFor(level);
-  return [CORE_ROOM(level), ...Object.entries(prog).map(([slot, [id, name, kind]]) => ({ id: `${id}`, name, kind, level, rect: SLOT[slot] }))];
+  const m = planMap(level);
+  return [CORE_ROOM(level), ...Object.entries(prog).map(([slot, [id, name, kind]]) => ({ id: `${id}`, name, kind, level, rect: mapRect(m, SLOT[slot]) }))];
 }
 
 // Pintu: tiap petak publik tersambung ke inti/petak tetangga; lantai tamu: inti terbuka ke lorong, kamar membuka ke lorong.
 function levelDoors(level) {
-  const d = (x, z, orient, width, extra = {}) => ({ level, x, z, orient, width, ...extra });
+  const m = planMap(level);
+  const raw = (x, z, orient, width, extra = {}) => ({ level, x, z, orient, width, ...extra });
+  const d = (x, z, orient, width, extra = {}) => raw(m ? m.x(x) : x, m ? m.z(z) : z, orient, width, extra);
   const coreDoors = [d(0, 440, 'h', 4, { tall: true }), d(0, 456, 'h', 4), d(-8, 448, 'v', 4), d(8, 448, 'v', 4)];
-  if (isGuestLevel(level)) return [...coreDoors, ...guestCells(level).map((c) => d(c.door.x, c.door.z, c.door.orient, c.door.width))];
+  if (isGuestLevel(level)) return [...coreDoors, ...guestCells(level).map((c) => raw(c.door.x, c.door.z, c.door.orient, c.door.width))];
   const doors = [...coreDoors, d(-26, 430, 'v', 3, { tall: true }), d(26, 430, 'v', 3, { tall: true }), d(-17, 440, 'h', 4, { tall: true }), d(17, 440, 'h', 4, { tall: true }), d(-8, 466, 'v', 3), d(8, 466, 'v', 3)];
   if (level === 0) doors.push(d(0, 420, 'h', 6, { tall: true }), d(-14, 420, 'h', 3), d(14, 420, 'h', 3), d(0, 476, 'h', 3), d(-20, 476, 'h', 3), d(20, 476, 'h', 3));
   return doors;
 }
 
 function levelProps(level) {
-  const p = (type, x, z) => ({ type, x, z, level });
-  if (isGuestLevel(level)) return guestCells(level).map((c) => p('bed', c.bed.x, c.bed.z));
+  const m = planMap(level);
+  const p = (type, x, z) => ({ type, x: m ? m.x(x) : x, z: m ? m.z(z) : z, level });
+  if (isGuestLevel(level)) return guestCells(level).map((c) => ({ type: 'bed', x: c.bed.x, z: c.bed.z, level }));
   const out = [];
   if (level === 0) {
     out.push(p('desk', -14, 424), p('desk', 14, 424), p('sofa', -6, 432), p('sofa', 6, 432));
@@ -261,7 +313,7 @@ export function getHotelWorld() {
       return data;
     },
   });
-  const inBuilding = (x, z, r) => x >= HOTEL_BUILDING[0] + r && x <= HOTEL_BUILDING[2] - r && z >= HOTEL_BUILDING[1] + r && z <= HOTEL_BUILDING[3] - r;
+  const inBuilding = (level, x, z, r) => { const b = hotelFootprint(level); return x >= b[0] + r && x <= b[2] - r && z >= b[1] + r && z <= b[3] - r; };
 
   const move = (pos, dx, dz) => {
     let { x, z } = pos;
@@ -270,7 +322,7 @@ export function getHotelWorld() {
     const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / 0.1));
     for (let i = 0; i < n; i++) {
       const cand = resolveMove({ x: x + dx / n, z: z + dz / n }, PLAYER_RADIUS, L.colliders, WORLD_LIMIT);
-      if (level > 0 && !inBuilding(cand.x, cand.z, PLAYER_RADIUS)) continue; // lantai atas: tepi bangunan berpagar
+      if (level > 0 && !inBuilding(level, cand.x, cand.z, PLAYER_RADIUS)) continue; // lantai atas: tepi bangunan berpagar
       x = cand.x;
       z = cand.z;
     }
@@ -281,7 +333,7 @@ export function getHotelWorld() {
     name: 'nikora-hotel', site: HOTEL_SITE, building: HOTEL_BUILDING, spawn: HOTEL_SPAWN, levelCount: HOTEL_LEVEL_COUNT,
     levelHeight: HOTEL_LEVEL_HEIGHT, levels, lifts: LIFTS, zones: HOTEL_ZONES, carSpots: HOTEL_CAR_SPOTS,
     move, rideLift, liftAt, roomAt,
-    canStand: (level, x, z) => isWalkable(x, z, PLAYER_RADIUS, levels[level].colliders, WORLD_LIMIT) && (level === 0 || inBuilding(x, z, PLAYER_RADIUS)),
+    canStand: (level, x, z) => isWalkable(x, z, PLAYER_RADIUS, levels[level].colliders, WORLD_LIMIT) && (level === 0 || inBuilding(level, x, z, PLAYER_RADIUS)),
   });
   return cached;
 }

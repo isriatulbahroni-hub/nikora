@@ -1,6 +1,6 @@
 // Data murni untuk halaman hotel: warna peta mini, daftar tempat "Jelajah", dan keterangan lokasi pemain.
 // Tanpa THREE supaya bisa diuji di Node. Geometri 3D ada di hotel-world.js, denah di hotel-layout.js.
-import { HOTEL_BUILDING, HOTEL_LEVEL_COUNT, HOTEL_PARKING, HOTEL_SPAWN, HOTEL_TOP_LEVEL, PODIUM_LEVELS, SKY_LOBBY_EVERY, isGuestLevel } from './hotel-layout.js';
+import { HOTEL_LEVEL_COUNT, hotelFootprint, HOTEL_PARKING, HOTEL_SPAWN, HOTEL_TOP_LEVEL, PODIUM_LEVELS, SKY_LOBBY_EVERY, isGuestLevel } from './hotel-layout.js';
 
 /** Warna peta mini per jenis ruang (hex). */
 export const FLOOR_COLORS = Object.freeze({
@@ -90,7 +90,7 @@ export function hotelPlaces(world) {
   return out;
 }
 
-const insideBuilding = (x, z) => x > HOTEL_BUILDING[0] && x < HOTEL_BUILDING[2] && z > HOTEL_BUILDING[1] && z < HOTEL_BUILDING[3];
+const insideBuilding = (x, z, level = 0) => { const b = hotelFootprint(level); return x > b[0] && x < b[2] && z > b[1] && z < b[3]; };
 
 /**
  * Keterangan lokasi pemain: nama ruang, apakah di dalam bangunan, dan apakah beratap.
@@ -98,7 +98,7 @@ const insideBuilding = (x, z) => x > HOTEL_BUILDING[0] && x < HOTEL_BUILDING[2] 
  */
 export function describePlace(world, x, z, level) {
   const room = world.roomAt(x, z, level);
-  const inBuilding = insideBuilding(x, z);
+  const inBuilding = insideBuilding(x, z, level);
   if (room.id === 'grounds' && inBuilding) return { id: 'corridor', name: level === 0 ? 'Lobi' : 'Lorong', kind: 'corridor', indoor: true, inside: true, level };
   return { ...room, inside: inBuilding || level > 0 };
 }
