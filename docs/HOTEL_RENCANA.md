@@ -14,7 +14,8 @@ Tanda: `[x]` sudah ada di `main`, `[~]` sebagian / belum diuji tampilannya, `[ ]
 - [x] Menara **1000 lantai** (level 0..999, tinggi 4,2 km), lantai dibuat malas (PR #74). Podium 1–4 (lobi, ballroom, spa, belanja), kamar tamu 975 lantai × 34 kamar, Sky Lobby tiap 50 lantai, suite eksekutif (lantai 999), Sky Level (lantai 1000).
 - [x] Lift ekspres (4 lift, perjalanan ke puncak sekitar 22 detik) dan panel lift untuk 1000 lantai (ketik nomor, lompat ±1/10/100).
 - [~] Cangkang menara (pelat, kaca tirai, sirip emas, sabuk Sky Lobby, mahkota) dan interior hanya untuk podium + lantai di dekat pemain. **Tampilan 3D belum dinilai pemilik**; CI hanya menguji logika dan build. Pemilik sebelumnya menilai desain lama kurang sesuai ("arsitektur lama"); perlu iterasi desain eksterior.
-- [ ] Arsitektur hotel yang benar-benar baru dan "seperti dunia nyata" (bentuk menara, fasad, lobi megah). Sekarang masih kotak 72 × 56 m di semua ketinggian.
+- [~] Menara meruncing per zona 50 lantai (PR #76): denah dan tapak tiap lantai menyusut dari 72 × 56 m di dasar menjadi skala 0,70 di puncak, inti lift tetap 16 × 16 m (`hotelFootprint`, `towerScale` di `hotel-layout.js`). Tes unit sudah diselaraskan dengan tapak per lantai; tampilan 3D belum dinilai pemilik.
+- [ ] Arsitektur hotel yang benar-benar baru dan "seperti dunia nyata" (bentuk menara, fasad, lobi megah). Sekarang bentuknya masih kotak yang menyusut per zona, belum berarsitektur nyata.
 - [ ] Fasilitas dirancang satu per satu (sekarang masih ruangan dasar berupa kotak): restoran, ballroom, spa, gym, bioskop, ruang VIP, dll.
 - [ ] Pindahkan ruang game dari villa ke hotel (hotel diperluas, lebih canggih).
 
@@ -92,6 +93,7 @@ Tanda: `[x]` sudah ada di `main`, `[~]` sebagian / belum diuji tampilannya, `[ ]
 
 - Dunia villa memakai three.js (aula dan vila); repo bernama `nikora`.
 - Hotel 1000 lantai: lantai dibuat malas (`getHotelWorld().levels` adalah Proxy). Jangan mengulang `for (l < HOTEL_LEVEL_COUNT)` untuk membangun geometri atau daftar tujuan; pakai `featuredLevels()` atau jendela `focus(level)` di `hotel-world.js`.
+- Menara meruncing: denah satu lantai tidak lagi sama dengan `HOTEL_BUILDING` di semua ketinggian. Pakai `hotelFootprint(level)` untuk batas bangunan per lantai; titik uji di lantai atas (Sky Lobby, suite, Sky Level) harus berada di dalam petak yang sudah dipadatkan.
 - Server villa belum mengenal geometri hotel; lihat risiko `SNAP_DISTANCE` di atas.
 - Kode dari luar hanya boleh dipakai bila berlisensi bebas (MIT, CC0, dan sejenisnya) dan dicatat di `game/THIRD_PARTY_NOTICES.md`. Kode tanpa lisensi tidak disalin; idenya boleh ditulis ulang sendiri.
 - Jalankan perubahan lewat branch dan PR, bukan langsung ke `main`.
