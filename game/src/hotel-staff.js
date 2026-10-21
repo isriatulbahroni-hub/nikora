@@ -1,7 +1,8 @@
 // Karyawan NIKORA Grand Hotel: ratusan petugas yang disimulasikan sebagai jadwal, bukan ratusan avatar sekaligus.
 // Posisi hanya dihitung untuk lantai yang sedang dekat pemain (staffOnLevel); sisanya cukup dihitung jumlahnya (dutySummary).
 // Modul murni (tanpa THREE) dan deterministik: posisi petugas adalah fungsi dari jam permainan, jadi semua klien melihat hal yang sama.
-// Rute lorong masih garis lurus antar titik pintu (belum navmesh) dan belum digambar sebagai avatar; lihat docs/HOTEL_KARYAWAN.md.
+// Rute lorong masih garis lurus antar titik pintu (belum navmesh); avatar petugas digambar hotel-staff-view.js. Lihat docs/HOTEL_KARYAWAN.md.
+import { configFromId, sanitizeConfig } from './avatar-config.js';
 import { HOTEL_LEVEL_COUNT, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_SITE, HOTEL_CAR_SPOTS, isGuestLevel, hotelRoomsAtLevel } from './hotel-layout.js';
 
 export const STAFF_ROLES = Object.freeze({
@@ -207,4 +208,42 @@ export function dutySummary(hour) {
     total++;
   }
   return { total, byRole };
+}
+
+// ---------------------------------------------------------------- tampilan: seragam, tindakan, dan pemilihan petugas yang digambar
+// Seragam per peran memakai indeks OUTFITS/HAIR_COLORS dari avatar-config.js; kulit dan rambut diturunkan dari id petugas (deterministik).
+const UNIFORMS = Object.freeze({
+  housekeeping: { o: 8 }, // Teal
+  front_desk: { o: 2 }, // Emas
+  bellboy: { o: 10 }, // Cokelat
+  security: { o: 5, a: 6, k: 0 }, // Hitam + topi hitam
+  waiter: { o: 4 }, // Putih Gading
+  valet: { o: 3, a: 6, k: 0 }, // Biru Navy + topi hitam
+  parking: { o: 9, a: 6, k: 11 }, // Oranye + topi emas (mudah terlihat)
+  gardener: { o: 0, a: 6, k: 2 }, // Hijau Zamrud + topi cokelat
+  lifeguard: { o: 1 }, // Maroon
+});
+
+/** Konfigurasi avatar sederhana (avatar-config.js) untuk satu petugas: seragam menurut peran, kulit dan rambut menurut id. */
+export function staffConfig(staff) {
+  const base = configFromId(staff.id);
+  const u = UNIFORMS[staff.role] ?? {};
+  return sanitizeConfig({ ...base, o: u.o ?? base.o, a: u.a ?? 0, k: u.k ?? base.k, m: 0 });
+}
+
+/** Tindakan pose avatar (applyPose) untuk tugas petugas: berjalan, membungkuk (membersihkan), melambai (mengarahkan mobil), atau diam. */
+export const staffActFor = (task) => ({ walking: 'walk', cleaning: 'bow', directing: 'wave' })[task] ?? null;
+
+// Satu avatar sederhana sekitar 30 mesh, jadi jumlah yang digambar sekaligus dibatasi (ratusan petugas lain hanya dihitung).
+export const STAFF_VIEW_RADIUS = 40; // meter dari pemain
+export const STAFF_VIEW_MAX = 14;
+
+/** Petugas yang digambar: dalam radius dari pemain, paling dekat dahulu, paling banyak `max`. */
+export function pickNearby(list, me, radius = STAFF_VIEW_RADIUS, max = STAFF_VIEW_MAX) {
+  return list
+    .map((s) => ({ s, d: Math.hypot(s.x - me.x, s.z - me.z) }))
+    .filter(({ d }) => d <= radius)
+    .sort((a, b) => a.d - b.d || (a.s.id < b.s.id ? -1 : 1))
+    .slice(0, max)
+    .map(({ s }) => s);
 }
