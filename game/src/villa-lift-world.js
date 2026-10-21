@@ -4,6 +4,7 @@
 // Model tampilan: saat tidak ada yang naik, tiap lantai punya kabin yang diam dengan pintu terbuka. Begitu seseorang naik
 // (pemain lokal atau pemain lain), kabin-kabin diam disembunyikan dan satu kabin berjalan mengikuti ketinggian penumpang,
 // dengan pintu lantai asal/tujuan membuka-menutup sesuai jadwal yang sama dengan server (liftProgress).
+// Pergantian kabin diam <-> kabin berjalan harus tak terlihat: pose, tampilan lantai, dan putaran lampu kristal dibuat sama.
 import * as THREE from 'three';
 import { LEVEL_COUNT, LEVEL_HEIGHT, levelY } from './villa-layout.js';
 import { LIFT, liftProgress, liftRider } from './villa-lift.js';
@@ -388,6 +389,9 @@ export function buildLiftWorld(scene, world, { root = null } = {}) {
 
   let idle = true;
   let remote = null;
+  let spin = 0; // putaran lampu kristal: satu sudut untuk semua kabin, supaya pergantian kabin tidak terlihat meloncat
+  let lightK = 0; // kekuatan lampu 0..1 (menyala dan padam halus)
+  let lightY = null;
   return {
     group,
     carved,
@@ -414,18 +418,19 @@ export function buildLiftWorld(scene, world, { root = null } = {}) {
       }
       idle = !ride;
       const st = ride ? liftProgress(ride.from, ride.to, ride.elapsed) : null;
+      spin += delta * 0.25;
       for (const p of parked) {
         p.group.visible = idle;
-        p.chandelier.rotation.y += delta * 0.25;
+        p.chandelier.rotation.y = spin;
       }
       traveler.group.visible = !idle;
+      traveler.chandelier.rotation.y = spin;
       if (st) {
         const y = riderY ?? st.y;
         traveler.group.position.y = y;
         traveler.setDoor(st.door);
         traveler.setLit(ride.to);
         traveler.setDisplay(Math.min(LEVEL_COUNT, Math.max(1, Math.round(y / LEVEL_HEIGHT) + 1)), st.door === 0 ? (st.direction > 0 ? '▲' : '▼') : '');
-        traveler.chandelier.rotation.y += delta * 0.25;
         const roof = y + H + 0.15;
         for (const c of cables) {
           const len = Math.max(0.1, TOP - roof);
@@ -445,15 +450,23 @@ export function buildLiftWorld(scene, world, { root = null } = {}) {
         if (st) open = i === ride.from && st.level === ride.from ? st.door : i === ride.to && st.level === ride.to ? st.door : 0;
         l.setDoor(open);
       });
+      // lampu kabin: menyala dan padam halus (tanpa loncatan saat pemain melewati jarak tertentu atau pindah lantai),
+      // redup bila pemain di luar kabin, dan mengikuti ketinggian kabin persis saat naik
+      const near = me && me.stair == null ? Math.max(Math.abs(me.x - LIFT.x), Math.abs(me.z - LIFT.z)) : Infinity;
+      let targetK = 0;
+      let targetY = null;
       if (st) {
-        light.position.set(LIFT.x, (riderY ?? st.y) + 1.9, LIFT.z);
-        light.intensity = 7;
-      } else if (me && me.stair == null && Math.abs(me.x - LIFT.x) < 14 && Math.abs(me.z - LIFT.z) < 14) {
-        light.position.set(LIFT.x, levelY(me.level ?? 0) + 1.9, LIFT.z);
-        light.intensity = 7;
-      } else {
-        light.intensity = 0;
+        targetK = 1;
+        targetY = (riderY ?? st.y) + 1.9;
+      } else if (Number.isFinite(near)) {
+        targetK = near <= LIFT.half ? 1 : Math.min(1, Math.max(0, (24 - near) / 10)) * 0.6;
+        targetY = levelY(me.level ?? 0) + 1.9;
       }
+      const dt = Math.min(delta, 0.1);
+      lightK += (targetK - lightK) * (1 - Math.exp(-5 * dt));
+      if (targetY !== null) lightY = st || lightY === null ? targetY : lightY + (targetY - lightY) * (1 - Math.exp(-8 * dt));
+      light.position.set(LIFT.x, lightY ?? levelY(0) + 1.9, LIFT.z);
+      light.intensity = lightK < 0.01 ? 0 : 7 * lightK;
     },
   };
 }
