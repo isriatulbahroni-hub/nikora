@@ -2,7 +2,7 @@
 // Posisi hanya dihitung untuk lantai yang sedang dekat pemain (staffOnLevel); sisanya cukup dihitung jumlahnya (dutySummary).
 // Modul murni (tanpa THREE) dan deterministik: posisi petugas adalah fungsi dari jam permainan, jadi semua klien melihat hal yang sama.
 // Rute lorong masih garis lurus antar titik pintu (belum navmesh) dan belum digambar sebagai avatar; lihat docs/HOTEL_KARYAWAN.md.
-import { HOTEL_LEVEL_COUNT, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_SITE, isGuestLevel, hotelRoomsAtLevel } from './hotel-layout.js';
+import { HOTEL_LEVEL_COUNT, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_SITE, HOTEL_CAR_SPOTS, isGuestLevel, hotelRoomsAtLevel } from './hotel-layout.js';
 
 export const STAFF_ROLES = Object.freeze({
   housekeeping: Object.freeze({ name: 'Cleaning Service', count: 240 }),
@@ -11,6 +11,7 @@ export const STAFF_ROLES = Object.freeze({
   security: Object.freeze({ name: 'Satpam', count: 30 }),
   waiter: Object.freeze({ name: 'Pelayan Restoran', count: 40 }),
   valet: Object.freeze({ name: 'Valet Parkir', count: 16 }),
+  parking: Object.freeze({ name: 'Petugas Parkir', count: 24 }),
   gardener: Object.freeze({ name: 'Tukang Kebun', count: 20 }),
   lifeguard: Object.freeze({ name: 'Penjaga Kolam', count: 8 }),
 });
@@ -83,7 +84,7 @@ function floorJob(level) {
   return job;
 }
 
-function jobState(job, t) {
+function jobState(job, t, dwellTask = 'cleaning') {
   let rest = t;
   for (const l of job.legs) {
     if (rest < l.walkMs) {
@@ -91,7 +92,7 @@ function jobState(job, t) {
       return { x: l.from.x + (l.to.x - l.from.x) * f, z: l.from.z + (l.to.z - l.from.z) * f, task: 'walking', roomNo: l.roomNo };
     }
     rest -= l.walkMs;
-    if (rest < l.dwellMs) return { x: l.to.x, z: l.to.z, task: 'cleaning', roomNo: l.roomNo };
+    if (rest < l.dwellMs) return { x: l.to.x, z: l.to.z, task: dwellTask, roomNo: l.roomNo };
     rest -= l.dwellMs;
   }
   const last = job.legs[job.legs.length - 1];
@@ -146,9 +147,37 @@ for (const staff of STAFF) {
   postedByLevel.get(post.level).push({ staff, post });
 }
 
-/** Keadaan satu petugas (cleaning service bergerak, lainnya berdiri di posnya). */
+// ---------------------------------------------------------------- petugas parkir: berpatroli di sepanjang slot parkir tamu
+const PARKING_DWELL_MS = 6000; // berhenti mengarahkan mobil di tiap slot
+const PARKING_PHASE_MS = 41000; // geser fase antar petugas agar tidak berbaris
+let patrol = null;
+function parkingPatrol() {
+  if (patrol) return patrol;
+  const spots = HOTEL_CAR_SPOTS.filter((s) => s.id.startsWith('hp_'));
+  const row = (r) => spots.filter((s) => s.id.startsWith(`hp_${r}_`)).sort((a, b) => a.z - b.z);
+  const points = [...row(0), ...row(1).reverse()].map((s) => ({ x: s.x - 4, z: s.z })); // berdiri di samping mobil, bukan di atasnya
+  const legs = points.map((to, i) => {
+    const from = points[(i + points.length - 1) % points.length];
+    return { from, to, walkMs: (Math.hypot(to.x - from.x, to.z - from.z) / WALK_MPS) * 1000, dwellMs: PARKING_DWELL_MS, roomNo: null };
+  });
+  patrol = Object.freeze({ legs, totalMs: legs.reduce((sum, l) => sum + l.walkMs + l.dwellMs, 0) });
+  return patrol;
+}
+const PARKING_STAFF = STAFF.filter((s) => s.role === 'parking');
+
+/** Keadaan satu petugas parkir: berjalan dari slot ke slot dan berhenti ('directing') mengarahkan mobil. */
+export function parkingState(staff, hour) {
+  const p = parkingPatrol();
+  if (!p.legs.length) return null;
+  const sinceShift = (((hour - SHIFTS[staff.shift].from) % 24) + 24) % 24;
+  const t = (sinceShift * 3600000 + staff.index * PARKING_PHASE_MS) % p.totalMs;
+  return { id: staff.id, role: staff.role, level: 0, ...jobState(p, t, 'directing') };
+}
+
+/** Keadaan satu petugas (cleaning service dan petugas parkir bergerak, lainnya berdiri di posnya). */
 export function staffState(staff, hour) {
   if (staff.role === 'housekeeping') return housekeeperState(staff, hour);
+  if (staff.role === 'parking') return parkingState(staff, hour);
   const post = postedByLevel.get(postFor(staff)?.level)?.find((p) => p.staff.id === staff.id)?.post;
   return post ? { id: staff.id, role: staff.role, level: post.level, x: post.x, z: post.z, task: 'standing', roomNo: null } : null;
 }
@@ -159,6 +188,7 @@ export function staffOnLevel(level, hour) {
   for (const { staff, post } of postedByLevel.get(level) ?? []) {
     if (onDuty(staff, hour)) out.push({ id: staff.id, role: staff.role, level, x: post.x, z: post.z, task: 'standing', roomNo: null });
   }
+  if (level === 0) for (const staff of PARKING_STAFF) if (onDuty(staff, hour)) out.push(parkingState(staff, hour));
   const k = cleanerForLevel(level);
   if (k !== null && onDuty(CLEANERS[k], hour)) {
     const st = housekeeperState(CLEANERS[k], hour);
