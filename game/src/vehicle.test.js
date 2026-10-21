@@ -126,10 +126,10 @@ test('forward: heading 0 ke selatan, PI ke utara, PI/2 ke timur', () => {
   assert.ok(Math.abs(forward(Math.PI / 2).x - 1) < 1e-12);
 });
 
-test('jalan raya: lebar 12 m, sambung dari gerbang villa ke halaman hotel', () => {
+test('jalan raya: 34,5 m, sambung dari gerbang villa ke halaman hotel', () => {
   assert.equal(surfaceAt(0, 200), 'road');
-  assert.equal(surfaceAt(5.9, 200), 'road');
-  assert.equal(surfaceAt(8, 200), 'ground');
+  assert.equal(surfaceAt(17, 200), 'road'); // dulu hanya 6 m dari garis tengah
+  assert.equal(surfaceAt(18, 200), 'ground');
   assert.equal(surfaceAt(0, HOTEL_FORECOURT[1] + 5), 'road');
   assert.equal(surfaceAt(0, 40), 'compound');
   assert.ok(ROAD.toZ - ROAD.fromZ > 250, 'hotel cukup jauh dari villa');
