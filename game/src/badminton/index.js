@@ -4,6 +4,10 @@
 // Kontrol: joystick layar (kiri) atau WASD/panah untuk bergerak; tombol bulat (kanan) atau Spasi untuk Servis/Pukul.
 // Dorong joystick ke kiri/kanan saat memukul untuk membidik ke samping lapangan. Cincin di kaki = jangkauan pukul
 // (hijau bila kok sudah dalam jangkauan).
+//
+// Kemulusan: simulasi berjalan dengan langkah tetap (FIXED_DT) dan gambar diinterpolasi antar-langkah, sehingga gerak
+// pemain/bot/kok halus di layar 60/90/120 Hz dan tidak bergantung pada naik-turunnya frame rate. Lapangan (statis)
+// digambar sekali ke kanvas cadangan. Raket menyentuh titik kontak kok tepat saat arah kok berubah.
 import { createPractice } from '../activities/badminton-practice.js';
 import { COURT } from '../activities/badminton.js';
 import { PLAYER_START, aimFromInput, courtLineSegments, createProjector, stepPlayer } from './court-view.js';
@@ -13,9 +17,44 @@ const PENDING_HIT = 0.45; // menekan "Pukul" sedikit lebih awal tetap dihitung (
 const HIT_RADIUS = 1.0; // sama dengan HAND.horizontal di badminton-practice.js
 const JOY_RADIUS = 56;
 const JOY_DEAD = 0.12;
+const FIXED_DT = 1 / 120; // langkah simulasi tetap
+const MAX_STEPS = 8; // batas langkah per frame (cegah spiral kematian setelah tab tertahan)
+const MAX_DPR = 1.5; // kanvas HP beresolusi tinggi sangat berat bila dpr penuh
+const SERVE_SPOT = 1.9; // sama dengan SERVE_SPOT di badminton.js (titik kok muncul saat servis)
 const KEYS = Object.freeze({
   w: [0, 1], arrowup: [0, 1], s: [0, -1], arrowdown: [0, -1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0],
 });
+
+const lerp = (a, b, t) => a + (b - a) * t;
+const lerp3 = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t) });
+const ease = (t) => t * t * (3 - 2 * t);
+
+/**
+ * Pose tangan + ujung raket. Saat mengayun, ujung raket mulai tepat di titik kontak `at` (posisi kok ketika dipukul),
+ * lalu mengikuti gerak lanjutan dan kembali ke posisi diam. Tanpa `at`, raket di posisi diam.
+ */
+function racketPose(x, z, swing, dirZ, at) {
+  const grip = { x: x + 0.38, y: 1.1, z };
+  const rest = { hand: grip, tip: { x: x + 0.38, y: 1.1 + 0.75 * Math.cos(-0.5), z: z + dirZ * 0.75 * Math.sin(-0.5) } };
+  if (!(swing > 0) || !at) return rest;
+  const u = Math.min(1, Math.max(0, 1 - swing / SWING_TIME));
+  const dx = at.x - grip.x;
+  const dy = at.y - grip.y;
+  const dz = at.z - grip.z;
+  const dist = Math.hypot(dx, dy, dz) || 1;
+  const arm = Math.min(0.5, dist * 0.5); // lengan ikut menjulur ke arah kok
+  const contact = { hand: { x: grip.x + (dx / dist) * arm, y: grip.y + (dy / dist) * arm, z: grip.z + (dz / dist) * arm }, tip: at };
+  const follow = {
+    hand: { x: grip.x - 0.05, y: grip.y + 0.15, z: grip.z + dirZ * 0.25 },
+    tip: { x: grip.x - 0.1, y: grip.y + 0.55, z: grip.z + dirZ * 0.7 },
+  };
+  if (u < 0.45) {
+    const t = ease(u / 0.45);
+    return { hand: lerp3(contact.hand, follow.hand, t), tip: lerp3(contact.tip, follow.tip, t) };
+  }
+  const t = ease((u - 0.45) / 0.55);
+  return { hand: lerp3(follow.hand, rest.hand, t), tip: lerp3(follow.tip, rest.tip, t) };
+}
 
 function createSfx(win) {
   let ac = null;
@@ -91,20 +130,29 @@ export default {
     root.append(canvas, hud, joyZone, actBtn, hint);
     host.appendChild(root);
 
-    const g = canvas.getContext('2d');
+    const g = canvas.getContext('2d', { desynchronized: true }) ?? canvas.getContext('2d');
     if (!g) {
       ctx.notice?.('Layar ini tidak mendukung permainan bulu tangkis.');
       root.remove();
       queueMicrotask(() => ctx.exit?.({ error: 'canvas' }));
       return { destroy() {} };
     }
+    // Lapangan + garis tidak berubah: digambar sekali ke kanvas cadangan lalu cukup di-blit tiap frame.
+    const courtLayer = doc.createElement('canvas');
+    const layerCtx = courtLayer.getContext('2d');
+    let layerReady = false;
 
     const practice = createPractice();
     practice.start();
     const sfx = createSfx(win);
     let player = { ...PLAYER_START };
+    let prevPlayer = { ...player };
+    let prevBot = { x: practice.bot.x, z: practice.bot.z };
+    let prevShuttle = null;
     let swingMe = 0;
     let swingBot = 0;
+    let swingMeAt = null;
+    let swingBotAt = null;
     let pending = 0;
     let pendingAim = 0;
     let prevPhase = practice.phase;
@@ -113,6 +161,7 @@ export default {
     let paused = false;
     let destroyed = false;
     let rafId = 0;
+    let acc = 0;
     let last = win.performance.now();
 
     // ---------- input ----------
@@ -133,6 +182,9 @@ export default {
       if (practice.phase === 'over') {
         practice.start();
         player = { ...PLAYER_START };
+        prevPlayer = { ...player };
+        prevBot = { x: practice.bot.x, z: practice.bot.z };
+        prevShuttle = null;
         return;
       }
       const input = readInput();
@@ -140,6 +192,7 @@ export default {
         const r = practice.serve({ power: 0.62, aimX: aimFromInput(input) * 0.6 });
         if (r.ok) {
           swingMe = SWING_TIME;
+          swingMeAt = r.at ?? null;
           sfx.hit();
         }
         return;
@@ -224,44 +277,41 @@ export default {
     let H = 1;
     let dpr = 1;
     let proj = createProjector(1, 1);
-    const resize = () => {
-      const r = root.getBoundingClientRect();
-      W = Math.max(1, Math.round(r.width || host.clientWidth || win.innerWidth));
-      H = Math.max(1, Math.round(r.height || host.clientHeight || win.innerHeight));
-      dpr = Math.min(2, win.devicePixelRatio || 1);
-      canvas.width = Math.round(W * dpr);
-      canvas.height = Math.round(H * dpr);
-      proj = createProjector(W, H);
-    };
-    resize();
-    win.addEventListener('resize', resize);
-    const observer = win.ResizeObserver ? new win.ResizeObserver(resize) : null;
-    observer?.observe(root);
 
     // ---------- gambar ----------
     const P = (x, y, z) => proj.project(x, y, z);
-    const poly = (pts) => {
-      g.beginPath();
-      pts.forEach((p, i) => (i ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)));
-      g.closePath();
+    const polyOn = (c, pts) => {
+      c.beginPath();
+      pts.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+      c.closePath();
     };
-    const drawCourt = () => {
-      g.fillStyle = '#143d2b';
-      poly([P(-hw - 1.4, 0, -hl - 1.6), P(hw + 1.4, 0, -hl - 1.6), P(hw + 1.4, 0, hl + 1.6), P(-hw - 1.4, 0, hl + 1.6)]);
-      g.fill();
-      g.fillStyle = '#1f6b46';
-      poly([P(-hw, 0, -hl), P(hw, 0, -hl), P(hw, 0, hl), P(-hw, 0, hl)]);
-      g.fill();
-      g.strokeStyle = 'rgba(255,255,255,.92)';
-      g.lineWidth = Math.max(1.2, P(0, 0, 0).s * 0.05);
-      g.beginPath();
+    const poly = (pts) => polyOn(g, pts);
+    const drawCourt = (c) => {
+      c.fillStyle = '#143d2b';
+      polyOn(c, [P(-hw - 1.4, 0, -hl - 1.6), P(hw + 1.4, 0, -hl - 1.6), P(hw + 1.4, 0, hl + 1.6), P(-hw - 1.4, 0, hl + 1.6)]);
+      c.fill();
+      c.fillStyle = '#1f6b46';
+      polyOn(c, [P(-hw, 0, -hl), P(hw, 0, -hl), P(hw, 0, hl), P(-hw, 0, hl)]);
+      c.fill();
+      c.strokeStyle = 'rgba(255,255,255,.92)';
+      c.lineWidth = Math.max(1.2, P(0, 0, 0).s * 0.05);
+      c.beginPath();
       for (const [x1, z1, x2, z2] of segments) {
         const a = P(x1, 0, z1);
         const b = P(x2, 0, z2);
-        g.moveTo(a.x, a.y);
-        g.lineTo(b.x, b.y);
+        c.moveTo(a.x, a.y);
+        c.lineTo(b.x, b.y);
       }
-      g.stroke();
+      c.stroke();
+    };
+    const renderCourtLayer = () => {
+      layerReady = false;
+      if (!layerCtx) return;
+      courtLayer.width = canvas.width;
+      courtLayer.height = canvas.height;
+      layerCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawCourt(layerCtx);
+      layerReady = true;
     };
     const drawNet = () => {
       const ex = hw + 0.3;
@@ -302,7 +352,7 @@ export default {
       }
       g.stroke();
     };
-    const drawPerson = (x, z, color, swing, dirZ) => {
+    const drawPerson = (x, z, color, swing, dirZ, at) => {
       const foot = P(x, 0, z);
       const s = foot.s;
       g.fillStyle = 'rgba(0,0,0,.3)';
@@ -329,9 +379,16 @@ export default {
       g.beginPath();
       g.arc(head.x, head.y, Math.max(3, s * 0.17), 0, Math.PI * 2);
       g.fill();
-      const hand = P(x + 0.38, 1.1, z);
-      const angle = swing > 0 ? -1.3 + 2.6 * (1 - swing / SWING_TIME) : -0.5;
-      const tip = P(x + 0.38, 1.1 + 0.75 * Math.cos(angle), z + dirZ * 0.75 * Math.sin(angle));
+      const pose = racketPose(x, z, swing, dirZ, at);
+      const shoulder = P(x + 0.2, 1.4, z);
+      const hand = P(pose.hand.x, pose.hand.y, pose.hand.z);
+      const tip = P(pose.tip.x, pose.tip.y, pose.tip.z);
+      g.strokeStyle = color;
+      g.lineWidth = Math.max(2, s * 0.11);
+      g.beginPath();
+      g.moveTo(shoulder.x, shoulder.y);
+      g.lineTo(hand.x, hand.y);
+      g.stroke();
       g.strokeStyle = '#ffd166';
       g.lineWidth = Math.max(2, s * 0.05);
       g.beginPath();
@@ -361,20 +418,31 @@ export default {
       g.arc(p.x, p.y, Math.max(3.5, p.s * 0.1), 0, Math.PI * 2);
       g.fill();
     };
-    const draw = () => {
-      g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      g.clearRect(0, 0, W, H);
-      drawCourt();
+    const draw = (alpha) => {
+      // posisi gambar = interpolasi antara langkah simulasi sebelumnya dan terbaru
       const bot = practice.bot;
-      drawPerson(bot.x, bot.z, '#e8803a', swingBot, -1);
+      const ip = { x: lerp(prevPlayer.x, player.x, alpha), z: lerp(prevPlayer.z, player.z, alpha) };
+      const ib = { x: lerp(prevBot.x, bot.x, alpha), z: lerp(prevBot.z, bot.z, alpha) };
+      const swingStep = alpha * FIXED_DT;
+      const swMe = Math.max(0, swingMe - swingStep);
+      const swBot = Math.max(0, swingBot - swingStep);
+
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.clearRect(0, 0, canvas.width, canvas.height);
+      if (layerReady) g.drawImage(courtLayer, 0, 0);
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (!layerReady) drawCourt(g);
+      drawPerson(ib.x, ib.z, '#e8803a', swBot, -1, swingBotAt);
       drawNet();
-      drawRing(player.x, player.z, HIT_RADIUS, practice.canHit(player) ? 'rgba(120,255,160,.95)' : 'rgba(255,255,255,.28)');
-      drawPerson(player.x, player.z, '#4aa3ff', swingMe, 1);
+      drawRing(ip.x, ip.z, HIT_RADIUS, practice.canHit(player) ? 'rgba(120,255,160,.95)' : 'rgba(255,255,255,.28)');
+      drawPerson(ip.x, ip.z, '#4aa3ff', swMe, 1, swingMeAt);
       const shuttle = practice.shuttle;
-      if (shuttle) drawShuttle(shuttle.pos);
-      else if (practice.phase === 'serve') {
-        // kok di tangan yang akan servis
-        drawShuttle(practice.server === 'a' ? { x: player.x + 0.38, y: 1.1, z: player.z + 0.1 } : { x: bot.x - 0.38, y: 1.1, z: bot.z - 0.1 });
+      if (shuttle) {
+        const cur = shuttle.pos;
+        drawShuttle(prevShuttle ? { x: lerp(prevShuttle.x, cur.x, alpha), y: lerp(prevShuttle.y, cur.y, alpha), z: lerp(prevShuttle.z, cur.z, alpha) } : cur);
+      } else if (practice.phase === 'serve') {
+        // kok menunggu di titik servis yang sama dengan tempat fisika memunculkannya
+        drawShuttle(practice.server === 'a' ? { x: 0, y: 1.0, z: -SERVE_SPOT } : { x: 0, y: 1.0, z: SERVE_SPOT });
       }
     };
     const updateHud = () => {
@@ -395,16 +463,28 @@ export default {
       }
     };
 
-    // ---------- loop ----------
-    const frame = (now) => {
-      if (destroyed) return;
-      rafId = win.requestAnimationFrame(frame);
-      if (paused) {
-        last = now;
-        return;
-      }
-      const dt = Math.min(Math.max((now - last) / 1000, 0), 0.05);
-      last = now;
+    const resize = () => {
+      const r = root.getBoundingClientRect();
+      W = Math.max(1, Math.round(r.width || host.clientWidth || win.innerWidth));
+      H = Math.max(1, Math.round(r.height || host.clientHeight || win.innerHeight));
+      dpr = Math.min(MAX_DPR, win.devicePixelRatio || 1);
+      canvas.width = Math.round(W * dpr);
+      canvas.height = Math.round(H * dpr);
+      proj = createProjector(W, H);
+      renderCourtLayer();
+    };
+    resize();
+    win.addEventListener('resize', resize);
+    const observer = win.ResizeObserver ? new win.ResizeObserver(resize) : null;
+    observer?.observe(root);
+
+    // ---------- simulasi (langkah tetap) ----------
+    const stepSim = (dt) => {
+      prevPlayer = { x: player.x, z: player.z };
+      prevBot = { x: practice.bot.x, z: practice.bot.z };
+      const sh = practice.shuttle;
+      prevShuttle = sh ? { x: sh.pos.x, y: sh.pos.y, z: sh.pos.z } : null;
+
       player = stepPlayer(player, readInput(), dt);
       if (pending > 0) {
         pending -= dt;
@@ -413,6 +493,7 @@ export default {
           if (r.ok) {
             pending = 0;
             swingMe = SWING_TIME;
+            swingMeAt = r.at ?? null;
             sfx.hit();
           }
         }
@@ -420,17 +501,43 @@ export default {
       for (const ev of practice.tick(dt, player)) {
         if (ev.type === 'hit' || ev.type === 'serve') {
           swingBot = SWING_TIME;
+          swingBotAt = ev.at ?? null;
           sfx.hit();
         } else if (ev.type === 'point' || ev.type === 'over') {
           if (ev.winner === 'a') sfx.point();
           else sfx.lose();
         }
       }
-      if (practice.phase === 'serve' && prevPhase !== 'serve') player = { ...PLAYER_START }; // reli baru: kembali ke posisi servis
+      if (practice.phase === 'serve' && prevPhase !== 'serve') {
+        // reli baru: kembali ke posisi servis (tanpa interpolasi lompatan)
+        player = { ...PLAYER_START };
+        prevPlayer = { ...player };
+        prevBot = { x: practice.bot.x, z: practice.bot.z };
+        prevShuttle = null;
+      }
       prevPhase = practice.phase;
       swingMe = Math.max(0, swingMe - dt);
       swingBot = Math.max(0, swingBot - dt);
-      draw();
+    };
+
+    // ---------- loop ----------
+    const frame = (now) => {
+      if (destroyed) return;
+      rafId = win.requestAnimationFrame(frame);
+      if (paused) {
+        last = now;
+        return;
+      }
+      acc += Math.min(Math.max((now - last) / 1000, 0), 0.1);
+      last = now;
+      let steps = 0;
+      while (acc >= FIXED_DT && steps < MAX_STEPS) {
+        stepSim(FIXED_DT);
+        acc -= FIXED_DT;
+        steps += 1;
+      }
+      if (steps === MAX_STEPS) acc = 0; // buang tunggakan waktu agar tidak mengejar terus
+      draw(acc / FIXED_DT);
       updateHud();
     };
     rafId = win.requestAnimationFrame(frame);
@@ -449,6 +556,7 @@ export default {
       },
       resume() {
         paused = false;
+        acc = 0;
         last = win.performance.now();
       },
       destroy() {
