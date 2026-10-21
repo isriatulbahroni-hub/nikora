@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import { applyPose, createAvatar } from './avatar.js';
-import { loadConfig } from './avatar-config.js';
+import { loadConfig, toWire } from './avatar-config.js';
 import { createQualityGovernor } from './quality.js';
 import { chooseCameraPose, forwardLookBlend, resolveCameraDistance } from './villa-camera.js';
 import { doorAssist, turnToward } from './villa-motion.js';
-import { FLOOR_NAMES, HOTEL_BUILDING, HOTEL_FORECOURT, HOTEL_LEVEL_COUNT, HOTEL_PARKING, HOTEL_SITE, HOTEL_SPAWN, getHotelWorld, hotelLevelY } from './hotel-layout.js';
+import { FLOOR_NAMES, HOTEL_BUILDING, HOTEL_FORECOURT, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_PARKING, HOTEL_SITE, HOTEL_SPAWN, getHotelWorld, hotelLevelY, surfaceAt } from './hotel-layout.js';
 import { buildHotelWorld } from './hotel-world.js';
-import { mountLiftPanel } from './hotel-ui.js';
+import { mountLiftPanel, mountSpeedHud } from './hotel-ui.js';
+import { Fleet, hotelCars } from './vehicle-fleet.js';
+import { createVehicleView } from './vehicle-view.js';
+import { createCarRide } from './car-ride.js';
 import { FLOOR_COLORS, GROUP_ORDER, cssColor, describePlace, hotelPlaces } from './hotel-places.js';
 
 // NIKORA Grand Hotel sebagai halaman sendiri (/hotel.html): menara 15 lantai yang dijelajahi dengan avatar (satu pemain).
@@ -38,7 +41,8 @@ function hasWebGL2() {
 const held = new Set();
 const joystick = { x: 0, z: 0 };
 const KEYS = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
-const hooks = { map: () => {}, camera: () => {}, places: () => {} };
+const hooks = { map: () => {}, camera: () => {}, places: () => {}, action: () => {} };
+const camInput = { lastDrag: -1e9 }; // kapan pemain terakhir memutar kamera (kamera mobil tidak melawan putaran itu)
 const CAM_LIMITS = Object.freeze({ minPitch: 0.06, maxPitch: 1.5, minDist: 1.5, maxDist: 140 });
 // Orang ketiga, lebar, udara, dan pandangan menara dari jauh
 const CAM_PRESETS = Object.freeze([{ pitch: 0.28, dist: 5.6 }, { pitch: 0.55, dist: 11 }, { pitch: 0.95, dist: 21 }, { pitch: 0.4, dist: 110 }]);
@@ -72,6 +76,10 @@ function setupInput(canvas, camState) {
     } else if (!e.repeat && k === 'm') hooks.map();
     else if (!e.repeat && k === 'c') hooks.camera();
     else if (!e.repeat && k === 'j') hooks.places();
+    else if (!e.repeat && (k === 'e' || k === ' ')) {
+      hooks.action(); // naik/turun mobil
+      e.preventDefault();
+    }
     else if (k === '[') camState.yaw += 0.12;
     else if (k === ']') camState.yaw -= 0.12;
     else if (k === '-') camState.dist = clamp(camState.dist * 1.1, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
@@ -103,6 +111,7 @@ function setupInput(canvas, camState) {
     const dy = e.clientY - p.y;
     p.x = e.clientX;
     p.y = e.clientY;
+    camInput.lastDrag = performance.now();
     if (pointers.size === 1) {
       camState.yaw -= dx * 0.006;
       camState.pitch = clamp(camState.pitch + dy * 0.005, CAM_LIMITS.minPitch, CAM_LIMITS.maxPitch);
@@ -215,9 +224,16 @@ function createMinimap() {
   };
   const edgeX = (x) => px(clamp(x, minX, maxX));
   const edgeZ = (z) => pz(clamp(z, minZ, maxZ));
-  return (self, facing, level) => {
+  return (self, facing, level, others = []) => {
     layers[level] ??= makeLayer(level);
     ctx.drawImage(layers[level], 0, 0);
+    for (const o of others) {
+      if (Math.round((o.y ?? 0) / HOTEL_LEVEL_HEIGHT) !== level) continue; // hanya pemain di lantai yang sama
+      ctx.beginPath();
+      ctx.arc(edgeX(o.x), edgeZ(o.z), 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#ff8a3d';
+      ctx.fill();
+    }
     ctx.beginPath();
     ctx.arc(edgeX(self.x), edgeZ(self.z), 5, 0, Math.PI * 2);
     ctx.fillStyle = '#fff';
@@ -273,6 +289,9 @@ async function start() {
   const scene = new THREE.Scene();
   const lights = buildEnvironment(scene);
   const built = buildHotelWorld(scene);
+  // Mobil bersama di drop-off/parkir hotel (8 mobil). Logika naik/turun/setir/jaringan: car-ride.js (sama dengan vila).
+  const fleet = new Fleet({ specs: hotelCars(), selfId: 'lokal', env: { colliders: world.levels[0].colliders, surfaceAt } });
+  const carView = createVehicleView({ scene, fleet });
   const camera = new THREE.PerspectiveCamera(48, 1, 0.2, 1800);
   const indoorLight = new THREE.PointLight(0xffe2b8, 0, 26, 1.3);
   scene.add(indoorLight);
@@ -317,7 +336,8 @@ async function start() {
   };
   const params = new URLSearchParams(window.location.search);
   const name = (params.get('name') || store('orbit-name') || `Tamu-${Math.floor(Math.random() * 900 + 100)}`).replace(/[<>]/g, '').slice(0, 24);
-  const avatar = createAvatar({ config: loadConfig(storage), name });
+  const avatarConfig = loadConfig(storage);
+  const avatar = createAvatar({ config: avatarConfig, name });
   avatar.rotation.order = 'YXZ';
   scene.add(avatar);
   const blob = new THREE.Mesh(new THREE.CircleGeometry(0.6, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }));
@@ -418,6 +438,38 @@ async function start() {
 
   const drawMap = createMinimap();
   let last = performance.now();
+
+  // ---------- mobil dan jaringan ----------
+  const actBtn = $('act-button');
+  const carRide = createCarRide({
+    fleet, view: carView, hud: mountSpeedHud(), camState, toast,
+    exit: (p) => world.move({ x: p.x, z: p.z, level: 0, stair: null, y: 0 }, 0, 0), // geser bila titik turun mengenai penghalang
+    isDragging: () => performance.now() - camInput.lastDrag < 1500,
+  });
+  hooks.action = () => {
+    if (riding) return; // sedang di dalam lift
+    if (fleet.mine) carRide.leave(me);
+    else if (me.level === 0) carRide.board(me);
+  };
+  actBtn.addEventListener('click', () => hooks.action());
+  let multiplayer = null;
+  let netStatus = 'Menyambung…';
+  // Multiplayer lewat LiveKit (ruang "hotel" terpisah dari vila). Dimuat belakangan: tanpa jaringan hotel tetap bisa dijelajahi sendiri.
+  import('./multiplayer-view.js')
+    .then(({ startMultiplayer }) => startMultiplayer({ scene, search: window.location.search, name, world: 'hotel', poseFor: (id) => fleet.seatPose(id), useVideoCall: false, onError: (m) => { netStatus = `Offline · ${m}`; } }))
+    .then((session) => {
+      multiplayer = session;
+      if (!session) {
+        if (netStatus === 'Menyambung…') netStatus = 'Offline';
+        return;
+      }
+      session.net.setAvatar?.(toWire(avatarConfig));
+      carRide.wire(session.net, me); // mobil bersama: pose dan kursi disiarkan lewat LiveKit
+    })
+    .catch((error) => {
+      console.warn('[hotel] jaringan tidak tersedia:', error);
+      netStatus = 'Offline';
+    });
   let placeKey = '';
 
   function frame(time) {
@@ -425,9 +477,10 @@ async function start() {
     const delta = Math.min((time - last) / 1000, 0.05);
     last = time;
 
+    const rawInput = riding ? { x: 0, z: 0 } : readInput();
     let move = { x: 0, z: 0 };
-    if (!riding) {
-      move = cameraRelative(readInput(), camNow.yaw);
+    if (!riding && !fleet.mine) { // di dalam mobil joystick = gas dan setir, bukan berjalan
+      move = cameraRelative(rawInput, camNow.yaw);
       move = doorAssist(me, move, world.levels[me.level].doors);
     }
     const moving = move.x !== 0 || move.z !== 0;
@@ -454,12 +507,24 @@ async function start() {
       }
     }
 
-    shownFacing = turnToward(shownFacing, facing, delta);
+    // mobil: pengemudi menjalankan fisika; pengemudi dan penumpang menempel di kursinya
+    const car = carRide.step(me, { delta, rawInput });
+    const seatPose = car.riding ? fleet.seatPose(car.sit) : null;
+    if (car.riding) facing = car.facing;
+    shownFacing = seatPose ? seatPose.rotY : turnToward(shownFacing, facing, delta);
     avatar.position.x = me.x;
     avatar.position.z = me.z;
-    avatar.position.y = me.y + (moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0);
+    avatar.position.y = seatPose ? seatPose.y : me.y + (moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0);
     avatar.rotation.y = shownFacing;
+    avatar.userData.seated = !!seatPose;
     applyPose(avatar, moving ? 'walk' : null, time / 1000, delta);
+    const others = multiplayer ? multiplayer.net.players.filter((p) => p.id !== multiplayer.net.id) : [];
+    if (multiplayer) {
+      multiplayer.view.update(delta, time / 1000); // pemain lain
+      multiplayer.sendInput(move.x, move.z, facing, time, fleet.sitId, { x: me.x, z: me.z, y: me.y }); // sit = kursi mobil (id >= 1000) atau null
+    }
+    const online = multiplayer ? (multiplayer.net.status === 'reconnecting' ? 'Menyambung ulang…' : `Online: ${others.length + 1}`) : netStatus;
+    if ($('online').textContent !== online) $('online').textContent = online;
     blob.position.set(me.x, me.y + 0.1, me.z);
 
     // kamera mengorbit pemain; bila terhalang dinding atau langit-langit, dinaikkan halus atau dipendekkan
@@ -498,7 +563,11 @@ async function start() {
     indoorLight.position.set(me.x, me.y + 2.6, me.z);
 
     // panel lift muncul saat berdiri di dalam kabin
-    liftPanel.update(!riding && !!world.liftAt(me.x, me.z), me.level);
+    liftPanel.update(!riding && !fleet.mine && !!world.liftAt(me.x, me.z), me.level);
+    const carNear = !riding && !fleet.mine && me.level === 0 && fleet.nearest(me) !== null;
+    const actText = riding ? '' : fleet.mine ? 'Turun' : carNear ? 'Naik' : '';
+    if (actText) actBtn.textContent = actText;
+    actBtn.hidden = !actText;
 
     const qChange = quality.tick(performance.now());
     if (qChange) renderer.setPixelRatio(qChange.ratio);
@@ -509,7 +578,7 @@ async function start() {
       placeKey = key;
       $('place').textContent = info.inside && me.level > 0 ? `Lantai ${me.level + 1} · ${FLOOR_NAMES[me.level]} · ${info.name}` : info.name;
     }
-    if (!mapCanvas.hidden) drawMap(me, facing, me.level);
+    if (!mapCanvas.hidden) drawMap(me, facing, me.level, others);
   }
   requestAnimationFrame(frame);
 
@@ -518,6 +587,8 @@ async function start() {
     cam: () => ({ yaw: camState.yaw, pitch: camState.pitch, dist: camState.dist }),
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio() }),
     places: () => places,
+    cars: () => fleet.cars.map((c) => ({ id: c.id, x: c.x, z: c.z, heading: c.heading, speed: c.speed, seats: c.seats.slice() })), // pengujian
+    board: () => carRide.board(me),
     teleport, // hanya untuk pengujian dan menu Jelajah
     ride,
   };
