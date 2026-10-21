@@ -185,7 +185,7 @@ test('hotel: tembok kamar menghalangi, pintu kamar dari lorong bisa dimasuki, te
 test('hotel: roomAt memberi nama ruang, halaman, dan jalan', () => {
   assert.equal(roomAt(0, 430, 0).name, 'Grand Lobby & Reception');
   assert.equal(roomAt(0, 400, 0).name, 'Drop-off & Valet');
-  assert.equal(roomAt(0, 300, 0).name, 'Jalan Raya NIKORA');
+  assert.equal(roomAt(0, 300, 0).name, 'Jalan Raya NIKORA · Arah Villa');
   assert.equal(roomAt(-30, 450, 2).name, 'Indoor Swimming Pool');
   // lantai 998/999 berdenah menyusut (skala 0,70): titik uji dipilih di dalam petak yang sudah dipadatkan
   assert.equal(roomAt(-20, 450, TOP).kind, 'terrace');
