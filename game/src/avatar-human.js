@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { HUMAN_ROSTER } from './avatar-roster.js';
 import { EXTRA_CLIPS, loadExtraNeutral } from './avatar-extra-anims.js';
+import { attachRecolor } from './avatar-recolor.js';
 
 const BASE = (typeof import.meta !== 'undefined' && import.meta.env?.BASE_URL) || '/';
 export const HUMAN_HEIGHT = 1.75;
@@ -157,11 +158,26 @@ export class HumanRig {
     this.loading = new Set();
     this.forcedClip = null; // klip tambahan yang dipaksakan stiker (emoji-sticker-fx.js); hanya berlaku saat diam dan tidak duduk
     this.disposed = false;
+    this.recolor = attachRecolor(this.root); // warna jaket/rambut/kulit per bagian bila model punya peta area; selain itu null
+    this.recolorKey = null;
     for (const [name, clip] of Object.entries(model.clips)) this.addAction(name, clip);
     this.bones = new Map();
     this.root.traverse((o) => { if (o.isBone && /^mixamorig/.test(o.name)) this.bones.set(boneKeyOf(o.name), o); });
     this.current = null;
     this.play('idle', 0);
+  }
+
+  /** Terapkan pilihan warna pemain (userData.config milik grup avatar) bila berubah sejak frame lalu. */
+  syncColors() {
+    if (!this.recolor) return;
+    let g = this.root.parent;
+    while (g && !g.userData?.config) g = g.parent;
+    const cfg = g?.userData.config;
+    if (!cfg) return;
+    const key = `${cfg.o}.${cfg.k}.${cfg.s}`;
+    if (key === this.recolorKey) return;
+    this.recolorKey = key;
+    this.recolor.apply(cfg);
   }
 
   addAction(name, clip) {
@@ -196,6 +212,7 @@ export class HumanRig {
   }
 
   update(act, t, delta, seated = false) {
+    this.syncColors();
     const extra = this.forcedClip && !seated && act !== 'walk' && this.extraReady(this.forcedClip) ? this.forcedClip : null;
     const wantsPose = seated || (!extra && ['wave', 'highfive', 'handshake', 'clap', 'bow', 'spin'].includes(act));
     this.play(extra ?? CLIP_FOR_ACT[act] ?? 'idle');
@@ -211,6 +228,7 @@ export class HumanRig {
 
   dispose() {
     this.disposed = true;
+    this.recolor?.dispose();
     this.mixer.stopAllAction();
     this.mixer.uncacheRoot(this.root);
   }
