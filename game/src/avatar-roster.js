@@ -6,4 +6,5 @@
 // tersimpan di perangkat pemain; mengubah urutan menggeser pilihan semua orang.
 export const HUMAN_ROSTER = Object.freeze([
   { id: 'michelle', name: 'Michelle', file: 'models/michelle.glb' },
+  { id: 'roney', name: 'Roney', file: 'models/jaket.glb' },
 ]);
