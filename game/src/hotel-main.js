@@ -11,6 +11,8 @@ import { Fleet, hotelCars } from './vehicle-fleet.js';
 import { createVehicleView } from './vehicle-view.js';
 import { createCarRide } from './car-ride.js';
 import { FLOOR_COLORS, GROUP_ORDER, cssColor, describePlace, hotelPlaces } from './hotel-places.js';
+import { hoursAt, zoneFromSearch } from './day-night.js';
+import { createStaffView } from './hotel-staff-view.js';
 
 // NIKORA Grand Hotel sebagai halaman sendiri (/hotel.html): menara 15 lantai yang dijelajahi dengan avatar (satu pemain).
 // Geometri 3D dari hotel-world.js dan denah dari hotel-layout.js (dipakai bersama dunia villa); halaman ini hanya
@@ -292,6 +294,13 @@ async function start() {
   // Mobil bersama di drop-off/parkir hotel (8 mobil). Logika naik/turun/setir/jaringan: car-ride.js (sama dengan vila).
   const fleet = new Fleet({ specs: hotelCars(), selfId: 'lokal', env: { colliders: world.levels[0].colliders, surfaceAt } });
   const carView = createVehicleView({ scene, fleet });
+  // Karyawan hotel: ratusan petugas disimulasikan sebagai jadwal; hanya yang dekat pemain digambar (hotel-staff.js, hotel-staff-view.js).
+  // Jam kerja mengikuti jam asli di zona waktu acara (?tz=, bawaan WIB), sama seperti langit; ?jam=10 mengunci jam (pengujian).
+  const staffSearch = new URLSearchParams(window.location.search);
+  const staffZone = zoneFromSearch(window.location.search);
+  const jamParam = staffSearch.get('jam');
+  const fixedHour = jamParam !== null && jamParam.trim() !== '' && Number.isFinite(Number(jamParam)) ? Number(jamParam) : null;
+  const staffView = createStaffView({ scene, hourNow: () => fixedHour ?? hoursAt(Date.now(), staffZone) });
   const camera = new THREE.PerspectiveCamera(48, 1, 0.2, 1800);
   const indoorLight = new THREE.PointLight(0xffe2b8, 0, 26, 1.3);
   scene.add(indoorLight);
@@ -526,6 +535,7 @@ async function start() {
     const online = multiplayer ? (multiplayer.net.status === 'reconnecting' ? 'Menyambung ulang…' : `Online: ${others.length + 1}`) : netStatus;
     if ($('online').textContent !== online) $('online').textContent = online;
     blob.position.set(me.x, me.y + 0.1, me.z);
+    staffView.update(me, delta, time / 1000); // petugas hotel yang dekat pemain
 
     // kamera mengorbit pemain; bila terhalang dinding atau langit-langit, dinaikkan halus atau dipendekkan
     camState.pitch = clamp(camState.pitch, CAM_LIMITS.minPitch, CAM_LIMITS.maxPitch);
@@ -587,6 +597,7 @@ async function start() {
     cam: () => ({ yaw: camState.yaw, pitch: camState.pitch, dist: camState.dist }),
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio() }),
     places: () => places,
+    staff: () => staffView.stats(), // petugas yang sedang digambar (pengujian)
     cars: () => fleet.cars.map((c) => ({ id: c.id, x: c.x, z: c.z, heading: c.heading, speed: c.speed, seats: c.seats.slice() })), // pengujian
     board: () => carRide.board(me),
     teleport, // hanya untuk pengujian dan menu Jelajah
