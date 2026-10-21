@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { DOOR_HEIGHT } from './villa-layout.js';
 import { bedGeometries } from './villa-props.js';
 import {
-  HOTEL_BUILDING, HOTEL_CANOPY, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_FOUNTAIN, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_PARKING, HOTEL_SITE,
+  HOTEL_BUILDING, HOTEL_CANOPY, HOTEL_CORE, TOWER_CENTER, TOWER_HALF, TOWER_ZONE_LEVELS, hotelFootprint, towerScaleAt, HOTEL_FORECOURT, HOTEL_FOUNTAIN, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_PARKING, HOTEL_SITE,
   HOTEL_TOP_LEVEL, HOTEL_TOP_Y, HOTEL_WALL_HEIGHT, LIFTS, PODIUM_LEVELS, ROAD, getHotelWorld, hotelLevelY, isGuestLevel, isSkyLobbyLevel,
 } from './hotel-layout.js';
 
@@ -41,15 +41,108 @@ function instancedBoxes(parent, items, material, { cast = false, receive = false
   return mesh;
 }
 
+/** Batang tipis miring (rusuk diagonal): tiap item {x1,y1,z1,x2,y2,z2,t} menjadi kotak setebal t sepanjang garis itu. */
+function instancedBars(parent, bars, material) {
+  if (!bars.length) return null;
+  const mesh = new THREE.InstancedMesh(BOX, material, bars.length);
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const p = new THREE.Vector3();
+  const sc = new THREE.Vector3();
+  const d = new THREE.Vector3();
+  const up = new THREE.Vector3(0, 1, 0);
+  bars.forEach((b, i) => {
+    d.set(b.x2 - b.x1, b.y2 - b.y1, b.z2 - b.z1);
+    const len = d.length();
+    q.setFromUnitVectors(up, d.normalize());
+    mesh.setMatrixAt(i, m.compose(p.set((b.x1 + b.x2) / 2, (b.y1 + b.y2) / 2, (b.z1 + b.z2) / 2), q, sc.set(b.t, len, b.t)));
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.castShadow = true;
+  mesh.computeBoundingSphere();
+  parent.add(mesh);
+  return mesh;
+}
+
+// Kulit menara: tiap zona 50 lantai = satu "prisma" yang meruncing (skala bawah -> atas), sisinya menggembung ke luar.
+const SHELL_MARGIN = 0.5; // kulit selalu sekian meter di luar tapak lantai
+const SHELL_BULGE = 1.2; // gembung maksimum di tengah tiap sisi (sagitta)
+const SHELL_COLS = 10; // kolom per sisi
+const RIB_THICK = 0.45;
+const SPIRE_HEIGHT = 520; // jarum di puncak, di atas helipad (y = 4.200)
+const zoneOf = (z) => ({
+  z,
+  a: Math.max(z * TOWER_ZONE_LEVELS, PODIUM_LEVELS),
+  b: (z + 1) * TOWER_ZONE_LEVELS > HOTEL_TOP_LEVEL ? HOTEL_TOP_LEVEL : (z + 1) * TOWER_ZONE_LEVELS,
+  sBottom: z === 0 ? 1 : towerScaleAt(z),
+  sTop: z === 0 ? 1 : towerScaleAt(z + 1),
+});
+/** Titik pada sisi `face` (0 utara, 1 timur, 2 selatan, 3 barat) skala `sc`, posisi u (0..1) sepanjang sisi, bergeser `off` ke luar. */
+function shellPoint(face, sc, u, off = 0) {
+  const hx = TOWER_HALF.x * sc + SHELL_MARGIN;
+  const hz = TOWER_HALF.z * sc + SHELL_MARGIN;
+  const cx = TOWER_CENTER.x;
+  const cz = TOWER_CENTER.z;
+  const corners = [[cx - hx, cz - hz], [cx + hx, cz - hz], [cx + hx, cz + hz], [cx - hx, cz + hz]];
+  const a = corners[face];
+  const b = corners[(face + 1) % 4];
+  const n = [[0, -1], [1, 0], [0, 1], [-1, 0]][face];
+  const push = SHELL_BULGE * Math.sin(Math.PI * u) + off;
+  return { x: a[0] + (b[0] - a[0]) * u + n[0] * push, z: a[1] + (b[1] - a[1]) * u + n[1] * push };
+}
+function buildShellGeometry(zones) {
+  const pos = [];
+  const idx = [];
+  for (const zn of zones) {
+    const yLo = hotelLevelY(zn.a);
+    const yHi = hotelLevelY(zn.b);
+    for (let face = 0; face < 4; face++) {
+      const base = pos.length / 3;
+      for (let i = 0; i <= SHELL_COLS; i++) {
+        const u = i / SHELL_COLS;
+        const lo = shellPoint(face, zn.sBottom, u);
+        const hi = shellPoint(face, zn.sTop, u);
+        pos.push(lo.x, yLo, lo.z, hi.x, yHi, hi.z);
+      }
+      for (let i = 0; i < SHELL_COLS; i++) {
+        const k = base + i * 2;
+        idx.push(k, k + 1, k + 3, k, k + 3, k + 2);
+      }
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  return g;
+}
+/** Rusuk diagonal berbentuk X di tiap sisi tiap zona, mengikuti gembung kulit. */
+function shellRibs(zones) {
+  const bars = [];
+  for (const zn of zones) {
+    const yLo = hotelLevelY(zn.a);
+    const yHi = hotelLevelY(zn.b);
+    for (let face = 0; face < 4; face++) {
+      for (const flip of [false, true]) {
+        let prev = null;
+        for (let i = 0; i <= SHELL_COLS; i++) {
+          const u = i / SHELL_COLS;
+          const v = flip ? 1 - u : u;
+          const p = shellPoint(face, zn.sBottom + (zn.sTop - zn.sBottom) * v, u, 0.2);
+          const cur = { x: p.x, y: yLo + (yHi - yLo) * v, z: p.z };
+          if (prev) bars.push({ x1: prev.x, y1: prev.y, z1: prev.z, x2: cur.x, y2: cur.y, z2: cur.z, t: RIB_THICK });
+          prev = cur;
+        }
+      }
+    }
+  }
+  return bars;
+}
+
 const rectBox = (r, y, h, extra = {}) => ({ x: (r[0] + r[2]) / 2, y, z: (r[1] + r[3]) / 2, sx: r[2] - r[0], sy: h, sz: r[3] - r[1], ...extra });
 const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0, ...o });
-const onPerimeter = (w) => (w.orient === 'h' ? (w.coord === HOTEL_BUILDING[1] || w.coord === HOTEL_BUILDING[3]) : (w.coord === HOTEL_BUILDING[0] || w.coord === HOTEL_BUILDING[2]));
-
-/** Titik-titik sama jarak (maks. `step` m) dari a sampai b, termasuk kedua ujung. */
-function spaced(a, b, step) {
-  const n = Math.max(1, Math.ceil((b - a) / step));
-  return Array.from({ length: n + 1 }, (_, i) => a + ((b - a) * i) / n);
-}
+const onPerimeter = (w, b) => (w.orient === 'h' ? (w.coord === b[1] || w.coord === b[3]) : (w.coord === b[0] || w.coord === b[2]));
 
 function signTexture() {
   const c = document.createElement('canvas');
@@ -83,7 +176,7 @@ function levelOccluders(world, level) {
     if (d.orient === 'h') add(d.x - hw, d.x + hw, y0 + DOOR_HEIGHT, y0 + HOTEL_WALL_HEIGHT, d.z - 0.15, d.z + 0.15);
     else add(d.x - 0.15, d.x + 0.15, y0 + DOOR_HEIGHT, y0 + HOTEL_WALL_HEIGHT, d.z - hw, d.z + hw);
   }
-  const b = HOTEL_BUILDING;
+  const b = hotelFootprint(level);
   add(b[0], b[2], y0 - 0.4, y0, b[1], b[3]); // lantai
   add(b[0], b[2], y0 + HOTEL_WALL_HEIGHT, y0 + HOTEL_LEVEL_HEIGHT + 0.1, b[1], b[3]); // langit-langit
   add(HOTEL_SITE.minX, HOTEL_SITE.maxX, -6, 0.05, HOTEL_SITE.minZ, HOTEL_SITE.maxZ); // tanah di sekitar hotel (di luar area tanah villa)
@@ -101,6 +194,7 @@ export function buildHotelWorld(scene) {
     asphalt: std(0x2c2e33, { roughness: 0.95 }), line: std(0xf2f0e4, { roughness: 0.7 }), curb: std(0xcfcfc8), stone: std(0xd9d2c3, { roughness: 0.85 }),
     gold: std(GOLD, { roughness: 0.35, metalness: 0.75 }), wall: std(CREAM, { roughness: 0.9 }), slab: std(0xe3dccb), dark: std(0x1a1b1f),
     glass: new THREE.MeshStandardMaterial({ color: 0x9fd0e6, roughness: 0.06, metalness: 0.25, transparent: true, opacity: 0.3, depthWrite: false }),
+    towerGlass: new THREE.MeshStandardMaterial({ color: 0x2f6fae, roughness: 0.08, metalness: 0.3, transparent: true, opacity: 0.45, depthWrite: false, side: THREE.DoubleSide }), rib: std(0xe8eef5, { roughness: 0.35, metalness: 0.6 }),
     floor: std(0xffffff, { roughness: 0.55 }), light: new THREE.MeshBasicMaterial({ color: 0xfff0c8 }), water: std(0x35a7d9, { roughness: 0.1, emissive: 0x0a3550, emissiveIntensity: 0.6 }),
     leaf: std(0x2f6f3a), trunk: std(0x6b4a2f), prop: std(0xffffff, { roughness: 0.7 }), vertex: std(0xffffff, { vertexColors: true, roughness: 0.7 }),
   };
@@ -164,41 +258,38 @@ export function buildHotelWorld(scene) {
   instancedBoxes(root, trunks, M.trunk, { cast: true });
   instancedBoxes(root, crowns, M.leaf, { cast: true });
 
-  // ---- cangkang menara (seluruh 1000 lantai, murah: beberapa InstancedMesh saja)
+  // ---- cangkang menara (seluruh 1000 lantai, murah: beberapa InstancedMesh dan satu mesh kaca per menara)
   const slabs = [];
   const edges = [];
   const belts = [];
+  const frame = (o, w, y, h) => [rectBox([o[0], o[1], o[2], o[1] + w], y, h), rectBox([o[0], o[3] - w, o[2], o[3]], y, h), rectBox([o[0], o[1] + w, o[0] + w, o[3] - w], y, h), rectBox([o[2] - w, o[1] + w, o[2], o[3] - w], y, h)];
   for (let l = 0; l < HOTEL_LEVEL_COUNT; l++) {
     const y0 = hotelLevelY(l);
-    if (l > 0) slabs.push(rectBox(B, y0 - 0.15, 0.3, { color: 0xe3dccb }));
-    edges.push(rectBox([B[0] - 0.5, B[1] - 0.5, B[2] + 0.5, B[3] + 0.5], y0 + H - 0.12, 0.24, { color: GOLD })); // list emas di tepi pelat
-    if (isSkyLobbyLevel(l)) { // sabuk emas Sky Lobby: bingkai menonjol setebal pelat, di atas jendela
-      const e = 1.2;
-      const by = y0 + H - 0.6;
-      belts.push(rectBox([B[0] - e, B[1] - e, B[2] + e, B[1]], by, 1.2), rectBox([B[0] - e, B[3], B[2] + e, B[3] + e], by, 1.2), rectBox([B[0] - e, B[1], B[0], B[3]], by, 1.2), rectBox([B[2], B[1], B[2] + e, B[3]], by, 1.2));
+    const f = hotelFootprint(l);
+    if (l > 0) slabs.push(rectBox(f, y0 - 0.15, 0.3, { color: 0xe3dccb }));
+    edges.push(rectBox([f[0] - 0.5, f[1] - 0.5, f[2] + 0.5, f[3] + 0.5], y0 + H - 0.12, 0.24, { color: GOLD })); // list emas di tepi pelat
+    if (isSkyLobbyLevel(l)) { // sabuk emas Sky Lobby: bingkai di batas antar zona, menutupi sambungan kulit dan gembungnya
+      const sc = towerScaleAt(l / TOWER_ZONE_LEVELS);
+      const e = SHELL_MARGIN + SHELL_BULGE + 0.7;
+      const o = [-TOWER_HALF.x * sc - e, TOWER_CENTER.z - TOWER_HALF.z * sc - e, TOWER_HALF.x * sc + e, TOWER_CENTER.z + TOWER_HALF.z * sc + e];
+      belts.push(...frame(o, 1.6, y0 + 0.2, 1.4));
     }
   }
-  slabs.push(rectBox(B, HOTEL_TOP_Y - 0.15, 0.3, { color: 0xe3dccb }), rectBox([B[0] - 0.5, B[1] - 0.5, B[2] + 0.5, B[3] + 0.5], HOTEL_TOP_Y + 0.5, 1.0, { color: GOLD }));
+  const ft = hotelFootprint(HOTEL_TOP_LEVEL);
+  slabs.push(rectBox(ft, HOTEL_TOP_Y - 0.15, 0.3, { color: 0xe3dccb }), rectBox([ft[0] - 0.5, ft[1] - 0.5, ft[2] + 0.5, ft[3] + 0.5], HOTEL_TOP_Y + 0.5, 1.0, { color: GOLD }));
   instancedBoxes(root, slabs, M.prop, { cast: true, receive: true });
   instancedBoxes(root, edges, M.prop);
   instancedBoxes(root, belts, M.gold, { cast: true });
 
-  // dinding kaca tirai dari lantai 5 sampai lantai 999 (podium dan Sky Level digambar per lantai karena punya pintu dan teras)
-  const gy0 = hotelLevelY(PODIUM_LEVELS);
-  const gh = hotelLevelY(HOTEL_TOP_LEVEL) - gy0;
-  const gy = gy0 + gh / 2;
-  const midX = (B[0] + B[2]) / 2;
-  const midZ = (B[1] + B[3]) / 2;
-  instancedBoxes(root, [
-    { x: midX, y: gy, z: B[1], sx: B[2] - B[0], sy: gh, sz: 0.12 }, { x: midX, y: gy, z: B[3], sx: B[2] - B[0], sy: gh, sz: 0.12 },
-    { x: B[0], y: gy, z: midZ, sx: 0.12, sy: gh, sz: B[3] - B[1] }, { x: B[2], y: gy, z: midZ, sx: 0.12, sy: gh, sz: B[3] - B[1] },
-  ], M.glass);
-  const fins = [];
-  for (const x of spaced(B[0], B[2], 6)) for (const z of [B[1], B[3]]) fins.push({ x, y: gy, z, sx: 0.28, sy: gh, sz: 0.4 });
-  for (const z of spaced(B[1], B[3], 6)) for (const x of [B[0], B[2]]) fins.push({ x, y: gy, z, sx: 0.4, sy: gh, sz: 0.28 });
-  instancedBoxes(root, fins, M.gold, { cast: true });
+  // kulit kaca meruncing dari lantai 5 sampai lantai 999 (podium dan Sky Level digambar per lantai karena punya pintu dan teras)
+  const zones = [];
+  for (let z = 0; z * TOWER_ZONE_LEVELS <= HOTEL_TOP_LEVEL; z++) { const zn = zoneOf(z); if (zn.b > zn.a) zones.push(zn); }
+  const shell = new THREE.Mesh(buildShellGeometry(zones), M.towerGlass);
+  shell.name = 'tower-shell';
+  root.add(shell);
+  instancedBars(root, shellRibs(zones), M.rib);
 
-  // mahkota atap: helipad, empat tiang sudut, dan antena
+  // mahkota atap: helipad, empat tiang sudut, dan jarum menara
   const helipad = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 0.12, 40), std(0x3a3d44));
   helipad.position.set(0, HOTEL_TOP_Y + 1.06, 448);
   const ring = new THREE.Mesh(new THREE.TorusGeometry(9.6, 0.25, 6, 48), std(0xf2c230));
@@ -209,11 +300,11 @@ export function buildHotelWorld(scene) {
     { x: -4, y: HOTEL_TOP_Y + 1.2, z: 448, sx: 0.8, sy: 0.05, sz: 6 }, { x: 4, y: HOTEL_TOP_Y + 1.2, z: 448, sx: 0.8, sy: 0.05, sz: 6 }, { x: 0, y: HOTEL_TOP_Y + 1.2, z: 448, sx: 8, sy: 0.05, sz: 0.8 },
   ], M.line);
   instancedBoxes(root, [
-    { x: B[0] + 3, y: HOTEL_TOP_Y + 12, z: B[1] + 3, sx: 1.2, sy: 24, sz: 1.2 }, { x: B[2] - 3, y: HOTEL_TOP_Y + 12, z: B[1] + 3, sx: 1.2, sy: 24, sz: 1.2 },
-    { x: B[0] + 3, y: HOTEL_TOP_Y + 12, z: B[3] - 3, sx: 1.2, sy: 24, sz: 1.2 }, { x: B[2] - 3, y: HOTEL_TOP_Y + 12, z: B[3] - 3, sx: 1.2, sy: 24, sz: 1.2 },
+    { x: ft[0] + 3, y: HOTEL_TOP_Y + 12, z: ft[1] + 3, sx: 1.2, sy: 24, sz: 1.2 }, { x: ft[2] - 3, y: HOTEL_TOP_Y + 12, z: ft[1] + 3, sx: 1.2, sy: 24, sz: 1.2 },
+    { x: ft[0] + 3, y: HOTEL_TOP_Y + 12, z: ft[3] - 3, sx: 1.2, sy: 24, sz: 1.2 }, { x: ft[2] - 3, y: HOTEL_TOP_Y + 12, z: ft[3] - 3, sx: 1.2, sy: 24, sz: 1.2 },
   ], M.gold, { cast: true });
-  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.6, 60, 8), M.gold);
-  mast.position.set(0, HOTEL_TOP_Y + 30, 430);
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 1.4, SPIRE_HEIGHT, 10), M.rib);
+  mast.position.set(0, HOTEL_TOP_Y + SPIRE_HEIGHT / 2, 434);
   root.add(mast);
 
   // ---- interior per lantai (dibangun hanya untuk lantai yang dekat pemain)
@@ -237,16 +328,17 @@ export function buildHotelWorld(scene) {
     const pools = [];
     const rails = [];
     const liftDoors = [];
+    const fp = hotelFootprint(l);
     const perimeterGlass = l < PODIUM_LEVELS || l >= HOTEL_TOP_LEVEL; // di antara itu, dinding kaca tirai cangkang yang dipakai
 
-    floors.push(rectBox(B, y0 + 0.02, 0.04, { color: isGuestLevel(l) ? 0x6b2330 : 0xe7e0d0 }));
+    floors.push(rectBox(fp, y0 + 0.02, 0.04, { color: isGuestLevel(l) ? 0x6b2330 : 0xe7e0d0 }));
     for (const r of L.rooms) if (r.kind !== 'core') floors.push(rectBox(r.rect, y0 + 0.045, 0.03, { color: FLOOR_COLORS[r.kind] ?? 0xddd5c3 }));
     floors.push(rectBox(HOTEL_CORE, y0 + 0.045, 0.03, { color: FLOOR_COLORS.core }));
     for (const w of L.walls) {
       const len = w.b - w.a;
       const mid = (w.a + w.b) / 2;
       const item = w.orient === 'h' ? { x: mid, z: w.coord, sx: len, sz: 0.3 } : { x: w.coord, z: mid, sx: 0.3, sz: len };
-      if (onPerimeter(w)) {
+      if (onPerimeter(w, fp)) {
         if (!perimeterGlass) continue;
         glass.push({ ...item, y: y0 + HOTEL_WALL_HEIGHT / 2, sy: HOTEL_WALL_HEIGHT, sz: item.sz * 0.5, sx: item.sx * (w.orient === 'h' ? 1 : 0.5) });
         for (let t = w.a; t <= w.b + 0.01; t += 6) mullions.push(w.orient === 'h' ? { x: t, y: y0 + HOTEL_WALL_HEIGHT / 2, z: w.coord, sx: 0.28, sy: HOTEL_WALL_HEIGHT, sz: 0.4 } : { x: w.coord, y: y0 + HOTEL_WALL_HEIGHT / 2, z: t, sx: 0.4, sy: HOTEL_WALL_HEIGHT, sz: 0.28 });
@@ -257,8 +349,9 @@ export function buildHotelWorld(scene) {
       lintels.push(d.orient === 'h' ? { x: d.x, y: y0 + DOOR_HEIGHT + h / 2, z: d.z, sx: d.width, sy: h, sz: 0.3 } : { x: d.x, y: y0 + DOOR_HEIGHT + h / 2, z: d.z, sx: 0.3, sy: h, sz: d.width });
     }
     // lampu langit-langit: kotak emisif tiap 6 m di ruang publik dan lorong
-    for (let x = B[0] + 3; x < B[2]; x += 6) for (let z = B[1] + 3; z < B[3]; z += 6) {
-      if (isGuestLevel(l) && (z < 430 || z > 466 || x < -26 || x > 26)) continue; // di dalam kamar tidak perlu
+    const guestRects = isGuestLevel(l) ? L.rooms.filter((r) => r.kind === 'guest').map((r) => r.rect) : [];
+    for (let x = fp[0] + 3; x < fp[2]; x += 6) for (let z = fp[1] + 3; z < fp[3]; z += 6) {
+      if (guestRects.some((r) => x > r[0] && x < r[2] && z > r[1] && z < r[3])) continue; // di dalam kamar tidak perlu
       ceilingLights.push({ x, y: y0 + HOTEL_WALL_HEIGHT - 0.04, z, sx: 1.6, sy: 0.06, sz: 1.6 });
     }
     for (const p of L.props) {
@@ -275,10 +368,10 @@ export function buildHotelWorld(scene) {
       if (r.kind === 'terrace') {
         const e = r.rect;
         const edge = (x1, z1, x2, z2, on) => on && rails.push({ x: (x1 + x2) / 2, y: y0 + 0.6, z: (z1 + z2) / 2, sx: Math.max(0.1, x2 - x1), sy: 1.2, sz: Math.max(0.1, z2 - z1) });
-        edge(e[0], e[1], e[2], e[1], e[1] === B[1]);
-        edge(e[0], e[3], e[2], e[3], e[3] === B[3]);
-        edge(e[0], e[1], e[0], e[3], e[0] === B[0]);
-        edge(e[2], e[1], e[2], e[3], e[2] === B[2]);
+        edge(e[0], e[1], e[2], e[1], e[1] === fp[1]);
+        edge(e[0], e[3], e[2], e[3], e[3] === fp[3]);
+        edge(e[0], e[1], e[0], e[3], e[0] === fp[0]);
+        edge(e[2], e[1], e[2], e[3], e[2] === fp[2]);
         if (r.id === 'infinity_pool') pools.push(rectBox([e[0] + 3, e[1] + 3, e[2] - 3, e[3] - 3], y0 + 0.07, 0.04));
       }
     }
