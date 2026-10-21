@@ -2,16 +2,21 @@
 // Hotel berdiri di dunia villa yang sama, di ujung selatan jalan raya dari gerbang villa (jarak ~300 m),
 // sehingga tamu harus berkendara. Modul ini murni data + matematika (tanpa THREE).
 //
-// Menara 15 lantai (level 0..14). Antar lantai memakai 4 lift di inti bangunan.
-//   level 0  Lobi, restoran | 1 Ballroom, rapat | 2 Spa, kolam renang dalam, gym | 3 Belanja, musala, klub anak, bioskop
-//   level 4..12 kamar tamu (34 kamar per lantai) | 13 suite eksekutif | 14 Sky Lounge, kolam infinity, teras
+// Menara 1000 lantai (level 0..999, tinggi total 4,2 km). Lantai dibuat malas (lazy) per lantai, tidak sekaligus.
+//   level 0..3   podium: Lobi, restoran | Ballroom, rapat | Spa, kolam renang dalam, gym | Belanja, musala, klub anak, bioskop
+//   level 4..997 kamar tamu (34 kamar per lantai), kecuali Sky Lobby
+//   Sky Lobby    tiap 50 lantai (level 50, 100, ... 950): fasilitas publik bergilir
+//   level 998    suite eksekutif | level 999 Sky Lounge, kolam infinity, teras
 import { PLAYER_RADIUS, WORLD_LIMIT, WALL_THICKNESS, BOUNDS as VILLA_BOUNDS, GATE_HALF_WIDTH, buildWallSegments, wallToRect, propToRect, resolveMove, isWalkable } from './villa-layout.js';
 
-export const HOTEL_LEVEL_COUNT = 15;
+export const HOTEL_LEVEL_COUNT = 1000;
 export const HOTEL_LEVEL_HEIGHT = 4.2;
 export const HOTEL_WALL_HEIGHT = 3.9;
+export const SKY_LOBBY_EVERY = 50;
+export const PODIUM_LEVELS = 4; // level 0..3 = podium publik
+export const HOTEL_TOP_LEVEL = HOTEL_LEVEL_COUNT - 1;
 export const hotelLevelY = (level) => (level ?? 0) * HOTEL_LEVEL_HEIGHT;
-export const HOTEL_TOP_Y = HOTEL_LEVEL_COUNT * HOTEL_LEVEL_HEIGHT; // 63 m: puncak menara (helipad di atapnya)
+export const HOTEL_TOP_Y = HOTEL_LEVEL_COUNT * HOTEL_LEVEL_HEIGHT; // 4200 m: puncak menara (helipad di atapnya)
 
 // Tapak bangunan dan halaman.
 export const HOTEL_BUILDING = Object.freeze([-36, 420, 36, 476]);
@@ -33,15 +38,56 @@ export function surfaceAt(x, z) {
   return 'ground';
 }
 
+// ---------------------------------------------------------------- jenis lantai
+/** Sky Lobby: lantai publik bergilir tiap SKY_LOBBY_EVERY lantai (bukan lantai atas). */
+export const isSkyLobbyLevel = (level) => Number.isInteger(level) && level > 0 && level % SKY_LOBBY_EVERY === 0 && level < HOTEL_TOP_LEVEL - 1;
+export const isGuestLevel = (level) => Number.isInteger(level) && level >= PODIUM_LEVELS && level <= HOTEL_TOP_LEVEL - 2 && !isSkyLobbyLevel(level);
+export const GUESTS_PER_LEVEL = 34;
+export const GUEST_LEVEL_COUNT = Array.from({ length: HOTEL_LEVEL_COUNT }, (_, l) => l).filter(isGuestLevel).length;
+export const GUEST_ROOM_TOTAL = GUEST_LEVEL_COUNT * GUESTS_PER_LEVEL;
+
+const PODIUM_NAMES = Object.freeze(['Lobi & Restoran', 'Ballroom & Pertemuan', 'Spa & Kebugaran', 'Gaya Hidup & Keluarga']);
+
+/** Nama lantai (level 0 = "Lantai 1"). */
+export function floorName(level) {
+  if (!Number.isInteger(level) || level < 0 || level >= HOTEL_LEVEL_COUNT) return '';
+  if (level < PODIUM_LEVELS) return PODIUM_NAMES[level];
+  if (level === HOTEL_TOP_LEVEL) return 'Sky Level';
+  if (level === HOTEL_TOP_LEVEL - 1) return 'Suite Eksekutif';
+  if (isSkyLobbyLevel(level)) return `Sky Lobby ${level / SKY_LOBBY_EVERY}`;
+  if (level < 300) return 'Deluxe';
+  if (level < 600) return 'Premier';
+  if (level < 900) return 'Grand Premier';
+  return 'Royal Residence';
+}
+
+const indexOf = (k) => (typeof k === 'string' && /^\d+$/.test(k) ? Number(k) : -1);
+
+/** Daftar nama lantai (mirip array: panjang 1000, FLOOR_NAMES[i] = floorName(i)); dihitung saat diminta. */
+export const FLOOR_NAMES = new Proxy([], {
+  get(target, key) {
+    if (key === 'length') return HOTEL_LEVEL_COUNT;
+    const i = indexOf(key);
+    return i >= 0 ? (i < HOTEL_LEVEL_COUNT ? floorName(i) : undefined) : Reflect.get(target, key);
+  },
+});
+
 // ---------------------------------------------------------------- inti, lift
 export const HOTEL_CORE = Object.freeze([-8, 440, 8, 456]);
 const CAB_X = [-5.25, -1.75, 1.75, 5.25];
 export const LIFTS = Object.freeze(CAB_X.map((cx, i) => Object.freeze({ id: `lift_${i + 1}`, name: `Lift ${i + 1}`, rect: [cx - 1.4, 441, cx + 1.4, 444.6] })));
-const LIFT_SECONDS_PER_LEVEL = 0.45;
+const LIFT_SECONDS_PER_LEVEL = 0.45; // lift biasa: sampai 20 lantai pertama
+const LIFT_EXPRESS_SECONDS_PER_LEVEL = 0.012; // lantai selanjutnya ditempuh dengan kecepatan ekspres
 const LIFT_BASE_SECONDS = 1.2;
 
 export function liftAt(x, z) {
   return LIFTS.find((l) => x >= l.rect[0] && x <= l.rect[2] && z >= l.rect[1] && z <= l.rect[3]) ?? null;
+}
+
+/** Lama perjalanan lift untuk `distance` lantai (ms); makin jauh makin lama, tetapi 999 lantai tetap di bawah 30 detik. */
+export function liftTravelMs(distance) {
+  const d = Math.abs(distance);
+  return Math.round((LIFT_BASE_SECONDS + Math.min(d, 20) * LIFT_SECONDS_PER_LEVEL + Math.max(0, d - 20) * LIFT_EXPRESS_SECONDS_PER_LEVEL) * 1000);
 }
 
 /** Naik/turun dengan lift: harus berdiri di dalam kabin. Mengembalikan posisi baru + lama perjalanan, atau null. */
@@ -49,8 +95,7 @@ export function rideLift(pos, toLevel) {
   const from = pos.level ?? 0;
   if (!Number.isInteger(toLevel) || toLevel < 0 || toLevel >= HOTEL_LEVEL_COUNT || toLevel === from) return null;
   if (!liftAt(pos.x, pos.z)) return null;
-  const travelMs = Math.round((LIFT_BASE_SECONDS + Math.abs(toLevel - from) * LIFT_SECONDS_PER_LEVEL) * 1000);
-  return { x: pos.x, z: pos.z, level: toLevel, stair: null, y: hotelLevelY(toLevel), travelMs };
+  return { x: pos.x, z: pos.z, level: toLevel, stair: null, y: hotelLevelY(toLevel), travelMs: liftTravelMs(toLevel - from) };
 }
 
 // ---------------------------------------------------------------- program lantai
@@ -60,12 +105,7 @@ const SLOT = Object.freeze({
   w: [-36, 440, -8, 476], e: [8, 440, 36, 476], s: [-8, 456, 8, 476],
 });
 
-export const FLOOR_NAMES = Object.freeze([
-  'Lobi & Restoran', 'Ballroom & Pertemuan', 'Spa & Kebugaran', 'Gaya Hidup & Keluarga',
-  'Deluxe', 'Deluxe', 'Deluxe', 'Deluxe', 'Deluxe', 'Premier', 'Premier', 'Premier', 'Premier',
-  'Suite Eksekutif', 'Sky Level',
-]);
-
+// Program publik per jenis lantai: 0..3 podium, 13 = suite eksekutif (lantai 999), 14 = Sky Level (lantai 1000).
 const PUBLIC_PROGRAM = Object.freeze({
   0: { n: ['lobby', 'Grand Lobby & Reception', 'lobby'], nw: ['concierge', 'Concierge & Bell Desk', 'lobby'], ne: ['lobby_cafe', 'Lobby Lounge & Cafe', 'restaurant'], w: ['grand_dining', 'Grand Dining', 'restaurant'], e: ['specialty_dining', 'Specialty Restaurant', 'restaurant'], s: ['kitchen', 'Kitchen & Service', 'kitchen'] },
   1: { n: ['ballroom', 'Grand Ballroom', 'hall'], nw: ['bridal_suite', 'Bridal Suite', 'bridal'], ne: ['foyer', 'Pre-function Foyer', 'lobby'], w: ['meeting_center', 'Meeting Center', 'meeting'], e: ['business_center', 'Business Center', 'meeting'], s: ['catering', 'Catering & Service', 'kitchen'] },
@@ -75,9 +115,19 @@ const PUBLIC_PROGRAM = Object.freeze({
   14: { n: ['sky_lounge', 'Sky Lounge & Bar', 'lounge'], nw: ['sky_terrace_w', 'Sky Terrace Barat', 'terrace'], ne: ['sky_terrace_e', 'Sky Terrace Timur', 'terrace'], w: ['infinity_pool', 'Infinity Pool', 'terrace'], e: ['sky_dining', 'Sky Dining', 'restaurant'], s: ['sky_spa', 'Sky Chapel & Wedding Deck', 'hall'] },
 });
 
-export const isGuestLevel = (level) => level >= 4 && level <= 12;
-export const GUESTS_PER_LEVEL = 34;
-export const GUEST_ROOM_TOTAL = (13 - 4) * GUESTS_PER_LEVEL;
+// Sky Lobby memakai program podium secara bergilir (lobi, gaya hidup, spa, ballroom).
+const SKY_LOBBY_CYCLE = Object.freeze([0, 3, 2, 1]);
+
+function programFor(level) {
+  if (level < PODIUM_LEVELS) return PUBLIC_PROGRAM[level];
+  if (level === HOTEL_TOP_LEVEL) return PUBLIC_PROGRAM[14];
+  if (level === HOTEL_TOP_LEVEL - 1) return PUBLIC_PROGRAM[13];
+  const k = level / SKY_LOBBY_EVERY;
+  const base = PUBLIC_PROGRAM[SKY_LOBBY_CYCLE[(k - 1) % SKY_LOBBY_CYCLE.length]];
+  const out = {};
+  for (const [slot, [id, name, kind]] of Object.entries(base)) out[slot] = [`${id}_l${level + 1}`, kind === 'kitchen' ? name : `Sky · ${name}`, kind];
+  return out;
+}
 
 const CORE_ROOM = (level) => ({ id: `core_${level}`, name: 'Lift & Tangga', kind: 'core', level, rect: HOTEL_CORE });
 
@@ -94,7 +144,7 @@ function guestCells(level) {
 
 function levelRooms(level) {
   if (isGuestLevel(level)) return [CORE_ROOM(level), ...guestCells(level)];
-  const prog = PUBLIC_PROGRAM[level];
+  const prog = programFor(level);
   return [CORE_ROOM(level), ...Object.entries(prog).map(([slot, [id, name, kind]]) => ({ id: `${id}`, name, kind, level, rect: SLOT[slot] }))];
 }
 
@@ -121,17 +171,37 @@ function levelProps(level) {
     for (const x of [-24, -12, 0, 12, 24]) for (const z of [426, 434]) out.push(p('table', x, z));
   } else if (level === 2) {
     out.push(p('tub', -22, 460), p('tub', 22, 470));
-  } else if (level === 13) {
+  } else if (isSkyLobbyLevel(level)) {
+    out.push(p('sofa', -6, 432), p('sofa', 6, 432), p('table', -14, 428), p('table', 14, 428), p('table', -22, 460), p('table', 22, 460));
+  } else if (level === HOTEL_TOP_LEVEL - 1) {
     for (const x of [-33, 33]) for (const z of [424]) out.push(p('bed', x, z));
     out.push(p('bed', -31, 470), p('bed', 31, 470), p('sofa', -3, 428), p('sofa', 3, 428));
-  } else if (level === 14) {
+  } else if (level === HOTEL_TOP_LEVEL) {
     out.push(p('table', -6, 426), p('table', 6, 426), p('table', 20, 458), p('table', 28, 458), p('lounger', -22, 450), p('lounger', -16, 450));
   }
   return out;
 }
 
-export const HOTEL_LEVELS_ROOMS = Object.freeze(Array.from({ length: HOTEL_LEVEL_COUNT }, (_, l) => Object.freeze(levelRooms(l))));
-export const hotelRoomsAtLevel = (level) => HOTEL_LEVELS_ROOMS[level] ?? [];
+const roomsCache = new Map();
+/** Ruang-ruang satu lantai (dibuat sekali, lalu disimpan). Lantai di luar 0..999 mengembalikan daftar kosong. */
+export function hotelRoomsAtLevel(level) {
+  if (!Number.isInteger(level) || level < 0 || level >= HOTEL_LEVEL_COUNT) return [];
+  let rooms = roomsCache.get(level);
+  if (!rooms) {
+    rooms = Object.freeze(levelRooms(level));
+    roomsCache.set(level, rooms);
+  }
+  return rooms;
+}
+
+/** Mirip array ruang per lantai; tiap lantai dibuat saat diakses. */
+export const HOTEL_LEVELS_ROOMS = new Proxy([], {
+  get(target, key) {
+    if (key === 'length') return HOTEL_LEVEL_COUNT;
+    const i = indexOf(key);
+    return i >= 0 ? (i < HOTEL_LEVEL_COUNT ? hotelRoomsAtLevel(i) : undefined) : Reflect.get(target, key);
+  },
+});
 
 // Area terbuka lantai dasar (label lokasi).
 export const HOTEL_ZONES = Object.freeze([
@@ -155,7 +225,7 @@ export const HOTEL_CAR_SPOTS = Object.freeze([
 
 export function roomAt(x, z, level = 0) {
   const room = hotelRoomsAtLevel(level).find((r) => inRect(r.rect, x, z));
-  if (room) return { id: room.id, name: room.name, kind: room.kind, indoor: room.kind !== 'terrace', level, floorName: FLOOR_NAMES[level] };
+  if (room) return { id: room.id, name: room.name, kind: room.kind, indoor: room.kind !== 'terrace', level, floorName: floorName(level) };
   if (level === 0) {
     const zone = HOTEL_ZONES.find((r) => inRect(r.rect, x, z));
     if (zone) return { id: zone.id, name: zone.name, kind: zone.kind, indoor: false, level };
@@ -167,15 +237,30 @@ export function roomAt(x, z, level = 0) {
 let cached = null;
 export function getHotelWorld() {
   if (cached) return cached;
-  const levels = [];
-  for (let level = 0; level < HOTEL_LEVEL_COUNT; level++) {
+  const levelCache = new Map();
+  const buildLevel = (level) => {
     const rooms = hotelRoomsAtLevel(level);
     const doors = levelDoors(level);
     const walls = buildWallSegments(rooms.filter((r) => r.kind !== 'terrace'), doors);
     const props = levelProps(level);
     const colliders = [...walls.map(wallToRect), ...props.map(propToRect), ...(level === 0 ? FIXED_COLLIDERS : [])];
-    levels.push(Object.freeze({ level, rooms, doors, walls, props, colliders }));
-  }
+    return Object.freeze({ level, rooms, doors, walls, props, colliders });
+  };
+  // Seribu lantai tidak dibangun sekaligus: tiap lantai dihitung saat pertama kali dipakai.
+  const levels = new Proxy([], {
+    get(target, key) {
+      if (key === 'length') return HOTEL_LEVEL_COUNT;
+      const i = indexOf(key);
+      if (i < 0) return Reflect.get(target, key);
+      if (i >= HOTEL_LEVEL_COUNT) return undefined;
+      let data = levelCache.get(i);
+      if (!data) {
+        data = buildLevel(i);
+        levelCache.set(i, data);
+      }
+      return data;
+    },
+  });
   const inBuilding = (x, z, r) => x >= HOTEL_BUILDING[0] + r && x <= HOTEL_BUILDING[2] - r && z >= HOTEL_BUILDING[1] + r && z <= HOTEL_BUILDING[3] - r;
 
   const move = (pos, dx, dz) => {
