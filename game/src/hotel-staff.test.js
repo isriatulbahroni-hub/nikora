@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GUEST_LEVEL_COUNT, hotelRoomsAtLevel } from './hotel-layout.js';
+import { GUEST_LEVEL_COUNT, HOTEL_PARKING, hotelRoomsAtLevel } from './hotel-layout.js';
 import {
-  STAFF, STAFF_ROLES, STAFF_TOTAL, SHIFTS, CLEAN_MS, onDuty, cleanerForLevel, cleanerLevels, housekeeperState, staffOnLevel, dutySummary,
+  STAFF, STAFF_ROLES, STAFF_TOTAL, SHIFTS, CLEAN_MS, onDuty, cleanerForLevel, cleanerLevels, housekeeperState, parkingState, staffOnLevel, dutySummary,
 } from './hotel-staff.js';
 
 const inRect = (r, x, z) => x >= r[0] - 1e-6 && x <= r[2] + 1e-6 && z >= r[1] - 1e-6 && z <= r[3] + 1e-6;
@@ -33,6 +33,7 @@ test('shift: lobi selalu ada resepsionis dan satpam; cleaning service hanya pagi
     const s = dutySummary(h);
     assert.ok(s.byRole.front_desk >= 1, `tanpa resepsionis jam ${h}`);
     assert.ok(s.byRole.security >= 1, `tanpa satpam jam ${h}`);
+    assert.ok(s.byRole.parking >= 1, `tanpa petugas parkir jam ${h}`);
     assert.ok(s.total > 0 && s.total < STAFF_TOTAL);
     assert.equal(Object.values(s.byRole).reduce((a, b) => a + b, 0), s.total);
   }
@@ -100,4 +101,29 @@ test('onDuty menangani shift malam yang melewati tengah malam', () => {
   assert.ok(onDuty(night, 23));
   assert.ok(onDuty(night, 2));
   assert.ok(!onDuty(night, 12));
+});
+
+test('petugas parkir: berpatroli di dalam area parkir, berhenti mengarahkan mobil, tidak teleport', () => {
+  const staff = STAFF.find((s) => s.role === 'parking' && s.index === 0);
+  const start = SHIFTS[staff.shift].from;
+  const tasks = new Set();
+  let prev = null;
+  let maxStep = 0;
+  for (let sec = 0; sec < 8 * 3600; sec++) {
+    const st = parkingState(staff, start + sec / 3600);
+    assert.equal(st.level, 0);
+    assert.ok(inRect(HOTEL_PARKING, st.x, st.z), 'harus berada di area parkir');
+    tasks.add(st.task);
+    if (prev) maxStep = Math.max(maxStep, Math.hypot(st.x - prev.x, st.z - prev.z));
+    prev = st;
+  }
+  assert.deepEqual([...tasks].sort(), ['directing', 'walking']);
+  assert.ok(maxStep <= 1.4 + 1e-6, `lompatan ${maxStep} m per detik`);
+});
+
+test('petugas parkir muncul di lantai 0 hanya saat bertugas', () => {
+  const day = staffOnLevel(0, 10).filter((s) => s.role === 'parking');
+  assert.ok(day.length >= 1);
+  assert.equal(new Set(day.map((s) => s.id)).size, day.length);
+  assert.equal(day.length, STAFF.filter((s) => s.role === 'parking' && onDuty(s, 10)).length);
 });
