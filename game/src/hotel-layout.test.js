@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_BUILDING, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_SITE, HOTEL_TOP_LEVEL, HOTEL_TOP_Y, GUEST_ROOM_TOTAL, GUEST_LEVEL_COUNT, GUESTS_PER_LEVEL,
   LIFTS, FLOOR_NAMES, ROAD, SKY_LOBBY_EVERY, getHotelWorld, hotelRoomsAtLevel, hotelLevelY, floorName, isGuestLevel, isSkyLobbyLevel, liftTravelMs, rideLift, liftAt, roomAt, HOTEL_CAR_SPOTS, surfaceAt,
+  hotelFootprint,
 } from './hotel-layout.js';
 import { BOUNDS, WORLD_LIMIT } from './villa-layout.js';
 
@@ -49,17 +50,37 @@ test('hotel: jauh dari villa (> 300 m dari pagar villa) namun masih di dalam bat
   assert.ok(HOTEL_BUILDING[0] > HOTEL_SITE.minX && HOTEL_BUILDING[2] < HOTEL_SITE.maxX && HOTEL_BUILDING[3] < HOTEL_SITE.maxZ);
 });
 
-test('hotel: ruang tiap lantai tidak saling menimpa, menutup seluruh tapak, dan di dalam bangunan', () => {
+test('hotel: ruang tiap lantai tidak saling menimpa, menutup seluruh tapak lantai itu, dan di dalam tapaknya', () => {
+  const eps = 1e-9;
   for (let l = 0; l < HOTEL_LEVEL_COUNT; l++) {
     const rooms = hotelRoomsAtLevel(l);
-    for (const r of rooms) assert.ok(r.rect[0] >= HOTEL_BUILDING[0] && r.rect[2] <= HOTEL_BUILDING[2] && r.rect[1] >= HOTEL_BUILDING[1] && r.rect[3] <= HOTEL_BUILDING[3], `${r.id} di dalam bangunan`);
+    const fp = hotelFootprint(l); // menara meruncing: tapak mengecil per zona 50 lantai
+    for (const r of rooms) assert.ok(r.rect[0] >= fp[0] - eps && r.rect[2] <= fp[2] + eps && r.rect[1] >= fp[1] - eps && r.rect[3] <= fp[3] + eps, `${r.id} di dalam tapak lantai ${l}`);
     for (let i = 0; i < rooms.length; i++) for (let j = i + 1; j < rooms.length; j++) assert.ok(!overlap(rooms[i].rect, rooms[j].rect), `lantai ${l}: ${rooms[i].id} menimpa ${rooms[j].id}`);
     const ids = new Set(rooms.map((r) => r.id));
     assert.equal(ids.size, rooms.length, `id unik di lantai ${l}`);
-    if (!isGuestLevel(l)) assert.ok(Math.abs(rooms.reduce((s, r) => s + area(r.rect), 0) - area(HOTEL_BUILDING)) < 1e-6, `lantai publik ${l} menutup seluruh tapak`);
+    if (!isGuestLevel(l)) assert.ok(Math.abs(rooms.reduce((s, r) => s + area(r.rect), 0) - area(fp)) < 1e-6, `lantai publik ${l} menutup seluruh tapak`);
   }
   assert.deepEqual(hotelRoomsAtLevel(-1), []);
   assert.deepEqual(hotelRoomsAtLevel(1000), []);
+});
+
+test('hotel: menara meruncing per zona 50 lantai, tapak tidak pernah melebar, inti lift tetap', () => {
+  assert.deepEqual([...hotelFootprint(0)], [...HOTEL_BUILDING]);
+  assert.deepEqual([...hotelFootprint(49)], [...HOTEL_BUILDING], 'zona 0 (lantai 0..49) memakai tapak penuh');
+  let prev = area(hotelFootprint(0));
+  for (let l = 1; l < HOTEL_LEVEL_COUNT; l++) {
+    const a = area(hotelFootprint(l));
+    assert.ok(a <= prev + 1e-9, `lantai ${l} tidak lebih luas dari lantai di bawahnya`);
+    prev = a;
+  }
+  const base = area(HOTEL_BUILDING);
+  assert.ok(area(hotelFootprint(50)) < base, 'zona 1 sudah menyusut');
+  const top = hotelFootprint(TOP);
+  assert.ok(Math.abs(top[2] - top[0] - 72 * 0.7) < 1e-6, 'lebar puncak = 70% dari dasar');
+  assert.ok(Math.abs(top[3] - top[1] - 56 * 0.7) < 1e-6, 'dalam puncak = 70% dari dasar');
+  assert.ok(Math.abs((top[0] + top[2]) / 2) < 1e-9 && Math.abs((top[1] + top[3]) / 2 - 448) < 1e-9, 'tetap sepusat dengan dasar');
+  for (const l of [0, 5, 50, 500, 998, TOP]) assert.deepEqual(hotelRoomsAtLevel(l).find((r) => r.kind === 'core').rect, HOTEL_CORE, `inti lantai ${l} tidak mengecil`);
 });
 
 test('hotel: 975 lantai kamar tamu x 34 kamar, nomor kamar dan id unik, fasilitas lengkap di podium, Sky Lobby, dan puncak', () => {
@@ -148,14 +169,16 @@ test('hotel: tembok kamar menghalangi, pintu kamar dari lorong bisa dimasuki, te
   let q = { x: room.rect[0] + 1, z: room.rect[3] - 1, level: 5 };
   for (let i = 0; i < 80; i++) q = w.move(q, -0.1, 0);
   assert.ok(q.x >= HOTEL_BUILDING[0], 'tidak keluar bangunan');
-  // tepi bangunan lantai teratas (teras): tidak bisa melangkah ke luar
-  let t = { x: -33, z: 424, level: TOP };
+  // tepi bangunan lantai teratas (teras): tidak bisa melangkah ke luar tapak lantai itu (tapak menyusut di puncak)
+  const fpTop = hotelFootprint(TOP);
+  let t = { x: -22, z: 432, level: TOP };
   for (let i = 0; i < 100; i++) t = w.move(t, -0.1, -0.1);
-  assert.ok(t.x >= HOTEL_BUILDING[0] && t.z >= HOTEL_BUILDING[1]);
+  assert.ok(t.x >= fpTop[0] && t.z >= fpTop[1], `tetap di dalam tapak puncak (${t.x.toFixed(2)}, ${t.z.toFixed(2)})`);
   // dan di lantai kamar jauh di atas pun berlaku sama
-  let u = { x: -33, z: 424, level: 701 };
+  const fp701 = hotelFootprint(701);
+  let u = { x: -27, z: 428, level: 701 };
   for (let i = 0; i < 100; i++) u = w.move(u, -0.1, -0.1);
-  assert.ok(u.x >= HOTEL_BUILDING[0] && u.z >= HOTEL_BUILDING[1]);
+  assert.ok(u.x >= fp701[0] && u.z >= fp701[1], `tetap di dalam tapak lantai 702 (${u.x.toFixed(2)}, ${u.z.toFixed(2)})`);
   assert.equal(u.y, hotelLevelY(701));
 });
 
@@ -164,9 +187,10 @@ test('hotel: roomAt memberi nama ruang, halaman, dan jalan', () => {
   assert.equal(roomAt(0, 400, 0).name, 'Drop-off & Valet');
   assert.equal(roomAt(0, 300, 0).name, 'Jalan Raya NIKORA');
   assert.equal(roomAt(-30, 450, 2).name, 'Indoor Swimming Pool');
-  assert.equal(roomAt(-30, 450, TOP).kind, 'terrace');
-  assert.equal(roomAt(0, 424, TOP).name, 'Sky Lounge & Bar');
-  assert.equal(roomAt(-30, 430, 998).name, 'Royal Suite');
+  // lantai 998/999 berdenah menyusut (skala 0,70): titik uji dipilih di dalam petak yang sudah dipadatkan
+  assert.equal(roomAt(-20, 450, TOP).kind, 'terrace');
+  assert.equal(roomAt(0, 432, TOP).name, 'Sky Lounge & Bar');
+  assert.equal(roomAt(-22, 432, 998).name, 'Royal Suite');
 });
 
 test('hotel: slot parkir dan valet ada di atas aspal dan di luar bangunan', () => {

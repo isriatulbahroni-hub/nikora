@@ -49,7 +49,8 @@ test('hotel: describePlace menamai lorong lantai tamu, lobi, halaman, dan teras'
   assert.equal(corridor.inside, true);
   const yard = describePlace(world, 0, 404, 0);
   assert.equal(yard.inside, false);
-  const terrace = describePlace(world, -31, 430, HOTEL_TOP_LEVEL);
+  // lantai puncak berdenah menyusut (skala 0,70): teras barat ada di x -25,2..-19,1 dan z 428,4..440
+  const terrace = describePlace(world, -22, 432, HOTEL_TOP_LEVEL);
   assert.equal(terrace.kind, 'terrace');
   assert.equal(terrace.indoor, false);
   assert.equal(terrace.inside, true);
