@@ -33,7 +33,7 @@ export function createVehicle({ id, x = 0, z = 0, heading = 0, color = 0xf2f2f0 
 
 /**
  * Satu langkah fisika. input = { throttle: -1..1, steer: -1..1 (kanan positif), brake?: bool }.
- * env = { colliders, surfaceAt }. Mengubah dan mengembalikan `v`. v.hit = kekuatan benturan langkah ini (0 = tidak ada).
+ * env = { colliders, surfaceAt, limit? } (limit = batas dunia; bawaan WORLD_LIMIT villa, hotel memakai HIGHWAY_LIMIT). Mengubah dan mengembalikan `v`. v.hit = kekuatan benturan langkah ini (0 = tidak ada).
  */
 export function stepVehicle(v, input, dt, env = {}) {
   const surface = (env.surfaceAt ?? defaultSurface)(v.x, v.z);
@@ -78,7 +78,7 @@ export function stepVehicle(v, input, dt, env = {}) {
     let oz = 0;
     for (const s of [CAR.circleOffset, -CAR.circleOffset]) {
       const p = { x: v.x + f.x * s, z: v.z + f.z * s };
-      const q = resolveMove(p, CAR.circleRadius, colliders, WORLD_LIMIT);
+      const q = resolveMove(p, CAR.circleRadius, colliders, env.limit ?? WORLD_LIMIT);
       ox += q.x - p.x;
       oz += q.z - p.z;
     }
@@ -90,7 +90,7 @@ export function stepVehicle(v, input, dt, env = {}) {
       v.speed *= 0.2; // benturan: hampir berhenti
     }
   }
-  const b = WORLD_LIMIT;
+  const b = env.limit ?? WORLD_LIMIT;
   v.x = clamp(v.x, b.minX + CAR.length / 2, b.maxX - CAR.length / 2);
   v.z = clamp(v.z, b.minZ + CAR.length / 2, b.maxZ - CAR.length / 2);
   return v;
