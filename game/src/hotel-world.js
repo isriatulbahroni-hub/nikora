@@ -1,16 +1,19 @@
-// NIKORA Grand Hotel (THREE): menara 15 lantai, halaman, jalan raya, dan parkir. Geometri dari hotel-layout.js.
-// Semua benda banyak digambar dengan InstancedMesh (satu draw call per bahan) agar ringan di HP.
+// NIKORA Grand Hotel (THREE): menara 1000 lantai, halaman, jalan raya, dan parkir. Geometri dari hotel-layout.js.
+// Cangkang menara (pelat, tiang kaca, sabuk Sky Lobby, mahkota) digambar sekali untuk seluruh 1000 lantai dengan InstancedMesh.
+// Interior (lantai, dinding, perabot, tempat tidur) hanya dibangun untuk lantai podium dan lantai di sekitar pemain,
+// lalu dibuang lagi saat pemain pindah lantai, supaya tetap ringan di HP.
 import * as THREE from 'three';
 import { DOOR_HEIGHT } from './villa-layout.js';
 import { bedGeometries } from './villa-props.js';
 import {
   HOTEL_BUILDING, HOTEL_CANOPY, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_FOUNTAIN, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_PARKING, HOTEL_SITE,
-  HOTEL_TOP_Y, HOTEL_WALL_HEIGHT, LIFTS, ROAD, getHotelWorld, hotelLevelY, isGuestLevel,
+  HOTEL_TOP_LEVEL, HOTEL_TOP_Y, HOTEL_WALL_HEIGHT, LIFTS, PODIUM_LEVELS, ROAD, getHotelWorld, hotelLevelY, isGuestLevel, isSkyLobbyLevel,
 } from './hotel-layout.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const GOLD = 0xc9a24b;
 const CREAM = 0xf1e9d6;
+const INTERIOR_WINDOW = 1; // lantai di atas dan di bawah pemain yang interiornya ikut dibangun (selain podium)
 const FLOOR_COLORS = { lobby: 0xe9e2d2, restaurant: 0xc7b394, kitchen: 0xbcc2c5, hall: 0xd2b27a, bridal: 0xeed9d4, meeting: 0x9aa3ad, spa: 0xd9d0bf, pool: 0x4aa7c9, gym: 0x4b4f55, shop: 0xded6c6, prayer: 0x2e6b4f, kids: 0xf0c75e, cinema: 0x3a1f2e, games: 0x2b2f4a, library: 0x7a5a3c, guest: 0xb89a72, lounge: 0xa98e6a, suite: 0xcdb28a, terrace: 0xc9bda3, core: 0xd9d3c4 };
 const PROP_LOOK = { desk: [1.8, 1.1, 0.5, 0x6b4a2f], table: [0.85, 0.8, 0.85, 0xd8c8a8], counter: [1.2, 0.95, 0.5, 0xe8e2d6], sofa: [1.1, 0.8, 0.5, 0x23395b], tub: [1.5, 0.6, 1.0, 0xf4f4f0], lounger: [0.33, 0.45, 0.95, 0xf2f0ea] };
 
@@ -42,6 +45,12 @@ const rectBox = (r, y, h, extra = {}) => ({ x: (r[0] + r[2]) / 2, y, z: (r[1] + 
 const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0, ...o });
 const onPerimeter = (w) => (w.orient === 'h' ? (w.coord === HOTEL_BUILDING[1] || w.coord === HOTEL_BUILDING[3]) : (w.coord === HOTEL_BUILDING[0] || w.coord === HOTEL_BUILDING[2]));
 
+/** Titik-titik sama jarak (maks. `step` m) dari a sampai b, termasuk kedua ujung. */
+function spaced(a, b, step) {
+  const n = Math.max(1, Math.ceil((b - a) / step));
+  return Array.from({ length: n + 1 }, (_, i) => a + ((b - a) * i) / n);
+}
+
 function signTexture() {
   const c = document.createElement('canvas');
   c.width = 1024;
@@ -68,7 +77,7 @@ function levelOccluders(world, level) {
   const y0 = hotelLevelY(level);
   const boxes = [];
   const add = (minX, maxX, minY, maxY, minZ, maxZ) => boxes.push({ minX, maxX, minY, maxY, minZ, maxZ });
-  for (const c of L.colliders) if (!L.props.length || true) add(c.minX, c.maxX, y0, y0 + HOTEL_WALL_HEIGHT, c.minZ, c.maxZ);
+  for (const c of L.colliders) add(c.minX, c.maxX, y0, y0 + HOTEL_WALL_HEIGHT, c.minZ, c.maxZ);
   for (const d of L.doors) {
     const hw = d.width / 2;
     if (d.orient === 'h') add(d.x - hw, d.x + hw, y0 + DOOR_HEIGHT, y0 + HOTEL_WALL_HEIGHT, d.z - 0.15, d.z + 0.15);
@@ -87,6 +96,7 @@ export function buildHotelWorld(scene) {
   root.name = 'nikora-grand-hotel';
   scene.add(root);
   const B = HOTEL_BUILDING;
+  const H = HOTEL_LEVEL_HEIGHT;
   const M = {
     asphalt: std(0x2c2e33, { roughness: 0.95 }), line: std(0xf2f0e4, { roughness: 0.7 }), curb: std(0xcfcfc8), stone: std(0xd9d2c3, { roughness: 0.85 }),
     gold: std(GOLD, { roughness: 0.35, metalness: 0.75 }), wall: std(CREAM, { roughness: 0.9 }), slab: std(0xe3dccb), dark: std(0x1a1b1f),
@@ -154,23 +164,81 @@ export function buildHotelWorld(scene) {
   instancedBoxes(root, trunks, M.trunk, { cast: true });
   instancedBoxes(root, crowns, M.leaf, { cast: true });
 
-  // ---- menara
+  // ---- cangkang menara (seluruh 1000 lantai, murah: beberapa InstancedMesh saja)
   const slabs = [];
-  const floors = [];
-  const walls = [];
-  const glass = [];
-  const mullions = [];
-  const lintels = [];
-  const ceilingLights = [];
-  const props = [];
-  const beds = [];
-  const pools = [];
-  const rails = [];
+  const edges = [];
+  const belts = [];
   for (let l = 0; l < HOTEL_LEVEL_COUNT; l++) {
+    const y0 = hotelLevelY(l);
+    if (l > 0) slabs.push(rectBox(B, y0 - 0.15, 0.3, { color: 0xe3dccb }));
+    edges.push(rectBox([B[0] - 0.5, B[1] - 0.5, B[2] + 0.5, B[3] + 0.5], y0 + H - 0.12, 0.24, { color: GOLD })); // list emas di tepi pelat
+    if (isSkyLobbyLevel(l)) { // sabuk emas Sky Lobby: bingkai menonjol setebal pelat, di atas jendela
+      const e = 1.2;
+      const by = y0 + H - 0.6;
+      belts.push(rectBox([B[0] - e, B[1] - e, B[2] + e, B[1]], by, 1.2), rectBox([B[0] - e, B[3], B[2] + e, B[3] + e], by, 1.2), rectBox([B[0] - e, B[1], B[0], B[3]], by, 1.2), rectBox([B[2], B[1], B[2] + e, B[3]], by, 1.2));
+    }
+  }
+  slabs.push(rectBox(B, HOTEL_TOP_Y - 0.15, 0.3, { color: 0xe3dccb }), rectBox([B[0] - 0.5, B[1] - 0.5, B[2] + 0.5, B[3] + 0.5], HOTEL_TOP_Y + 0.5, 1.0, { color: GOLD }));
+  instancedBoxes(root, slabs, M.prop, { cast: true, receive: true });
+  instancedBoxes(root, edges, M.prop);
+  instancedBoxes(root, belts, M.gold, { cast: true });
+
+  // dinding kaca tirai dari lantai 5 sampai lantai 999 (podium dan Sky Level digambar per lantai karena punya pintu dan teras)
+  const gy0 = hotelLevelY(PODIUM_LEVELS);
+  const gh = hotelLevelY(HOTEL_TOP_LEVEL) - gy0;
+  const gy = gy0 + gh / 2;
+  const midX = (B[0] + B[2]) / 2;
+  const midZ = (B[1] + B[3]) / 2;
+  instancedBoxes(root, [
+    { x: midX, y: gy, z: B[1], sx: B[2] - B[0], sy: gh, sz: 0.12 }, { x: midX, y: gy, z: B[3], sx: B[2] - B[0], sy: gh, sz: 0.12 },
+    { x: B[0], y: gy, z: midZ, sx: 0.12, sy: gh, sz: B[3] - B[1] }, { x: B[2], y: gy, z: midZ, sx: 0.12, sy: gh, sz: B[3] - B[1] },
+  ], M.glass);
+  const fins = [];
+  for (const x of spaced(B[0], B[2], 6)) for (const z of [B[1], B[3]]) fins.push({ x, y: gy, z, sx: 0.28, sy: gh, sz: 0.4 });
+  for (const z of spaced(B[1], B[3], 6)) for (const x of [B[0], B[2]]) fins.push({ x, y: gy, z, sx: 0.4, sy: gh, sz: 0.28 });
+  instancedBoxes(root, fins, M.gold, { cast: true });
+
+  // mahkota atap: helipad, empat tiang sudut, dan antena
+  const helipad = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 0.12, 40), std(0x3a3d44));
+  helipad.position.set(0, HOTEL_TOP_Y + 1.06, 448);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(9.6, 0.25, 6, 48), std(0xf2c230));
+  ring.rotation.x = Math.PI / 2;
+  ring.position.copy(helipad.position).setY(HOTEL_TOP_Y + 1.15);
+  root.add(helipad, ring);
+  instancedBoxes(root, [
+    { x: -4, y: HOTEL_TOP_Y + 1.2, z: 448, sx: 0.8, sy: 0.05, sz: 6 }, { x: 4, y: HOTEL_TOP_Y + 1.2, z: 448, sx: 0.8, sy: 0.05, sz: 6 }, { x: 0, y: HOTEL_TOP_Y + 1.2, z: 448, sx: 8, sy: 0.05, sz: 0.8 },
+  ], M.line);
+  instancedBoxes(root, [
+    { x: B[0] + 3, y: HOTEL_TOP_Y + 12, z: B[1] + 3, sx: 1.2, sy: 24, sz: 1.2 }, { x: B[2] - 3, y: HOTEL_TOP_Y + 12, z: B[1] + 3, sx: 1.2, sy: 24, sz: 1.2 },
+    { x: B[0] + 3, y: HOTEL_TOP_Y + 12, z: B[3] - 3, sx: 1.2, sy: 24, sz: 1.2 }, { x: B[2] - 3, y: HOTEL_TOP_Y + 12, z: B[3] - 3, sx: 1.2, sy: 24, sz: 1.2 },
+  ], M.gold, { cast: true });
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.6, 60, 8), M.gold);
+  mast.position.set(0, HOTEL_TOP_Y + 30, 430);
+  root.add(mast);
+
+  // ---- interior per lantai (dibangun hanya untuk lantai yang dekat pemain)
+  const bg = bedGeometries();
+  const bedMaterials = [M.vertex, std(0xffffff, { roughness: 0.9 }), new THREE.MeshBasicMaterial({ color: 0xffe2a8 })];
+  const bedGeos = [bg.base, bg.duvet, bg.lamps];
+
+  function buildLevel(l) {
+    const group = new THREE.Group();
+    group.name = `hotel-level-${l}`;
     const L = world.levels[l];
     const y0 = hotelLevelY(l);
-    if (l > 0) slabs.push(rectBox(B, y0 - 0.15, 0.3));
-    slabs.push(rectBox([B[0] - 0.5, B[1] - 0.5, B[2] + 0.5, B[3] + 0.5], y0 + HOTEL_LEVEL_HEIGHT - 0.12, 0.24, { color: GOLD })); // list emas di tepi pelat
+    const floors = [];
+    const walls = [];
+    const glass = [];
+    const mullions = [];
+    const lintels = [];
+    const ceilingLights = [];
+    const props = [];
+    const beds = [];
+    const pools = [];
+    const rails = [];
+    const liftDoors = [];
+    const perimeterGlass = l < PODIUM_LEVELS || l >= HOTEL_TOP_LEVEL; // di antara itu, dinding kaca tirai cangkang yang dipakai
+
     floors.push(rectBox(B, y0 + 0.02, 0.04, { color: isGuestLevel(l) ? 0x6b2330 : 0xe7e0d0 }));
     for (const r of L.rooms) if (r.kind !== 'core') floors.push(rectBox(r.rect, y0 + 0.045, 0.03, { color: FLOOR_COLORS[r.kind] ?? 0xddd5c3 }));
     floors.push(rectBox(HOTEL_CORE, y0 + 0.045, 0.03, { color: FLOOR_COLORS.core }));
@@ -179,6 +247,7 @@ export function buildHotelWorld(scene) {
       const mid = (w.a + w.b) / 2;
       const item = w.orient === 'h' ? { x: mid, z: w.coord, sx: len, sz: 0.3 } : { x: w.coord, z: mid, sx: 0.3, sz: len };
       if (onPerimeter(w)) {
+        if (!perimeterGlass) continue;
         glass.push({ ...item, y: y0 + HOTEL_WALL_HEIGHT / 2, sy: HOTEL_WALL_HEIGHT, sz: item.sz * 0.5, sx: item.sx * (w.orient === 'h' ? 1 : 0.5) });
         for (let t = w.a; t <= w.b + 0.01; t += 6) mullions.push(w.orient === 'h' ? { x: t, y: y0 + HOTEL_WALL_HEIGHT / 2, z: w.coord, sx: 0.28, sy: HOTEL_WALL_HEIGHT, sz: 0.4 } : { x: w.coord, y: y0 + HOTEL_WALL_HEIGHT / 2, z: t, sx: 0.4, sy: HOTEL_WALL_HEIGHT, sz: 0.28 });
       } else walls.push({ ...item, y: y0 + HOTEL_WALL_HEIGHT / 2, sy: HOTEL_WALL_HEIGHT });
@@ -195,7 +264,7 @@ export function buildHotelWorld(scene) {
     for (const p of L.props) {
       if (p.type === 'bed') {
         const ry = p.z < 430 ? 0 : p.z > 466 ? Math.PI : p.x < 0 ? Math.PI / 2 : -Math.PI / 2;
-        beds.push({ x: p.x, y: y0, z: p.z, ry, l });
+        beds.push({ x: p.x, y: y0, z: p.z, ry });
         continue;
       }
       const look = PROP_LOOK[p.type];
@@ -213,68 +282,74 @@ export function buildHotelWorld(scene) {
         if (r.id === 'infinity_pool') pools.push(rectBox([e[0] + 3, e[1] + 3, e[2] - 3, e[3] - 3], y0 + 0.07, 0.04));
       }
     }
-  }
-  slabs.push(rectBox(B, HOTEL_TOP_Y - 0.15, 0.3), rectBox([B[0] - 0.5, B[1] - 0.5, B[2] + 0.5, B[3] + 0.5], HOTEL_TOP_Y + 0.5, 1.0, { color: GOLD }));
-  const lobbyFloor = instancedBoxes(root, floors, M.floor, { receive: true });
-  void lobbyFloor;
-  instancedBoxes(root, slabs, M.prop, { cast: true, receive: true });
-  instancedBoxes(root, walls, M.wall, { cast: true, receive: true });
-  instancedBoxes(root, lintels, M.wall, { cast: true });
-  instancedBoxes(root, mullions, M.gold, { cast: true });
-  instancedBoxes(root, glass, M.glass);
-  instancedBoxes(root, rails, M.glass);
-  instancedBoxes(root, ceilingLights, M.light);
-  instancedBoxes(root, props, M.prop, { cast: false });
-  instancedBoxes(root, pools, M.water);
+    for (const lift of LIFTS) liftDoors.push({ x: (lift.rect[0] + lift.rect[2]) / 2, y: y0 + 1.5, z: lift.rect[1] + 0.05, sx: 2.6, sy: 3.0, sz: 0.08 });
 
-  // tempat tidur kamar (geometri sama dengan kamar villa)
-  const bg = bedGeometries();
-  const bedMeshes = [[bg.base, M.vertex], [bg.duvet, std(0xffffff, { roughness: 0.9 })], [bg.lamps, new THREE.MeshBasicMaterial({ color: 0xffe2a8 })]].map(([geo, mat]) => {
-    const mesh = new THREE.InstancedMesh(geo, mat, beds.length);
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const e = new THREE.Euler();
-    beds.forEach((b, i) => mesh.setMatrixAt(i, m.compose(new THREE.Vector3(b.x, b.y, b.z), q.setFromEuler(e.set(0, b.ry, 0)), new THREE.Vector3(1, 1, 1))));
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.computeBoundingSphere();
-    root.add(mesh);
-    return mesh;
-  });
-  void bedMeshes;
-
-  // inti: pintu lift emas di dinding belakang kabin, dan penanda atap
-  const liftDoors = [];
-  for (let l = 0; l < HOTEL_LEVEL_COUNT; l++) for (const lift of LIFTS) {
-    const y0 = hotelLevelY(l);
-    liftDoors.push({ x: (lift.rect[0] + lift.rect[2]) / 2, y: y0 + 1.5, z: lift.rect[1] + 0.05, sx: 2.6, sy: 3.0, sz: 0.08 });
+    instancedBoxes(group, floors, M.floor, { receive: true });
+    instancedBoxes(group, walls, M.wall, { cast: true, receive: true });
+    instancedBoxes(group, lintels, M.wall, { cast: true });
+    instancedBoxes(group, mullions, M.gold, { cast: true });
+    instancedBoxes(group, glass, M.glass);
+    instancedBoxes(group, rails, M.glass);
+    instancedBoxes(group, ceilingLights, M.light);
+    instancedBoxes(group, props, M.prop, { cast: false });
+    instancedBoxes(group, pools, M.water);
+    instancedBoxes(group, liftDoors, M.gold);
+    if (beds.length) {
+      bedGeos.forEach((geo, k) => {
+        const mesh = new THREE.InstancedMesh(geo, bedMaterials[k], beds.length);
+        const m = new THREE.Matrix4();
+        const q = new THREE.Quaternion();
+        const e = new THREE.Euler();
+        beds.forEach((b, i) => mesh.setMatrixAt(i, m.compose(new THREE.Vector3(b.x, b.y, b.z), q.setFromEuler(e.set(0, b.ry, 0)), new THREE.Vector3(1, 1, 1))));
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.computeBoundingSphere();
+        group.add(mesh);
+      });
+    }
+    return group;
   }
-  instancedBoxes(root, liftDoors, M.gold);
-  // helipad dan mahkota atap
-  const helipad = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 0.12, 40), std(0x3a3d44));
-  helipad.position.set(0, HOTEL_TOP_Y + 1.06, 448);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(9.6, 0.25, 6, 48), std(0xf2c230));
-  ring.rotation.x = Math.PI / 2;
-  ring.position.copy(helipad.position).setY(HOTEL_TOP_Y + 1.15);
-  root.add(helipad, ring);
-  instancedBoxes(root, [
-    { x: -4, y: HOTEL_TOP_Y + 1.2, z: 448, sx: 0.8, sy: 0.05, sz: 6 }, { x: 4, y: HOTEL_TOP_Y + 1.2, z: 448, sx: 0.8, sy: 0.05, sz: 6 }, { x: 0, y: HOTEL_TOP_Y + 1.2, z: 448, sx: 8, sy: 0.05, sz: 0.8 },
-  ], M.line);
-  instancedBoxes(root, [
-    { x: B[0] + 3, y: HOTEL_TOP_Y + 4, z: B[1] + 3, sx: 1.2, sy: 8, sz: 1.2 }, { x: B[2] - 3, y: HOTEL_TOP_Y + 4, z: B[1] + 3, sx: 1.2, sy: 8, sz: 1.2 },
-    { x: B[0] + 3, y: HOTEL_TOP_Y + 4, z: B[3] - 3, sx: 1.2, sy: 8, sz: 1.2 }, { x: B[2] - 3, y: HOTEL_TOP_Y + 4, z: B[3] - 3, sx: 1.2, sy: 8, sz: 1.2 },
-  ], M.gold, { cast: true });
-  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.4, 18, 8), M.gold);
-  mast.position.set(0, HOTEL_TOP_Y + 10, 430);
-  root.add(mast);
+
+  const groups = new Map();
+  let focusLevel = -1;
+  const wanted = (level) => {
+    const keep = new Set();
+    for (let l = 0; l < PODIUM_LEVELS; l++) keep.add(l); // podium (lobi, ballroom, spa, belanja) selalu terlihat dari luar
+    for (let l = Math.max(0, level - INTERIOR_WINDOW); l <= Math.min(HOTEL_LEVEL_COUNT - 1, level + INTERIOR_WINDOW); l++) keep.add(l);
+    return keep;
+  };
+  /** Pusatkan interior di sekitar `level`: bangun lantai yang baru dekat, buang yang sudah jauh. */
+  function focus(level) {
+    const target = Math.min(HOTEL_LEVEL_COUNT - 1, Math.max(0, Math.round(level)));
+    if (target === focusLevel) return;
+    focusLevel = target;
+    const keep = wanted(target);
+    for (const [l, group] of groups) {
+      if (keep.has(l)) continue;
+      root.remove(group);
+      group.traverse((o) => { if (o.isInstancedMesh) o.dispose(); });
+      groups.delete(l);
+    }
+    for (const l of keep) {
+      if (groups.has(l)) continue;
+      const group = buildLevel(l);
+      root.add(group);
+      groups.set(l, group);
+    }
+  }
+  focus(0);
 
   const occCache = new Map();
   return {
     root,
     world,
+    focus,
+    /** Kotak penghalang kamera untuk lantai pemain. Dipanggil tiap frame, sekaligus memusatkan interior di lantai itu. */
     occluders: (level) => {
+      focus(level);
       if (!occCache.has(level)) occCache.set(level, levelOccluders(world, level));
       return occCache.get(level);
     },
+    builtLevels: () => [...groups.keys()].sort((a, b) => a - b),
     dispose: () => { scene.remove(root); },
   };
 }
