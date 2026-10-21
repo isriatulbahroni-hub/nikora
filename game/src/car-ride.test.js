@@ -11,7 +11,7 @@ const mk = (extra = {}) => {
   const fleet = new Fleet({ specs: villaCars(), selfId: 'aku', env });
   const toasts = [];
   const h = hud();
-  const ride = createCarRide({ fleet, view: noopView, hud: h, toast: (t) => toasts.push(t), ...extra });
+  const ride = createCarRide({ fleet, view: noopView, hud: h, toast: (t) => toasts.push(t), role: 'owner', ...extra });
   return { fleet, ride, toasts, h };
 };
 
@@ -86,4 +86,36 @@ test('kamera ikut ke belakang mobil saat mengemudi, kecuali pemain sedang memuta
   dragging = false;
   for (let i = 0; i < 120; i++) ride.step(me, { delta: 1 / 30, rawInput: { x: 0, z: 0 } });
   assert.ok(Math.abs(Math.atan2(Math.sin(camState.yaw - Math.PI), Math.cos(camState.yaw - Math.PI))) < 0.1, 'kamera di belakang mobil (menghadap selatan: yaw = PI)');
+});
+
+test('persetujuan admin: tamu dan offline ditolak, owner/MC boleh; di luar jangkauan mobil tidak ada pesan', () => {
+  const near = (fleet) => ({ x: fleet.cars[0].x + 2, z: fleet.cars[0].z, level: 0, stair: null, y: 0 });
+  for (const role of ['guest', null]) {
+    const { fleet, ride, toasts } = mk({ role });
+    assert.equal(ride.canUse(), false);
+    assert.equal(ride.board(near(fleet)), false);
+    assert.equal(fleet.mine, null, 'tidak naik');
+    assert.match(toasts.at(-1), /disetujui admin/);
+    const n = toasts.length;
+    assert.equal(ride.board({ x: 0, z: 0, level: 0, stair: null, y: 0 }), false);
+    assert.equal(toasts.length, n, 'jauh dari mobil: diam saja');
+  }
+  for (const role of ['owner', 'mc']) {
+    const { fleet, ride } = mk({ role });
+    assert.equal(ride.canUse(), true);
+    assert.equal(ride.board(near(fleet)), true);
+  }
+});
+
+test('wire() mengambil peran bertanda tangan dari jaringan: tamu ditolak, MC boleh', () => {
+  const me = { x: 0, z: 0, level: 0, stair: null, y: 0 };
+  const a = mk({ role: null });
+  a.ride.wire({ id: 'x', role: 'guest', on() {} }, me);
+  assert.equal(a.ride.canUse(), false);
+  const b = mk({ role: null });
+  b.ride.wire({ id: 'y', role: 'mc', on() {} }, me);
+  assert.equal(b.ride.canUse(), true);
+  const c = mk({ role: 'owner' });
+  c.ride.wire({ id: 'z', on() {} }, me); // transport tanpa peran (?server=): dianggap tamu
+  assert.equal(c.ride.canUse(), false);
 });
