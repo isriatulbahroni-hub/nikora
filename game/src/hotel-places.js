@@ -1,6 +1,6 @@
 // Data murni untuk halaman hotel: warna peta mini, daftar tempat "Jelajah", dan keterangan lokasi pemain.
 // Tanpa THREE supaya bisa diuji di Node. Geometri 3D ada di hotel-world.js, denah di hotel-layout.js.
-import { HOTEL_BUILDING, HOTEL_LEVEL_COUNT, HOTEL_PARKING, HOTEL_SPAWN, isGuestLevel } from './hotel-layout.js';
+import { HOTEL_BUILDING, HOTEL_LEVEL_COUNT, HOTEL_PARKING, HOTEL_SPAWN, HOTEL_TOP_LEVEL, PODIUM_LEVELS, SKY_LOBBY_EVERY, isGuestLevel } from './hotel-layout.js';
 
 /** Warna peta mini per jenis ruang (hex). */
 export const FLOOR_COLORS = Object.freeze({
@@ -46,7 +46,26 @@ export function findStandable(world, level, x, z, roomId = null) {
   return null;
 }
 
-/** Daftar tempat untuk menu Jelajah: halaman, semua ruang publik, dan satu kamar contoh di tiap lantai tamu. */
+/**
+ * Lantai yang masuk menu Jelajah: podium (0..3), tiap Sky Lobby, dua lantai teratas, dan contoh kamar tamu
+ * (lantai tamu pertama serta satu lantai tamu tepat di bawah tiap Sky Lobby). Seluruh 1000 lantai bisa dituju lewat panel lift.
+ */
+export function featuredLevels() {
+  const levels = new Set();
+  for (let l = 0; l < PODIUM_LEVELS; l++) levels.add(l);
+  levels.add(PODIUM_LEVELS);
+  for (let l = SKY_LOBBY_EVERY; l < HOTEL_LEVEL_COUNT; l += SKY_LOBBY_EVERY) {
+    if (l < HOTEL_TOP_LEVEL - 1) {
+      levels.add(l);
+      levels.add(l - 1);
+    }
+  }
+  levels.add(HOTEL_TOP_LEVEL - 1);
+  levels.add(HOTEL_TOP_LEVEL);
+  return [...levels].sort((a, b) => a - b);
+}
+
+/** Daftar tempat untuk menu Jelajah: halaman, ruang publik di lantai pilihan, dan satu kamar contoh di lantai tamu pilihan. */
 export function hotelPlaces(world) {
   const out = [];
   const add = (id, name, group, level, x, z, roomId = null) => {
@@ -55,7 +74,7 @@ export function hotelPlaces(world) {
   };
   add('drop_off', 'Drop-off & Valet', GROUPS.yard, 0, HOTEL_SPAWN.x, HOTEL_SPAWN.z);
   add('parkir_tamu', 'Parkir Tamu', GROUPS.yard, 0, (HOTEL_PARKING[0] + HOTEL_PARKING[2]) / 2, (HOTEL_PARKING[1] + HOTEL_PARKING[3]) / 2);
-  for (let level = 0; level < HOTEL_LEVEL_COUNT; level++) {
+  for (const level of featuredLevels()) {
     const rooms = world.levels[level].rooms;
     if (isGuestLevel(level)) {
       const cell = rooms.find((r) => r.kind === 'guest');
