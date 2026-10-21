@@ -1,26 +1,48 @@
 // Mode latihan bulu tangkis: pemain (sisi 'a') melawan bot (sisi 'b'), seluruhnya memakai fisika dan aturan
 // di badminton.js. Murni (tanpa DOM/three.js) sehingga bisa dites. Koordinat = lokal lapangan (lihat court-frame.js).
-import { COURT, PHYSICS, createMatch, createRally, otherSide, stepShuttle } from './badminton.js';
+import { COURT, PHYSICS, createMatch, createRally, otherSide } from './badminton.js';
 
-const SIM_DT = 1 / 120;
 const HAND = Object.freeze({ minY: 0.3, maxY: 2.7, horizontal: 1.0 }); // jangkauan pukul (juga untuk bot)
 const BOT = Object.freeze({ home: { x: 0, z: 4.6 }, speed: 4.6 });
+const MIN_POWER = 0.05;
+const PLAN_ITERATIONS = 10; // pencarian biner tenaga pukulan (presisi ~0,001)
+
+// Konstanta fisika yang sama persis dengan stepShuttle di badminton.js. Perencanaan memakai langkah yang sama dengan
+// reli (PHYSICS.step) supaya titik jatuh rencana = titik jatuh asli, dan tanpa membuat objek per langkah (anti-GC).
+const G = PHYSICS.gravity;
+const DRAG = G / (PHYSICS.terminalSpeed * PHYSICS.terminalSpeed);
+const NET_MARGIN = 0.08;
 
 /** Terbangkan kok (tanpa objek rally) sampai jatuh; mengembalikan titik jatuh dan apakah melewati net. */
 export function simulateLanding(start, maxSeconds = 8) {
-  let s = { pos: { ...start.pos }, vel: { ...start.vel } };
+  const dt = PHYSICS.step;
+  let px = start.pos.x;
+  let py = start.pos.y;
+  let pz = start.pos.z;
+  let vx = start.vel.x;
+  let vy = start.vel.y;
+  let vz = start.vel.z;
   let clear = true;
-  for (let t = 0; t < maxSeconds; t += SIM_DT) {
-    const n = stepShuttle(s, SIM_DT);
-    if ((s.pos.z < 0) !== (n.pos.z < 0)) {
-      const k = s.pos.z / (s.pos.z - n.pos.z);
-      const y = s.pos.y + (n.pos.y - s.pos.y) * k;
-      if (y < COURT.netHeight + 0.08) clear = false;
+  const steps = Math.ceil(maxSeconds / dt);
+  for (let i = 0; i < steps; i++) {
+    const speed = Math.sqrt(vx * vx + vy * vy + vz * vz);
+    vx += -DRAG * speed * vx * dt;
+    vy += (-G - DRAG * speed * vy) * dt;
+    vz += -DRAG * speed * vz * dt;
+    const nx = px + vx * dt;
+    const ny = py + vy * dt;
+    const nz = pz + vz * dt;
+    if ((pz < 0) !== (nz < 0)) {
+      const k = pz / (pz - nz);
+      const y = py + (ny - py) * k;
+      if (y < COURT.netHeight + NET_MARGIN) clear = false;
     }
-    if (n.pos.y <= 0) return { x: n.pos.x, z: n.pos.z, clear };
-    s = n;
+    if (ny <= 0) return { x: nx, z: nz, clear };
+    px = nx;
+    py = ny;
+    pz = nz;
   }
-  return { x: s.pos.x, z: s.pos.z, clear: false };
+  return { x: px, z: pz, clear: false };
 }
 
 const MODES = Object.freeze({
@@ -31,7 +53,10 @@ const MODES = Object.freeze({
 
 /**
  * Rencanakan pukulan dari sisi `side` ke `target` (lokal): cari tenaga yang membuat kok jatuh paling dekat
- * dengan target sambil melewati net. Mengembalikan { dir, power, landing } atau null bila tak ada yang melewati net.
+ * dengan target sambil melewati net. Mengembalikan { dir, power, landing, miss } atau null bila tak ada yang melewati net.
+ *
+ * Jarak jatuh naik terus bersama tenaga (arah tetap), jadi tenaga yang pas dicari dengan pencarian biner (~12 simulasi)
+ * alih-alih memindai 39 tenaga dengan simulasi penuh seperti dulu (penyebab patah-patah saat memukul).
  */
 export function planShot({ pos, side, target, mode = 'clear' }) {
   const { elevation } = MODES[mode];
@@ -40,16 +65,41 @@ export function planShot({ pos, side, target, mode = 'clear' }) {
   const h = Math.hypot(dx, dz) || 1;
   const dir = { x: dx / h, y: elevation, z: dz / h };
   const n = Math.hypot(dir.x, dir.y, dir.z);
-  let best = null;
-  for (let power = 0.05; power <= 1.0001; power += 0.025) {
+  const flyAt = (power) => {
     const speed = PHYSICS.minHitSpeed + (PHYSICS.maxHitSpeed - PHYSICS.minHitSpeed) * power;
-    const landing = simulateLanding({ pos, vel: { x: (dir.x / n) * speed, y: (dir.y / n) * speed, z: (dir.z / n) * speed } });
-    if (!landing.clear) continue;
-    const miss = Math.hypot(landing.x - target.x, landing.z - target.z);
-    if (!best || miss < best.miss) best = { dir, power, landing, miss };
+    return simulateLanding({ pos, vel: { x: (dir.x / n) * speed, y: (dir.y / n) * speed, z: (dir.z / n) * speed } });
+  };
+  const rangeOf = (l) => Math.hypot(l.x - pos.x, l.z - pos.z);
+
+  // 1) tenaga terkecil yang jaraknya mencapai sasaran (penuh bila tak sampai)
+  let power = 1;
+  if (rangeOf(flyAt(1)) >= h) {
+    let lo = MIN_POWER;
+    let hi = 1;
+    for (let i = 0; i < PLAN_ITERATIONS; i++) {
+      const mid = (lo + hi) / 2;
+      if (rangeOf(flyAt(mid)) < h) lo = mid;
+      else hi = mid;
+    }
+    power = hi;
+  }
+  let landing = flyAt(power);
+
+  // 2) bila menabrak net, naikkan tenaga sampai tepat lolos
+  if (!landing.clear) {
+    if (!flyAt(1).clear) return null;
+    let a = power;
+    let b = 1;
+    for (let i = 0; i < PLAN_ITERATIONS; i++) {
+      const mid = (a + b) / 2;
+      if (flyAt(mid).clear) b = mid;
+      else a = mid;
+    }
+    power = b;
+    landing = flyAt(power);
   }
   void side;
-  return best;
+  return { dir, power, landing, miss: Math.hypot(landing.x - target.x, landing.z - target.z) };
 }
 
 /** Pilih jenis pukulan menurut keadaan kok: tinggi = smash, dekat net = drop, selain itu clear. */
@@ -131,11 +181,14 @@ export function createPractice({ botSkill = 0.8, random = Math.random } = {}) {
     },
 
     canServe: () => phase === 'serve' && match?.server === 'a',
+    /** Hasil `ok` menyertakan `at` = titik kok saat dipukul (untuk animasi raket yang menyentuh kok). */
     serve({ power = 0.6, aimX = 0 } = {}) {
       if (phase !== 'serve' || match.server !== 'a') return { ok: false, reason: 'bukan-giliranmu' };
       const r = rally.serve('a', { power, aimX });
-      if (r.ok) { phase = 'rally'; message = ''; }
-      return r;
+      if (!r.ok) return r;
+      phase = 'rally';
+      message = '';
+      return { ...r, at: { ...rally.shuttle.pos } };
     },
 
     /** Kok ada di sisi pemain, dalam jangkauan, dan lawan yang terakhir memukul. */
@@ -144,7 +197,7 @@ export function createPractice({ botSkill = 0.8, random = Math.random } = {}) {
       const s = rally.shuttle.pos;
       return s.z < 0 && s.y >= HAND.minY && s.y <= HAND.maxY && horizontal(s, player) <= HAND.horizontal;
     },
-    /** aim -1..1 menggeser bidikan ke samping (x lokal). Mengembalikan hasil `swing` + jenis pukulan. */
+    /** aim -1..1 menggeser bidikan ke samping (x lokal). Mengembalikan hasil `swing` + jenis pukulan + titik kontak `at`. */
     hit(player, { aim = 0 } = {}) {
       if (!this.canHit(player)) return { ok: false, reason: 'tidak-bisa-memukul' };
       const s = rally.shuttle.pos;
@@ -155,11 +208,12 @@ export function createPractice({ botSkill = 0.8, random = Math.random } = {}) {
       const target = { x: Math.max(-2.7, Math.min(2.7, aim * 2.6 + err(0.25 + 1.2 * sloppy))), z: m.targetZ + err(0.3 + 0.9 * sloppy) };
       const shot = planShot({ pos: s, side: 'a', target, mode });
       if (!shot) return { ok: false, reason: 'tak-ada-lintasan' };
-      const res = rally.swing('a', { racket: { ...s }, dir: shot.dir, power: shot.power });
-      return { ...res, mode };
+      const at = { ...s };
+      const res = rally.swing('a', { racket: at, dir: shot.dir, power: shot.power });
+      return { ...res, mode, at };
     },
 
-    /** Maju `dt` detik. `player` = posisi lokal pemain. Mengembalikan daftar peristiwa untuk HUD/suara. */
+    /** Maju `dt` detik. `player` = posisi lokal pemain. Mengembalikan daftar peristiwa untuk HUD/suara (hit/serve membawa `at`). */
     tick(dt, player) {
       const events = [];
       if (phase === 'off' || phase === 'over') return events;
@@ -175,7 +229,7 @@ export function createPractice({ botSkill = 0.8, random = Math.random } = {}) {
             rally.serve('b', { power: 0.55 + err(0.15), aimX: err(0.8) });
             phase = 'rally';
             message = '';
-            events.push({ type: 'serve', by: 'b' });
+            events.push({ type: 'serve', by: 'b', at: { ...rally.shuttle.pos } });
           }
         }
         return events;
@@ -197,8 +251,9 @@ export function createPractice({ botSkill = 0.8, random = Math.random } = {}) {
         if (s.z > 0 && s.y >= HAND.minY && s.y <= 2.2 && shuttle.vel.y < 0 && horizontal(s, bot) <= HAND.horizontal * 0.9) {
           const shot = botShot(shuttle);
           if (shot) {
-            const res = rally.swing('b', { racket: { ...s }, dir: shot.dir, power: shot.power });
-            if (res.ok) { botPlan = null; events.push({ type: 'hit', by: 'b' }); }
+            const at = { ...s };
+            const res = rally.swing('b', { racket: at, dir: shot.dir, power: shot.power });
+            if (res.ok) { botPlan = null; events.push({ type: 'hit', by: 'b', at }); }
           }
         }
       } else if (rally.lastHitSide === 'b') {
