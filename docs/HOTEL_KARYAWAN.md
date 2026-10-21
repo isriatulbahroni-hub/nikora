@@ -1,6 +1,6 @@
 # Karyawan NIKORA Grand Hotel
 
-Rencana dan status fitur karyawan hotel (ratusan petugas: cleaning service, resepsionis, bellboy, satpam, pelayan, valet, tukang kebun, penjaga kolam).
+Rencana dan status fitur karyawan hotel (ratusan petugas: cleaning service, resepsionis, bellboy, satpam, pelayan, valet, petugas parkir, tukang kebun, penjaga kolam).
 
 ## Prinsip
 
@@ -10,14 +10,16 @@ Rencana dan status fitur karyawan hotel (ratusan petugas: cleaning service, rese
 
 ## Sudah ada (PR ini)
 
-- `game/src/hotel-staff.js`: roster 390 petugas dalam 8 peran, tiga shift (pagi 06-14, siang 14-22, malam 22-06), pembagian lantai tamu ke 240 cleaning service (4 atau 5 lantai per orang), rute membersihkan kamar (pintu, tempat tidur, pintu), pos tetap untuk peran lain.
-- `game/src/hotel-staff.test.js`: roster, pembagian lantai, shift, rute cleaning service (di dalam kamar saat membersihkan, tidak melompat), determinisme.
+- `game/src/hotel-staff.js`: roster 414 petugas dalam 9 peran, tiga shift (pagi 06-14, siang 14-22, malam 22-06), pembagian lantai tamu ke 240 cleaning service (4 atau 5 lantai per orang), rute membersihkan kamar (pintu, tempat tidur, pintu), pos tetap untuk peran lain.
+- Petugas parkir (24 orang): berpatroli di samping slot parkir tamu (`HOTEL_CAR_SPOTS`, dua baris), berhenti 6 detik di tiap slot untuk mengarahkan mobil (`task: 'directing'`), fase tiap petugas digeser agar tidak berbaris.
+- `game/src/hotel-staff.test.js`: roster, pembagian lantai, shift, rute cleaning service (di dalam kamar saat membersihkan, tidak melompat), patroli parkir (di dalam area parkir, tidak melompat), determinisme.
 
 ## Belum ada
 
 - Avatar petugas di dunia hotel (memakai `avatar-human.js`; LOD: avatar penuh dekat pemain, figur sederhana ber-instancing untuk yang jauh).
 - Jalur lorong yang benar. Rute sekarang garis lurus antar titik pintu dan bisa menembus dinding inti atau kamar sudut. Tahap berikutnya: navmesh (kandidat `recast-navigation-js` atau `three-pathfinding-3d`) dan perilaku (kandidat `yuka`).
-- Tugas lain: bellboy mengantar tamu, valet memarkir mobil, pelayan melayani meja, petugas naik lift antar lantai.
+- Tugas lain: bellboy mengantar tamu, valet memarkir mobil tamu (mobil asli di `HOTEL_CAR_SPOTS`), pelayan melayani meja, petugas naik lift antar lantai.
+- Petugas parkir belum bereaksi pada mobil pemain yang masuk area parkir.
 - Panel admin untuk jumlah dan jadwal petugas, dan menyambungkan jam permainan (`day-night.js`) ke parameter `hour`.
 - Percakapan dengan resepsionis (opsional, memakai NPC berotak AI).
 - Penambahan dependensi pihak ketiga harus dicatat di `THIRD_PARTY_NOTICES.md` dan dicek lisensinya.
