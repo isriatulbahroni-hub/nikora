@@ -1,4 +1,6 @@
 // Denah NIKORA Grand Hotel (satuan meter). x ke timur, z ke selatan (utara = -z), sama dengan villa-layout.js.
+// Denah dasar seluruh lantai diturunkan dari TOWER_CENTER dan TOWER_HALF (tidak ada koordinat mutlak di denah lantai),
+// supaya menara bisa digeser atau dilebarkan hanya dengan mengubah dua konstanta itu.
 // Hotel berdiri di dunia villa yang sama, di ujung selatan jalan raya dari gerbang villa (jarak ~300 m),
 // sehingga tamu harus berkendara. Modul ini murni data + matematika (tanpa THREE).
 //
@@ -26,6 +28,17 @@ export const TOWER_ZONE_LEVELS = 50;
 export const TOWER_TAPER = 0.3; // penyusutan total di puncak: skala akhir 1 - 0,3 = 0,70
 export const TOWER_CENTER = Object.freeze({ x: 0, z: 448 });
 export const TOWER_HALF = Object.freeze({ x: 36, z: 28 }); // setengah lebar/dalam denah dasar (HOTEL_BUILDING)
+// Turunan denah dasar (meter). Dipakai untuk inti, petak publik, deretan kamar tamu, pintu, dan perabot.
+const CX = TOWER_CENTER.x;
+const CZ = TOWER_CENTER.z;
+const HX = TOWER_HALF.x;
+const HZ = TOWER_HALF.z;
+const CORE_HALF = 8; // setengah sisi inti lift/tangga (16 x 16 m); tidak ikut mengecil
+const WING = 10; // lebar sayap barat/timur = kedalaman deret kamar sisi utara/selatan
+const ROOM_W = 6; // lebar kamar di sisi utara/selatan
+const ROOM_D = 7.2; // dalam kamar di sisi barat/timur
+const NS_ROOMS = Math.round((2 * HX) / ROOM_W); // kamar per sisi utara/selatan (72 m -> 12)
+const WE_ROOMS = Math.round((2 * (HZ - WING)) / ROOM_D); // kamar per sisi barat/timur (36 m -> 5)
 /** Skala denah pada batas ke-k antar zona (k = 0..20): 1 di bawah, 1 - TOWER_TAPER di puncak (kurva t^1,5 = cekung). */
 export const towerScaleAt = (k) => (k <= 0 ? 1 : 1 - TOWER_TAPER * Math.pow(Math.min(1, (k * TOWER_ZONE_LEVELS) / (HOTEL_LEVEL_COUNT - 1)), 1.5));
 export const towerZone = (level) => Math.floor(Math.max(0, level) / TOWER_ZONE_LEVELS);
@@ -43,7 +56,7 @@ export function hotelFootprint(level = 0) {
   return f;
 }
 const squash = (v, c, half, s) => {
-  const core = 8; // setengah sisi inti
+  const core = CORE_HALF;
   const d = v - c;
   const a = Math.abs(d);
   return a <= core ? v : c + Math.sign(d) * (core + ((a - core) * (half * s - core)) / (half - core));
@@ -57,7 +70,7 @@ function planMap(level) {
 const mapRect = (m, r) => (m ? [m.x(r[0]), m.z(r[1]), m.x(r[2]), m.z(r[3])] : r);
 
 // Tapak bangunan dan halaman.
-export const HOTEL_BUILDING = Object.freeze([-36, 420, 36, 476]);
+export const HOTEL_BUILDING = Object.freeze([CX - HX, CZ - HZ, CX + HX, CZ + HZ]);
 export const HOTEL_SITE = Object.freeze({ minX: -110, maxX: 110, minZ: 372, maxZ: 560 });
 export const HOTEL_FORECOURT = Object.freeze([-30, 380, 30, 420]); // drop-off, valet, putaran mobil
 export const HOTEL_PARKING = Object.freeze([44, 384, 104, 470]);
@@ -80,7 +93,7 @@ export function surfaceAt(x, z) {
 /** Sky Lobby: lantai publik bergilir tiap SKY_LOBBY_EVERY lantai (bukan lantai atas). */
 export const isSkyLobbyLevel = (level) => Number.isInteger(level) && level > 0 && level % SKY_LOBBY_EVERY === 0 && level < HOTEL_TOP_LEVEL - 1;
 export const isGuestLevel = (level) => Number.isInteger(level) && level >= PODIUM_LEVELS && level <= HOTEL_TOP_LEVEL - 2 && !isSkyLobbyLevel(level);
-export const GUESTS_PER_LEVEL = 34;
+export const GUESTS_PER_LEVEL = 2 * NS_ROOMS + 2 * WE_ROOMS; // 34
 export const GUEST_LEVEL_COUNT = Array.from({ length: HOTEL_LEVEL_COUNT }, (_, l) => l).filter(isGuestLevel).length;
 export const GUEST_ROOM_TOTAL = GUEST_LEVEL_COUNT * GUESTS_PER_LEVEL;
 
@@ -111,9 +124,10 @@ export const FLOOR_NAMES = new Proxy([], {
 });
 
 // ---------------------------------------------------------------- inti, lift
-export const HOTEL_CORE = Object.freeze([-8, 440, 8, 456]);
-const CAB_X = [-5.25, -1.75, 1.75, 5.25];
-export const LIFTS = Object.freeze(CAB_X.map((cx, i) => Object.freeze({ id: `lift_${i + 1}`, name: `Lift ${i + 1}`, rect: [cx - 1.4, 441, cx + 1.4, 444.6] })));
+export const HOTEL_CORE = Object.freeze([CX - CORE_HALF, CZ - CORE_HALF, CX + CORE_HALF, CZ + CORE_HALF]);
+const CAB_X = [-5.25, -1.75, 1.75, 5.25]; // selisih x kabin dari pusat menara
+const CAB_Z = [CZ - CORE_HALF + 1, CZ - CORE_HALF + 4.6]; // kabin berderet di sisi utara inti
+export const LIFTS = Object.freeze(CAB_X.map((ox, i) => Object.freeze({ id: `lift_${i + 1}`, name: `Lift ${i + 1}`, rect: [CX + ox - 1.4, CAB_Z[0], CX + ox + 1.4, CAB_Z[1]] })));
 const LIFT_SECONDS_PER_LEVEL = 0.45; // lift biasa: sampai 20 lantai pertama
 const LIFT_EXPRESS_SECONDS_PER_LEVEL = 0.012; // lantai selanjutnya ditempuh dengan kecepatan ekspres
 const LIFT_BASE_SECONDS = 1.2;
@@ -139,8 +153,8 @@ export function rideLift(pos, toLevel) {
 // ---------------------------------------------------------------- program lantai
 // Satu kerangka untuk semua lantai: inti di tengah, enam petak mengelilinginya (n, nw, ne, w, e, s).
 const SLOT = Object.freeze({
-  n: [-26, 420, 26, 440], nw: [-36, 420, -26, 440], ne: [26, 420, 36, 440],
-  w: [-36, 440, -8, 476], e: [8, 440, 36, 476], s: [-8, 456, 8, 476],
+  n: [CX - (HX - WING), CZ - HZ, CX + (HX - WING), CZ - CORE_HALF], nw: [CX - HX, CZ - HZ, CX - (HX - WING), CZ - CORE_HALF], ne: [CX + (HX - WING), CZ - HZ, CX + HX, CZ - CORE_HALF],
+  w: [CX - HX, CZ - CORE_HALF, CX - CORE_HALF, CZ + HZ], e: [CX + CORE_HALF, CZ - CORE_HALF, CX + HX, CZ + HZ], s: [CX - CORE_HALF, CZ + CORE_HALF, CX + CORE_HALF, CZ + HZ],
 });
 
 // Program publik per jenis lantai: 0..3 podium, 13 = suite eksekutif (lantai 999), 14 = Sky Level (lantai 1000).
@@ -173,10 +187,14 @@ function guestCells(level) {
   const cells = [];
   let n = 1;
   const add = (rect, door, bed, side) => cells.push({ id: `h${level + 1}_${String(n).padStart(2, '0')}`, name: `Kamar ${(level + 1) * 100 + n}`, kind: 'guest', level, rect, door, bed, no: n++, side });
-  for (let i = 0; i < 12; i++) { const x = -36 + i * 6; add([x, 420, x + 6, 430], { x: x + 3, z: 430, orient: 'h', width: 1.6 }, { x: x + 3, z: 421.6 }, 'n'); }
-  for (let i = 0; i < 12; i++) { const x = -36 + i * 6; add([x, 466, x + 6, 476], { x: x + 3, z: 466, orient: 'h', width: 1.6 }, { x: x + 3, z: 474.4 }, 's'); }
-  for (let i = 0; i < 5; i++) { const z = 430 + i * 7.2; add([-36, z, -26, z + 7.2], { x: -26, z: z + 3.6, orient: 'v', width: 1.6 }, { x: -34.4, z: z + 3.6 }, 'w'); }
-  for (let i = 0; i < 5; i++) { const z = 430 + i * 7.2; add([26, z, 36, z + 7.2], { x: 26, z: z + 3.6, orient: 'v', width: 1.6 }, { x: 34.4, z: z + 3.6 }, 'e'); }
+  const x0 = CX - HX; // tepi barat
+  const x1 = CX + HX; // tepi timur
+  const zN = CZ - HZ; // tepi utara
+  const zS = CZ + HZ; // tepi selatan
+  for (let i = 0; i < NS_ROOMS; i++) { const x = x0 + i * ROOM_W; add([x, zN, x + ROOM_W, zN + WING], { x: x + ROOM_W / 2, z: zN + WING, orient: 'h', width: 1.6 }, { x: x + ROOM_W / 2, z: zN + 1.6 }, 'n'); }
+  for (let i = 0; i < NS_ROOMS; i++) { const x = x0 + i * ROOM_W; add([x, zS - WING, x + ROOM_W, zS], { x: x + ROOM_W / 2, z: zS - WING, orient: 'h', width: 1.6 }, { x: x + ROOM_W / 2, z: zS - 1.6 }, 's'); }
+  for (let i = 0; i < WE_ROOMS; i++) { const z = zN + WING + i * ROOM_D; add([x0, z, x0 + WING, z + ROOM_D], { x: x0 + WING, z: z + ROOM_D / 2, orient: 'v', width: 1.6 }, { x: x0 + 1.6, z: z + ROOM_D / 2 }, 'w'); }
+  for (let i = 0; i < WE_ROOMS; i++) { const z = zN + WING + i * ROOM_D; add([x1 - WING, z, x1, z + ROOM_D], { x: x1 - WING, z: z + ROOM_D / 2, orient: 'v', width: 1.6 }, { x: x1 - 1.6, z: z + ROOM_D / 2 }, 'e'); }
   const m = planMap(level);
   if (!m) return cells.map(({ side, ...c }) => c);
   // lantai meruncing: persegi kamar dipadatkan, pintu dan tempat tidur dihitung ulang dari persegi barunya
@@ -201,35 +219,41 @@ function levelRooms(level) {
 function levelDoors(level) {
   const m = planMap(level);
   const raw = (x, z, orient, width, extra = {}) => ({ level, x, z, orient, width, ...extra });
-  const d = (x, z, orient, width, extra = {}) => raw(m ? m.x(x) : x, m ? m.z(z) : z, orient, width, extra);
-  const coreDoors = [d(0, 440, 'h', 4, { tall: true }), d(0, 456, 'h', 4), d(-8, 448, 'v', 4), d(8, 448, 'v', 4)];
+  // posisi pintu = selisih (dx, dz) dari pusat menara pada denah dasar; dipadatkan bila lantai meruncing
+  const d = (dx, dz, orient, width, extra = {}) => raw(m ? m.x(CX + dx) : CX + dx, m ? m.z(CZ + dz) : CZ + dz, orient, width, extra);
+  const wingX = HX - WING; // batas sayap barat/timur dari pusat
+  const midN = -(HZ + CORE_HALF) / 2; // tengah petak utara
+  const midS = (HZ + CORE_HALF) / 2; // tengah petak selatan
+  const midNX = (wingX + CORE_HALF) / 2; // tengah petak utara antara sayap dan inti
+  const coreDoors = [d(0, -CORE_HALF, 'h', 4, { tall: true }), d(0, CORE_HALF, 'h', 4), d(-CORE_HALF, 0, 'v', 4), d(CORE_HALF, 0, 'v', 4)];
   if (isGuestLevel(level)) return [...coreDoors, ...guestCells(level).map((c) => raw(c.door.x, c.door.z, c.door.orient, c.door.width))];
-  const doors = [...coreDoors, d(-26, 430, 'v', 3, { tall: true }), d(26, 430, 'v', 3, { tall: true }), d(-17, 440, 'h', 4, { tall: true }), d(17, 440, 'h', 4, { tall: true }), d(-8, 466, 'v', 3), d(8, 466, 'v', 3)];
-  if (level === 0) doors.push(d(0, 420, 'h', 6, { tall: true }), d(-14, 420, 'h', 3), d(14, 420, 'h', 3), d(0, 476, 'h', 3), d(-20, 476, 'h', 3), d(20, 476, 'h', 3));
+  const doors = [...coreDoors, d(-wingX, midN, 'v', 3, { tall: true }), d(wingX, midN, 'v', 3, { tall: true }), d(-midNX, -CORE_HALF, 'h', 4, { tall: true }), d(midNX, -CORE_HALF, 'h', 4, { tall: true }), d(-CORE_HALF, midS, 'v', 3), d(CORE_HALF, midS, 'v', 3)];
+  if (level === 0) doors.push(d(0, -HZ, 'h', 6, { tall: true }), d(-14, -HZ, 'h', 3), d(14, -HZ, 'h', 3), d(0, HZ, 'h', 3), d(-20, HZ, 'h', 3), d(20, HZ, 'h', 3));
   return doors;
 }
 
 function levelProps(level) {
   const m = planMap(level);
-  const p = (type, x, z) => ({ type, x: m ? m.x(x) : x, z: m ? m.z(z) : z, level });
+  // posisi perabot = selisih (dx, dz) dari pusat menara pada denah dasar
+  const p = (type, dx, dz) => ({ type, x: m ? m.x(CX + dx) : CX + dx, z: m ? m.z(CZ + dz) : CZ + dz, level });
   if (isGuestLevel(level)) return guestCells(level).map((c) => ({ type: 'bed', x: c.bed.x, z: c.bed.z, level }));
   const out = [];
   if (level === 0) {
-    out.push(p('desk', -14, 424), p('desk', 14, 424), p('sofa', -6, 432), p('sofa', 6, 432));
-    for (const x of [-30, -22, -14]) for (const z of [448, 460]) out.push(p('table', x, z));
-    for (const x of [14, 22, 30]) for (const z of [448, 460]) out.push(p('table', x, z));
-    out.push(p('counter', -3, 470), p('counter', 3, 470));
+    out.push(p('desk', -14, -24), p('desk', 14, -24), p('sofa', -6, -16), p('sofa', 6, -16));
+    for (const x of [-30, -22, -14]) for (const z of [0, 12]) out.push(p('table', x, z));
+    for (const x of [14, 22, 30]) for (const z of [0, 12]) out.push(p('table', x, z));
+    out.push(p('counter', -3, 22), p('counter', 3, 22));
   } else if (level === 1) {
-    for (const x of [-24, -12, 0, 12, 24]) for (const z of [426, 434]) out.push(p('table', x, z));
+    for (const x of [-24, -12, 0, 12, 24]) for (const z of [-22, -14]) out.push(p('table', x, z));
   } else if (level === 2) {
-    out.push(p('tub', -22, 460), p('tub', 22, 470));
+    out.push(p('tub', -22, 12), p('tub', 22, 22));
   } else if (isSkyLobbyLevel(level)) {
-    out.push(p('sofa', -6, 432), p('sofa', 6, 432), p('table', -14, 428), p('table', 14, 428), p('table', -22, 460), p('table', 22, 460));
+    out.push(p('sofa', -6, -16), p('sofa', 6, -16), p('table', -14, -20), p('table', 14, -20), p('table', -22, 12), p('table', 22, 12));
   } else if (level === HOTEL_TOP_LEVEL - 1) {
-    for (const x of [-33, 33]) for (const z of [424]) out.push(p('bed', x, z));
-    out.push(p('bed', -31, 470), p('bed', 31, 470), p('sofa', -3, 428), p('sofa', 3, 428));
+    for (const x of [-33, 33]) for (const z of [-24]) out.push(p('bed', x, z));
+    out.push(p('bed', -31, 22), p('bed', 31, 22), p('sofa', -3, -20), p('sofa', 3, -20));
   } else if (level === HOTEL_TOP_LEVEL) {
-    out.push(p('table', -6, 426), p('table', 6, 426), p('table', 20, 458), p('table', 28, 458), p('lounger', -22, 450), p('lounger', -16, 450));
+    out.push(p('table', -6, -22), p('table', 6, -22), p('table', 20, 10), p('table', 28, 10), p('lounger', -22, 2), p('lounger', -16, 2));
   }
   return out;
 }
