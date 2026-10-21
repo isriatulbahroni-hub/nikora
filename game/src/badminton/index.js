@@ -2,8 +2,9 @@
 // Fisika kok, aturan reli, dan bot ada di activities/ (murni dan sudah punya tes); modul ini hanya tampilan 2D + kontrol.
 //
 // Kontrol: joystick layar (kiri) atau WASD/panah untuk bergerak; tombol bulat (kanan) atau Spasi untuk Servis/Pukul.
-// Dorong joystick ke kiri/kanan saat memukul untuk membidik ke samping lapangan. Cincin di kaki = jangkauan pukul
-// (hijau bila kok sudah dalam jangkauan).
+// Tombol Pukul bisa DITAHAN: selama ditekan, pukulan otomatis keluar begitu kok masuk jangkauan (tidak perlu mengetuk
+// tepat waktu), dan bidikan mengikuti arah joystick saat itu. Dorong joystick ke kiri/kanan untuk membidik ke samping
+// lapangan. Cincin di kaki = jangkauan pukul (hijau bila kok sudah dalam jangkauan).
 //
 // Kemulusan: simulasi berjalan dengan langkah tetap (FIXED_DT) dan gambar diinterpolasi antar-langkah, sehingga gerak
 // pemain/bot/kok halus di layar 60/90/120 Hz dan tidak bergantung pada naik-turunnya frame rate. Lapangan (statis)
@@ -24,6 +25,7 @@ const SERVE_SPOT = 1.9; // sama dengan SERVE_SPOT di badminton.js (titik kok mun
 const KEYS = Object.freeze({
   w: [0, 1], arrowup: [0, 1], s: [0, -1], arrowdown: [0, -1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0],
 });
+const isActionKey = (k) => k === ' ' || k === 'enter' || k === 'e';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const lerp3 = (a, b, t) => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t), z: lerp(a.z, b.z, t) });
@@ -108,7 +110,7 @@ export default {
     const segments = courtLineSegments();
 
     const root = doc.createElement('div');
-    root.style.cssText = 'position:absolute;inset:0;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;background:linear-gradient(#0e1a2b,#16314f 55%,#1d4a38)';
+    root.style.cssText = 'position:absolute;inset:0;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;background:linear-gradient(#0e1a2b,#16314f 55%,#1d4a38)';
     const canvas = doc.createElement('canvas');
     canvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%';
     const hud = doc.createElement('div');
@@ -123,7 +125,8 @@ export default {
     joyZone.appendChild(joyBase);
     const actBtn = doc.createElement('button');
     actBtn.type = 'button';
-    actBtn.style.cssText = 'position:absolute;right:calc(20px + env(safe-area-inset-right));bottom:calc(28px + env(safe-area-inset-bottom));width:96px;height:96px;border-radius:50%;border:3px solid rgba(255,255,255,.85);background:rgba(57,217,138,.88);color:#06210f;font:700 16px system-ui,sans-serif;touch-action:manipulation';
+    // touch-action:none + tanpa callout/seleksi: menahan tombol tidak memicu menu tekan-lama atau membatalkan sentuhan
+    actBtn.style.cssText = 'position:absolute;right:calc(20px + env(safe-area-inset-right));bottom:calc(28px + env(safe-area-inset-bottom));width:96px;height:96px;border-radius:50%;border:3px solid rgba(255,255,255,.85);background:rgba(57,217,138,.88);color:#06210f;font:700 16px system-ui,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent';
     const hint = doc.createElement('div');
     hint.textContent = 'Geser kiri untuk bergerak';
     hint.style.cssText = 'position:absolute;left:18px;bottom:calc(10px + env(safe-area-inset-bottom));color:rgba(255,255,255,.55);font:12px system-ui,sans-serif;pointer-events:none';
@@ -155,6 +158,8 @@ export default {
     let swingBotAt = null;
     let pending = 0;
     let pendingAim = 0;
+    let btnHeld = false; // tombol Pukul sedang ditahan (layar)
+    let keyHeld = false; // tombol aksi keyboard sedang ditahan
     let prevPhase = practice.phase;
     let hudText = '';
     let btnLabel = null;
@@ -176,6 +181,11 @@ export default {
       }
       const len = Math.hypot(x, z);
       return len > 1 ? { x: x / len, z: z / len } : { x, z };
+    };
+    const releaseHolds = () => {
+      btnHeld = false;
+      keyHeld = false;
+      btnId = null;
     };
     const action = () => {
       if (paused || destroyed) return;
@@ -207,13 +217,22 @@ export default {
       if (Object.hasOwn(KEYS, k)) {
         held.add(k);
         e.preventDefault();
-      } else if (!e.repeat && (k === ' ' || k === 'enter' || k === 'e')) {
-        action();
+      } else if (isActionKey(k)) {
+        keyHeld = true; // ditahan (termasuk pengulangan tombol) = pukulan tetap siaga
+        if (!e.repeat) action();
         e.preventDefault();
       }
     };
-    const onKeyUp = (e) => held.delete(String(e.key).toLowerCase());
-    const onBlur = () => held.clear();
+    const onKeyUp = (e) => {
+      const k = String(e.key).toLowerCase();
+      held.delete(k);
+      if (isActionKey(k)) keyHeld = false;
+    };
+    const onBlur = () => {
+      held.clear();
+      keyHeld = false;
+      btnHeld = false;
+    };
     doc.addEventListener('keydown', onKeyDown);
     doc.addEventListener('keyup', onKeyUp);
     win.addEventListener('blur', onBlur);
@@ -267,10 +286,28 @@ export default {
     joyZone.addEventListener('pointerup', joyEnd);
     joyZone.addEventListener('pointercancel', joyEnd);
     joyZone.addEventListener('lostpointercapture', joyEnd);
+
+    // Tombol Pukul: tekan = aksi sekali + tahan = pukulan siaga terus. Sentuhan dilacak per pointerId dan di-capture
+    // sehingga menggeser jari keluar tombol tidak melepasnya; menu tekan-lama dimatikan.
+    let btnId = null;
     actBtn.addEventListener('pointerdown', (e) => {
+      if (btnId === null) {
+        btnId = e.pointerId;
+        btnHeld = true;
+        actBtn.setPointerCapture?.(e.pointerId);
+      }
       action();
       e.preventDefault();
     });
+    const btnEnd = (e) => {
+      if (e.pointerId !== btnId) return;
+      btnId = null;
+      btnHeld = false;
+    };
+    actBtn.addEventListener('pointerup', btnEnd);
+    actBtn.addEventListener('pointercancel', btnEnd);
+    actBtn.addEventListener('lostpointercapture', btnEnd);
+    actBtn.addEventListener('contextmenu', (e) => e.preventDefault());
 
     // ---------- ukuran kanvas ----------
     let W = 1;
@@ -486,10 +523,14 @@ export default {
       prevShuttle = sh ? { x: sh.pos.x, y: sh.pos.y, z: sh.pos.z } : null;
 
       player = stepPlayer(player, readInput(), dt);
+      // Selama tombol ditahan, jendela pukulan tidak pernah habis: pukulan keluar begitu kok masuk jangkauan,
+      // dengan bidikan mengikuti joystick saat itu.
+      const holding = btnHeld || keyHeld;
+      if (holding) pending = PENDING_HIT;
       if (pending > 0) {
         pending -= dt;
         if (practice.canHit(player)) {
-          const r = practice.hit(player, { aim: pendingAim });
+          const r = practice.hit(player, { aim: holding ? aimFromInput(readInput()) : pendingAim });
           if (r.ok) {
             pending = 0;
             swingMe = SWING_TIME;
@@ -553,6 +594,7 @@ export default {
       pause() {
         paused = true;
         held.clear();
+        releaseHolds();
       },
       resume() {
         paused = false;
