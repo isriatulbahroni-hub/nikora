@@ -282,7 +282,8 @@ async function start() {
   const root = $('hotel-root');
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setClearAlpha(1);
-  const quality = createQualityGovernor({ deviceRatio: window.devicePixelRatio || 1, cap: window.matchMedia?.('(pointer: coarse)').matches ? 2.25 : 2, floor: lowQuality ? 2 : 0 });
+  // maxTier 2: resolusi tidak pernah jatuh di bawah 1x (tingkat 3 = 0,75x membuat fasad menara buram dan bergerigi, apalagi saat merekam layar)
+  const quality = createQualityGovernor({ deviceRatio: window.devicePixelRatio || 1, cap: window.matchMedia?.('(pointer: coarse)').matches ? 2.25 : 2, floor: lowQuality ? 2 : 0, maxTier: 2 });
   renderer.setPixelRatio(quality.settings().ratio);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
