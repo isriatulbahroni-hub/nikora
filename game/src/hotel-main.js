@@ -18,6 +18,8 @@ import { FLOOR_COLORS, GROUP_ORDER, cssColor, describePlace, hotelPlaces } from 
 import { hoursAt, zoneFromSearch } from './day-night.js';
 import { createStaffView } from './hotel-staff-view.js';
 import { SKY_MODE_LABELS, createHotelSky } from './hotel-sky.js';
+import { nightLevel } from './hotel-sky-data.js';
+import { buildHotelSurroundings } from './hotel-surroundings.js';
 
 // NIKORA Grand Hotel sebagai halaman sendiri (/hotel.html): menara 15 lantai yang dijelajahi dengan avatar (satu pemain).
 // Geometri 3D dari hotel-world.js dan denah dari hotel-layout.js (dipakai bersama dunia villa); halaman ini hanya
@@ -310,6 +312,7 @@ async function start() {
   const scene = new THREE.Scene();
   const lights = buildEnvironment(scene);
   const built = buildHotelWorld(scene);
+  const surroundings = buildHotelSurroundings(scene, { low: lowQuality }); // satelit, kota, arena, hutan (hotel-surroundings.js)
   // Mobil bersama di drop-off/parkir hotel (8 mobil). Logika naik/turun/setir/jaringan: car-ride.js (sama dengan vila).
   const fleet = new Fleet({ specs: hotelCars(), selfId: 'lokal', env: { colliders: world.levels[0].colliders, surfaceAt, limit: HIGHWAY_LIMIT } });
   const carAudio = createCarAudio();
@@ -621,6 +624,7 @@ async function start() {
     actBtn.hidden = !actText;
 
     sky.update(time); // langit, awan, bintang, dan lampu mengikuti kamera yang sudah final
+    surroundings.setNight(nightLevel(sky.phase())); // jendela kota dan menara satelit menyala di malam hari
     const qChange = quality.tick(performance.now());
     if (qChange) renderer.setPixelRatio(qChange.ratio);
     renderer.render(scene, camera);
@@ -641,6 +645,7 @@ async function start() {
     places: () => places,
     staff: () => staffView.stats(), // petugas yang sedang digambar (pengujian)
     sky: () => sky.info(), // langit dan lampu saat ini (pengujian)
+    surroundings: () => surroundings.info(), // satelit, kota, pohon (pengujian)
     setSky: (mode) => sky.setMode(mode), // auto | day | sunset | night | cycle (pengujian)
     cars: () => fleet.cars.map((c) => ({ id: c.id, model: c.model, x: c.x, z: c.z, heading: c.heading, speed: c.speed, seats: c.seats.slice() })), // pengujian
     board: () => carRide.board(me),
