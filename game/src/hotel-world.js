@@ -10,8 +10,12 @@ import { bedGeometries } from './villa-props.js';
 import { LAMP_COLOR, propParts } from './hotel-props.js';
 import {
   HOTEL_BUILDING, HOTEL_CANOPY, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_FOUNTAIN, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_PARKING, HOTEL_SITE,
-  HOTEL_TOP_LEVEL, HOTEL_TOP_Y, HOTEL_WALL_HEIGHT, LIFTS, PODIUM_LEVELS, ROAD, getHotelWorld, hotelLevelY, isGuestLevel, isSkyLobbyLevel,
+  HOTEL_TOP_LEVEL, HOTEL_TOP_Y, HOTEL_WALL_HEIGHT, LIFTS, PODIUM_LEVELS, getHotelWorld, hotelLevelY, isGuestLevel, isSkyLobbyLevel,
 } from './hotel-layout.js';
+import { HIGHWAY_HALF } from './highway.js';
+import { buildHighway } from './highway-world.js';
+import { buildFacade } from './hotel-facade.js';
+import { exteriorOccluders } from './hotel-occluders.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const GOLD = 0xc9a24b;
@@ -46,12 +50,6 @@ function instancedBoxes(parent, items, material, { cast = false, receive = false
 const rectBox = (r, y, h, extra = {}) => ({ x: (r[0] + r[2]) / 2, y, z: (r[1] + r[3]) / 2, sx: r[2] - r[0], sy: h, sz: r[3] - r[1], ...extra });
 const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0, ...o });
 const onPerimeter = (w) => (w.orient === 'h' ? (w.coord === HOTEL_BUILDING[1] || w.coord === HOTEL_BUILDING[3]) : (w.coord === HOTEL_BUILDING[0] || w.coord === HOTEL_BUILDING[2]));
-
-/** Titik-titik sama jarak (maks. `step` m) dari a sampai b, termasuk kedua ujung. */
-function spaced(a, b, step) {
-  const n = Math.max(1, Math.ceil((b - a) / step));
-  return Array.from({ length: n + 1 }, (_, i) => a + ((b - a) * i) / n);
-}
 
 function signTexture() {
   const c = document.createElement('canvas');
@@ -92,10 +90,12 @@ function levelOccluders(world, level) {
   add(b[0], b[2], y0 - 0.4, y0, b[1], b[3]); // lantai
   add(b[0], b[2], y0 + HOTEL_WALL_HEIGHT, y0 + HOTEL_LEVEL_HEIGHT + 0.1, b[1], b[3]); // langit-langit
   add(HOTEL_SITE.minX, HOTEL_SITE.maxX, -6, 0.05, HOTEL_SITE.minZ, HOTEL_SITE.maxZ); // tanah di sekitar hotel (di luar area tanah villa)
+  // kanopi, tiang, air mancur, dan badan menara di atas podium (hotel-occluders.js)
+  boxes.push(...exteriorOccluders({ level, building: b, podiumLevels: PODIUM_LEVELS, podiumTopY: hotelLevelY(PODIUM_LEVELS), topY: HOTEL_TOP_Y, canopy: HOTEL_CANOPY, fountain: HOTEL_FOUNTAIN }));
   return boxes;
 }
 
-export function buildHotelWorld(scene) {
+export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
   const world = getHotelWorld();
   const root = new THREE.Group();
   root.name = 'nikora-grand-hotel';
@@ -110,25 +110,13 @@ export function buildHotelWorld(scene) {
     leaf: std(0x2f6f3a), trunk: std(0x6b4a2f), prop: std(0xffffff, { roughness: 0.7 }), vertex: std(0xffffff, { vertexColors: true, roughness: 0.7 }),
   };
 
-  // ---- jalan raya dari gerbang villa, halaman drop-off, parkir
-  const roadLen = ROAD.toZ - ROAD.fromZ;
-  const roadMid = (ROAD.fromZ + ROAD.toZ) / 2;
-  instancedBoxes(root, [{ x: ROAD.x, y: 0.03, z: roadMid, sx: ROAD.half * 2, sy: 0.06, sz: roadLen }, rectBox(HOTEL_PARKING, 0.03, 0.06)], M.asphalt, { receive: true });
+  // ---- Jalan Raya NIKORA (lingkar + 4 lengan + 4 gerbang, highway-world.js), halaman drop-off, parkir
+  const highway = buildHighway(root);
+  instancedBoxes(root, [rectBox(HOTEL_PARKING, 0.03, 0.06)], M.asphalt, { receive: true });
   instancedBoxes(root, [rectBox(HOTEL_FORECOURT, 0.045, 0.09), rectBox([-30, 420, 30, 424], 0.045, 0.09)], M.stone, { receive: true });
   const marks = [];
-  for (let z = ROAD.fromZ + 4; z < ROAD.toZ - 4; z += 8) marks.push({ x: ROAD.x, y: 0.07, z, sx: 0.25, sy: 0.02, sz: 3.2 });
-  for (const sx of [-1, 1]) marks.push({ x: sx * (ROAD.half - 0.5), y: 0.07, z: roadMid, sx: 0.18, sy: 0.02, sz: roadLen });
   for (let k = 0; k <= 8; k++) marks.push({ x: (HOTEL_PARKING[0] + HOTEL_PARKING[2]) / 2, y: 0.07, z: 386.5 + k * 11, sx: HOTEL_PARKING[2] - HOTEL_PARKING[0] - 2, sy: 0.02, sz: 0.14 });
   instancedBoxes(root, marks, M.line);
-  const curbs = [];
-  for (const sx of [-1, 1]) curbs.push({ x: sx * (ROAD.half + 0.2), y: 0.1, z: roadMid, sx: 0.4, sy: 0.2, sz: roadLen });
-  instancedBoxes(root, curbs, M.curb, { receive: true });
-  // tiang lampu sepanjang jalan
-  const posts = [];
-  const bulbs = [];
-  for (let z = ROAD.fromZ + 14; z < ROAD.toZ - 6; z += 30) for (const sx of [-1, 1]) { posts.push({ x: sx * (ROAD.half + 1.4), y: 3.2, z, sx: 0.16, sy: 6.4, sz: 0.16 }); bulbs.push({ x: sx * (ROAD.half + 1.4), y: 6.5, z, sx: 0.5, sy: 0.25, sz: 0.5 }); }
-  instancedBoxes(root, posts, M.dark, { cast: true });
-  instancedBoxes(root, bulbs, M.light);
 
   // air mancur
   const fountain = new THREE.Group();
@@ -156,7 +144,7 @@ export function buildHotelWorld(scene) {
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const trunks = [];
   const crowns = [];
-  const clear = (x, z) => !(Math.abs(x) < ROAD.half + 3 && z < HOTEL_FORECOURT[1] + 2) && !(x > HOTEL_FORECOURT[0] - 3 && x < HOTEL_FORECOURT[2] + 3 && z > HOTEL_FORECOURT[1] - 3 && z < B[1] + 4) && !(x > HOTEL_PARKING[0] - 3 && x < HOTEL_PARKING[2] + 3 && z > HOTEL_PARKING[1] - 3 && z < HOTEL_PARKING[3] + 3) && !(x > B[0] - 6 && x < B[2] + 6 && z > B[1] - 3 && z < B[3] + 8);
+  const clear = (x, z) => !(Math.abs(x) < HIGHWAY_HALF + 3 && z < HOTEL_FORECOURT[1] + 2) && !(x > HOTEL_FORECOURT[0] - 3 && x < HOTEL_FORECOURT[2] + 3 && z > HOTEL_FORECOURT[1] - 3 && z < B[1] + 4) && !(x > HOTEL_PARKING[0] - 3 && x < HOTEL_PARKING[2] + 3 && z > HOTEL_PARKING[1] - 3 && z < HOTEL_PARKING[3] + 3) && !(x > B[0] - 6 && x < B[2] + 6 && z > B[1] - 3 && z < B[3] + 8);
   for (let i = 0, n = 0; i < 400 && n < 70; i++) {
     const x = HOTEL_SITE.minX + 6 + rand() * (HOTEL_SITE.maxX - HOTEL_SITE.minX - 12);
     const z = HOTEL_SITE.minZ + 10 + rand() * (HOTEL_SITE.maxZ - HOTEL_SITE.minZ - 14);
@@ -175,8 +163,10 @@ export function buildHotelWorld(scene) {
   const belts = [];
   for (let l = 0; l < HOTEL_LEVEL_COUNT; l++) {
     const y0 = hotelLevelY(l);
-    if (l > 0) slabs.push(rectBox(B, y0 - 0.15, 0.3, { color: 0xe3dccb }));
-    edges.push(rectBox([B[0] - 0.5, B[1] - 0.5, B[2] + 0.5, B[3] + 0.5], y0 + H - 0.12, 0.24, { color: GOLD })); // list emas di tepi pelat
+    const inFacade = l >= PODIUM_LEVELS && l < HOTEL_TOP_LEVEL; // lantai yang tertutup fasad bertekstur (hotel-facade.js)
+    const inset = inFacade ? 0.4 : 0; // pelat di balik kaca dimundurkan supaya tidak menempel di bidang kaca
+    if (l > 0) slabs.push(rectBox([B[0] + inset, B[1] + inset, B[2] - inset, B[3] - inset], y0 - 0.15, 0.3, { color: 0xe3dccb }));
+    if (!inFacade) edges.push(rectBox([B[0] - 0.5, B[1] - 0.5, B[2] + 0.5, B[3] + 0.5], y0 + H - 0.12, 0.24, { color: GOLD })); // list emas di tepi pelat (di fasad sudah ada di tekstur)
     if (isSkyLobbyLevel(l)) { // sabuk emas Sky Lobby: bingkai menonjol setebal pelat, di atas jendela
       const e = 1.2;
       const by = y0 + H - 0.6;
@@ -191,17 +181,7 @@ export function buildHotelWorld(scene) {
   // dinding kaca tirai dari lantai 5 sampai lantai 999 (podium dan Sky Level digambar per lantai karena punya pintu dan teras)
   const gy0 = hotelLevelY(PODIUM_LEVELS);
   const gh = hotelLevelY(HOTEL_TOP_LEVEL) - gy0;
-  const gy = gy0 + gh / 2;
-  const midX = (B[0] + B[2]) / 2;
-  const midZ = (B[1] + B[3]) / 2;
-  instancedBoxes(root, [
-    { x: midX, y: gy, z: B[1], sx: B[2] - B[0], sy: gh, sz: 0.12 }, { x: midX, y: gy, z: B[3], sx: B[2] - B[0], sy: gh, sz: 0.12 },
-    { x: B[0], y: gy, z: midZ, sx: 0.12, sy: gh, sz: B[3] - B[1] }, { x: B[2], y: gy, z: midZ, sx: 0.12, sy: gh, sz: B[3] - B[1] },
-  ], M.glass);
-  const fins = [];
-  for (const x of spaced(B[0], B[2], 6)) for (const z of [B[1], B[3]]) fins.push({ x, y: gy, z, sx: 0.28, sy: gh, sz: 0.4 });
-  for (const z of spaced(B[1], B[3], 6)) for (const x of [B[0], B[2]]) fins.push({ x, y: gy, z, sx: 0.4, sy: gh, sz: 0.28 });
-  instancedBoxes(root, fins, M.gold, { cast: true });
+  const facade = buildFacade(root, { B, y0: gy0, height: gh, levelHeight: H, anisotropy });
 
   // mahkota atap: helipad, empat tiang sudut, dan antena
   const helipad = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 0.12, 40), std(0x3a3d44));
@@ -263,8 +243,9 @@ export function buildHotelWorld(scene) {
       lintels.push(d.orient === 'h' ? { x: d.x, y: y0 + DOOR_HEIGHT + h / 2, z: d.z, sx: d.width, sy: h, sz: 0.3 } : { x: d.x, y: y0 + DOOR_HEIGHT + h / 2, z: d.z, sx: 0.3, sy: h, sz: d.width });
     }
     // lampu langit-langit: kotak emisif tiap 6 m di ruang publik dan lorong (kamar tamu punya lampu sendiri dari perabot)
+    const guestRooms = isGuestLevel(l) ? L.rooms.filter((r) => r.kind === 'guest') : [];
     for (let x = B[0] + 3; x < B[2]; x += 6) for (let z = B[1] + 3; z < B[3]; z += 6) {
-      if (isGuestLevel(l) && (z < 430 || z > 466 || x < -26 || x > 26)) continue; // di dalam kamar tidak perlu
+      if (guestRooms.some((r) => x > r.rect[0] && x < r.rect[2] && z > r.rect[1] && z < r.rect[3])) continue; // di dalam kamar tidak perlu
       ceilingLights.push({ x, y: y0 + HOTEL_WALL_HEIGHT - 0.04, z, sx: 1.6, sy: 0.06, sz: 1.6 });
     }
     // perabot: tempat tidur penuh lewat bedGeometries, selebihnya kotak-kotak berwarna dari katalog
@@ -362,6 +343,7 @@ export function buildHotelWorld(scene) {
       return occCache.get(level);
     },
     builtLevels: () => [...groups.keys()].sort((a, b) => a - b),
-    dispose: () => { scene.remove(root); },
+    highway,
+    dispose: () => { facade.dispose(); highway.dispose(); scene.remove(root); },
   };
 }

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LAMP_COLOR, PROP_DEFS, PROP_TYPES, propHalf, propParts, propRect } from './hotel-props.js';
 import { FACE, doorKeepouts, furnishGuest, furnishLevel, guestFrame } from './hotel-furnish.js';
-import { GUESTS_PER_LEVEL, getHotelWorld, hotelRoomsAtLevel, isGuestLevel } from './hotel-layout.js';
+import { GUESTS_PER_LEVEL, HOTEL_CORE, HOTEL_SPAWN, getHotelWorld, hotelRoomsAtLevel, isGuestLevel } from './hotel-layout.js';
 import { wallToRect } from './villa-layout.js';
 
 const world = getHotelWorld();
@@ -47,8 +47,13 @@ test('kamar tamu: lengkap di semua jenis lantai, termasuk kamar sempit di lantai
     const fl = furnishLevel({ rooms, doors: [] });
     assert.equal(fl.rooms.length, GUESTS_PER_LEVEL, `lantai ${l}: sekat kamar mandi tiap kamar`);
     assert.equal(fl.doors.length, GUESTS_PER_LEVEL, `lantai ${l}: pintu kamar mandi tiap kamar`);
+    const byRoom = new Map();
+    for (const p of fl.props) {
+      if (!byRoom.has(p.room)) byRoom.set(p.room, new Set());
+      byRoom.get(p.room).add(p.type);
+    }
     for (const g of guests) {
-      const types = new Set(fl.props.filter((p) => p.room === g.id).map((p) => p.type));
+      const types = byRoom.get(g.id) ?? new Set();
       for (const t of need) assert.ok(types.has(t), `${g.id} (lantai ${l}) punya ${t}`);
       assert.ok(types.has('bed') || types.has('bed_s'), `${g.id} punya tempat tidur`);
     }
@@ -137,9 +142,9 @@ test('suite dan Sky Level: suite punya tempat tidur, Sky Lounge punya bar', () =
   assert.ok(world.levels[999].props.some((p) => p.room === 'infinity_pool' && p.type === 'lounger'), 'kolam infinity punya lounger');
 });
 
-test('jalur lobi ke inti tetap bebas walau lobi penuh perabot', () => {
-  let pos = { x: 0, z: 414, level: 0 };
-  for (let i = 0; i < 150; i++) pos = world.move(pos, 0, 0.2);
-  assert.ok(pos.z > 441, `sampai inti, z=${pos.z}`);
+test('jalur dari halaman ke inti tetap bebas walau lobi penuh perabot', () => {
+  let pos = { x: HOTEL_SPAWN.x, z: HOTEL_SPAWN.z, level: 0 };
+  for (let i = 0; i < 400; i++) pos = world.move(pos, 0, 0.2);
+  assert.ok(pos.z > HOTEL_CORE[1] + 1, `sampai inti, z=${pos.z}`);
   assert.ok(FACE.S === 0 && FACE.N > 3);
 });
