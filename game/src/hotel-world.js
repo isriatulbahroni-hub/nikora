@@ -7,8 +7,10 @@ import { DOOR_HEIGHT } from './villa-layout.js';
 import { bedGeometries } from './villa-props.js';
 import {
   HOTEL_BUILDING, HOTEL_CANOPY, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_FOUNTAIN, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_PARKING, HOTEL_SITE,
-  HOTEL_TOP_LEVEL, HOTEL_TOP_Y, HOTEL_WALL_HEIGHT, LIFTS, PODIUM_LEVELS, ROAD, getHotelWorld, hotelLevelY, isGuestLevel, isSkyLobbyLevel,
+  HOTEL_TOP_LEVEL, HOTEL_TOP_Y, HOTEL_WALL_HEIGHT, LIFTS, PODIUM_LEVELS, getHotelWorld, hotelLevelY, isGuestLevel, isSkyLobbyLevel,
 } from './hotel-layout.js';
+import { HIGHWAY_HALF } from './highway.js';
+import { buildHighway } from './highway-world.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const GOLD = 0xc9a24b;
@@ -105,25 +107,13 @@ export function buildHotelWorld(scene) {
     leaf: std(0x2f6f3a), trunk: std(0x6b4a2f), prop: std(0xffffff, { roughness: 0.7 }), vertex: std(0xffffff, { vertexColors: true, roughness: 0.7 }),
   };
 
-  // ---- jalan raya dari gerbang villa, halaman drop-off, parkir
-  const roadLen = ROAD.toZ - ROAD.fromZ;
-  const roadMid = (ROAD.fromZ + ROAD.toZ) / 2;
-  instancedBoxes(root, [{ x: ROAD.x, y: 0.03, z: roadMid, sx: ROAD.half * 2, sy: 0.06, sz: roadLen }, rectBox(HOTEL_PARKING, 0.03, 0.06)], M.asphalt, { receive: true });
+  // ---- Jalan Raya NIKORA (lingkar + 4 lengan + 4 gerbang, highway-world.js), halaman drop-off, parkir
+  const highway = buildHighway(root);
+  instancedBoxes(root, [rectBox(HOTEL_PARKING, 0.03, 0.06)], M.asphalt, { receive: true });
   instancedBoxes(root, [rectBox(HOTEL_FORECOURT, 0.045, 0.09), rectBox([-30, 420, 30, 424], 0.045, 0.09)], M.stone, { receive: true });
   const marks = [];
-  for (let z = ROAD.fromZ + 4; z < ROAD.toZ - 4; z += 8) marks.push({ x: ROAD.x, y: 0.07, z, sx: 0.25, sy: 0.02, sz: 3.2 });
-  for (const sx of [-1, 1]) marks.push({ x: sx * (ROAD.half - 0.5), y: 0.07, z: roadMid, sx: 0.18, sy: 0.02, sz: roadLen });
   for (let k = 0; k <= 8; k++) marks.push({ x: (HOTEL_PARKING[0] + HOTEL_PARKING[2]) / 2, y: 0.07, z: 386.5 + k * 11, sx: HOTEL_PARKING[2] - HOTEL_PARKING[0] - 2, sy: 0.02, sz: 0.14 });
   instancedBoxes(root, marks, M.line);
-  const curbs = [];
-  for (const sx of [-1, 1]) curbs.push({ x: sx * (ROAD.half + 0.2), y: 0.1, z: roadMid, sx: 0.4, sy: 0.2, sz: roadLen });
-  instancedBoxes(root, curbs, M.curb, { receive: true });
-  // tiang lampu sepanjang jalan
-  const posts = [];
-  const bulbs = [];
-  for (let z = ROAD.fromZ + 14; z < ROAD.toZ - 6; z += 30) for (const sx of [-1, 1]) { posts.push({ x: sx * (ROAD.half + 1.4), y: 3.2, z, sx: 0.16, sy: 6.4, sz: 0.16 }); bulbs.push({ x: sx * (ROAD.half + 1.4), y: 6.5, z, sx: 0.5, sy: 0.25, sz: 0.5 }); }
-  instancedBoxes(root, posts, M.dark, { cast: true });
-  instancedBoxes(root, bulbs, M.light);
 
   // air mancur
   const fountain = new THREE.Group();
@@ -151,7 +141,7 @@ export function buildHotelWorld(scene) {
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const trunks = [];
   const crowns = [];
-  const clear = (x, z) => !(Math.abs(x) < ROAD.half + 3 && z < HOTEL_FORECOURT[1] + 2) && !(x > HOTEL_FORECOURT[0] - 3 && x < HOTEL_FORECOURT[2] + 3 && z > HOTEL_FORECOURT[1] - 3 && z < B[1] + 4) && !(x > HOTEL_PARKING[0] - 3 && x < HOTEL_PARKING[2] + 3 && z > HOTEL_PARKING[1] - 3 && z < HOTEL_PARKING[3] + 3) && !(x > B[0] - 6 && x < B[2] + 6 && z > B[1] - 3 && z < B[3] + 8);
+  const clear = (x, z) => !(Math.abs(x) < HIGHWAY_HALF + 3 && z < HOTEL_FORECOURT[1] + 2) && !(x > HOTEL_FORECOURT[0] - 3 && x < HOTEL_FORECOURT[2] + 3 && z > HOTEL_FORECOURT[1] - 3 && z < B[1] + 4) && !(x > HOTEL_PARKING[0] - 3 && x < HOTEL_PARKING[2] + 3 && z > HOTEL_PARKING[1] - 3 && z < HOTEL_PARKING[3] + 3) && !(x > B[0] - 6 && x < B[2] + 6 && z > B[1] - 3 && z < B[3] + 8);
   for (let i = 0, n = 0; i < 400 && n < 70; i++) {
     const x = HOTEL_SITE.minX + 6 + rand() * (HOTEL_SITE.maxX - HOTEL_SITE.minX - 12);
     const z = HOTEL_SITE.minZ + 10 + rand() * (HOTEL_SITE.maxZ - HOTEL_SITE.minZ - 14);
@@ -350,6 +340,7 @@ export function buildHotelWorld(scene) {
       return occCache.get(level);
     },
     builtLevels: () => [...groups.keys()].sort((a, b) => a - b),
-    dispose: () => { scene.remove(root); },
+    highway,
+    dispose: () => { highway.dispose(); scene.remove(root); },
   };
 }

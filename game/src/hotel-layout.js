@@ -9,8 +9,8 @@
 //   level 4..997 kamar tamu (76 kamar per lantai), kecuali Sky Lobby
 //   Sky Lobby    tiap 50 lantai (level 50, 100, ... 950): fasilitas publik bergilir
 //   level 998    suite eksekutif | level 999 Sky Lounge, kolam infinity, teras
+import { HIGHWAY_LIMIT, highwayName, onHighway } from './highway.js';
 import { PLAYER_RADIUS, WALL_THICKNESS, BOUNDS as VILLA_BOUNDS, GATE_HALF_WIDTH, buildWallSegments, wallToRect, propToRect, resolveMove, isWalkable } from './villa-layout.js';
-import { HIGHWAY_LIMIT, onHighway, highwayName } from './highway.js';
 
 export const HOTEL_LEVEL_COUNT = 1000;
 export const HOTEL_LEVEL_HEIGHT = 4.2;
@@ -81,17 +81,16 @@ export const HOTEL_FORECOURT = Object.freeze([-30, 380, 30, 449]); // drop-off, 
 export const HOTEL_PARKING = Object.freeze([44, 384, 104, 453]);
 export const HOTEL_SPAWN = Object.freeze({ x: 0, z: 436 });
 
-// Ruas jalan raya lama dari gerbang villa ke hotel (dua lajur, 12 m). Dipertahankan untuk kompatibilitas; jaringan jalan
-// sebenarnya (34,5 m, Lingkar + 4 lengan) ada di highway.js dan dipakai surfaceAt/roomAt/move/canStand di bawah.
+// Jalan raya dari gerbang villa ke hotel. Dua lajur (kiri) selebar 12 m.
+// (Sudah digantikan Jalan Raya NIKORA 34,5 m di highway.js; ROAD tinggal penanda ruas villa-hotel lama dan dipakai tes.)
 export const ROAD = Object.freeze({ x: 0, half: 6, fromZ: VILLA_BOUNDS.maxZ, toZ: HOTEL_FORECOURT[1] });
 
 const inRect = (r, x, z) => x > r[0] && x < r[2] && z > r[1] && z < r[3];
 
 /** Jenis permukaan untuk fisika mobil: 'road' (aspal), 'compound' (di dalam pagar villa), 'ground' (tanah/rumput). */
 export function surfaceAt(x, z) {
-  if (Math.abs(x - ROAD.x) <= ROAD.half && z >= ROAD.fromZ - 2 && z <= ROAD.toZ + 1) return 'road';
+  if (onHighway(x, z)) return 'road'; // Jalan Raya NIKORA: lengan ke villa, aula, royal, masjid + Lingkar hotel
   if (inRect(HOTEL_FORECOURT, x, z) || inRect(HOTEL_PARKING, x, z)) return 'road';
-  if (onHighway(x, z)) return 'road'; // Jalan Raya NIKORA: Lingkar + lengan ke villa, aula, royal, masjid
   if (x >= VILLA_BOUNDS.minX && x <= VILLA_BOUNDS.maxX && z >= VILLA_BOUNDS.minZ && z <= VILLA_BOUNDS.maxZ) return 'compound';
   return 'ground';
 }
@@ -346,7 +345,6 @@ export function getHotelWorld() {
   });
   const inBuilding = (level, x, z, r) => { const b = hotelFootprint(level); return x >= b[0] + r && x <= b[2] - r && z >= b[1] + r && z <= b[3] - r; };
 
-  // Dunia hotel lebih luas daripada dunia villa (±600): jaringan Jalan Raya NIKORA membentang sampai gerbang masjid (z=916).
   const move = (pos, dx, dz) => {
     let { x, z } = pos;
     const level = pos.level ?? 0;

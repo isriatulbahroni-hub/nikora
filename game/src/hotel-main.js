@@ -10,6 +10,7 @@ import { mountLiftPanel, mountSpeedHud } from './hotel-ui.js';
 import { Fleet, hotelCars } from './vehicle-fleet.js';
 import { createVehicleView } from './vehicle-view.js';
 import { createCarRide } from './car-ride.js';
+import { HIGHWAY_LIMIT, arrivalGate, gateArrival, gateAt, gateUrl } from './highway.js';
 import { FLOOR_COLORS, GROUP_ORDER, cssColor, describePlace, hotelPlaces } from './hotel-places.js';
 import { hoursAt, zoneFromSearch } from './day-night.js';
 import { createStaffView } from './hotel-staff-view.js';
@@ -292,7 +293,7 @@ async function start() {
   const lights = buildEnvironment(scene);
   const built = buildHotelWorld(scene);
   // Mobil bersama di drop-off/parkir hotel (8 mobil). Logika naik/turun/setir/jaringan: car-ride.js (sama dengan vila).
-  const fleet = new Fleet({ specs: hotelCars(), selfId: 'lokal', env: { colliders: world.levels[0].colliders, surfaceAt } });
+  const fleet = new Fleet({ specs: hotelCars(), selfId: 'lokal', env: { colliders: world.levels[0].colliders, surfaceAt, limit: HIGHWAY_LIMIT } });
   const carView = createVehicleView({ scene, fleet });
   // Karyawan hotel: ratusan petugas disimulasikan sebagai jadwal; hanya yang dekat pemain digambar (hotel-staff.js, hotel-staff-view.js).
   // Jam kerja mengikuti jam asli di zona waktu acara (?tz=, bawaan WIB), sama seperti langit; ?jam=10 mengunci jam (pengujian).
@@ -353,8 +354,15 @@ async function start() {
   blob.rotation.x = -Math.PI / 2;
   scene.add(blob);
 
-  const me = { x: HOTEL_SPAWN.x, z: HOTEL_SPAWN.z, level: 0, stair: null, y: 0 };
-  let facing = Math.PI; // 0 = utara (-z); mulai menghadap hotel di selatan
+  // Tamu yang datang dari tempat acara (?from=villa|hall|royal|masjid) muncul di gerbangnya, menghadap hotel; selain itu di drop-off.
+  const arrival = arrivalGate(params.get('from'));
+  const arrivalPose = arrival ? gateArrival(arrival) : null;
+  const me = { x: arrivalPose?.x ?? HOTEL_SPAWN.x, z: arrivalPose?.z ?? HOTEL_SPAWN.z, level: 0, stair: null, y: 0 };
+  let facing = arrivalPose?.facing ?? Math.PI; // 0 = utara (-z); mulai menghadap hotel di selatan
+  if (arrivalPose) {
+    camState.yaw = facing;
+    camNow.yaw = facing;
+  }
   let shownFacing = facing;
   let walkClock = 0;
   camera.position.set(me.x, 8, me.z - 12);
@@ -480,6 +488,7 @@ async function start() {
       netStatus = 'Offline';
     });
   let placeKey = '';
+  let leavingTo = null; // gerbang yang sedang dimasuki (cegah pindah halaman dua kali)
 
   function frame(time) {
     requestAnimationFrame(frame);
@@ -518,6 +527,13 @@ async function start() {
 
     // mobil: pengemudi menjalankan fisika; pengemudi dan penumpang menempel di kursinya
     const car = carRide.step(me, { delta, rawInput });
+    // Gerbang tempat acara di ujung jalan raya: berjalan atau mengemudi melewatinya = pindah ke halaman tempat acara itu
+    const gate = leavingTo || me.level !== 0 ? null : gateAt(me.x, me.z);
+    if (gate) {
+      leavingTo = gate;
+      toast(`Memasuki ${gate.label}…`, 3000);
+      setTimeout(() => { window.location.href = gateUrl(gate, window.location.search); }, 700);
+    }
     const seatPose = car.riding ? fleet.seatPose(car.sit) : null;
     if (car.riding) facing = car.facing;
     shownFacing = seatPose ? seatPose.rotY : turnToward(shownFacing, facing, delta);
@@ -601,6 +617,7 @@ async function start() {
     cars: () => fleet.cars.map((c) => ({ id: c.id, x: c.x, z: c.z, heading: c.heading, speed: c.speed, seats: c.seats.slice() })), // pengujian
     board: () => carRide.board(me),
     teleport, // hanya untuk pengujian dan menu Jelajah
+    leavingTo: () => leavingTo?.id ?? null,
     ride,
   };
 }
