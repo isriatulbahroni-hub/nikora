@@ -7,6 +7,7 @@
 import { resolveMove, WORLD_LIMIT } from './villa-layout.js';
 import { surfaceAt as defaultSurface } from './hotel-layout.js';
 import { modelOf } from './car-models.js';
+import { TYRE, gripLimit, limitYaw, longSlip, stepTyreTemp } from './tyre-model.js';
 
 export const CAR = Object.freeze({
   length: 4.3, width: 1.82, wheelBase: 2.7,
@@ -38,7 +39,7 @@ export function specOf(model) {
 export function createVehicle({ id, x = 0, z = 0, heading = 0, color = 0xf2f2f0, model = null }) {
   const spec = specOf(model);
   const paint = spec.model && spec.paint != null && color === 0xf2f2f0 ? spec.paint : color;
-  return { id, x, z, heading, speed: 0, steer: 0, engine: false, color: paint, model: spec.model, spec, seats: Array(spec.seatCount).fill(null), hit: 0, braking: false, throttle: 0 };
+  return { id, x, z, heading, speed: 0, steer: 0, engine: false, color: paint, model: spec.model, spec, seats: Array(spec.seatCount).fill(null), hit: 0, braking: false, throttle: 0, slip: 0, tyreTemp: TYRE.ambient };
 }
 
 /**
@@ -49,6 +50,7 @@ export function stepVehicle(v, input, dt, env = {}) {
   const C = v.spec ?? CAR;
   const surface = (env.surfaceAt ?? defaultSurface)(v.x, v.z);
   const cap = surface === 'road' ? C.maxSpeed : (SURFACE_CAP[surface] ?? SURFACE_CAP.ground);
+  const speed0 = v.speed;
   const throttle = v.engine ? clamp(input.throttle ?? 0, -1, 1) : 0;
   const brake = Boolean(input.brake) || !v.engine && Math.abs(v.speed) > 0;
   v.throttle = throttle;
@@ -77,8 +79,17 @@ export function stepVehicle(v, input, dt, env = {}) {
   const dSteer = clamp(target - v.steer, -C.steerRate * dt, C.steerRate * dt);
   v.steer += dSteer;
 
+  // grip ban: yaw rate dibatasi percepatan samping yang masih bisa ditahan ban (understeer + selip), dibawa lingkaran gesek
+  const aLong = dt > 0 && (throttle !== 0 || brake) ? (v.speed - speed0) / dt : 0; // hambatan udara/gesekan bukan gaya ban
+  const limit = gripLimit(v.tyreTemp ?? TYRE.ambient, surface, C.grip ?? 1);
+  const wantedYaw = (v.speed / C.wheelBase) * Math.tan(v.steer);
+  const lim = limitYaw({ speed: v.speed, wantedYaw, aLong, limit });
+  v.slip = Math.max(lim.slip, longSlip(aLong, limit));
+  if (lim.slip > 0) v.speed -= Math.sign(v.speed) * lim.slip * 6 * dt; // menyelip mengikis laju
+  v.tyreTemp = stepTyreTemp(v.tyreTemp ?? TYRE.ambient, { slip: v.slip, speed: v.speed, dt });
+
   // gerak (sepeda kinematik: pusat = sumbu belakang+setengah wheelBase, disederhanakan ke pusat mobil)
-  v.heading = wrapAngle(v.heading + (v.speed / C.wheelBase) * Math.tan(v.steer) * dt);
+  v.heading = wrapAngle(v.heading + lim.yawRate * dt);
   const f = forward(v.heading);
   v.x += f.x * v.speed * dt;
   v.z += f.z * v.speed * dt;
