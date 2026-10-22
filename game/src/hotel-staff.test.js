@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GUEST_LEVEL_COUNT, GUESTS_PER_LEVEL, HOTEL_BUILDING, HOTEL_PARKING, hotelRoomsAtLevel } from './hotel-layout.js';
+import { GUEST_LEVEL_COUNT, GUESTS_PER_LEVEL, HOTEL_BUILDING, HOTEL_FORECOURT, HOTEL_PARKING, HOTEL_SITE, hotelRoomsAtLevel } from './hotel-layout.js';
 import {
   STAFF, STAFF_ROLES, STAFF_TOTAL, SHIFTS, CLEAN_MS, onDuty, cleanerForLevel, cleanerLevels, housekeeperState, parkingState, staffOnLevel, dutySummary,
-  staffConfig, staffActFor, pickNearby, STAFF_VIEW_MAX, STAFF_VIEW_RADIUS,
+  staffConfig, staffActFor, pickNearby, STAFF_VIEW_MAX, STAFF_VIEW_RADIUS, staffState, workSummary, WORK_TASKS,
 } from './hotel-staff.js';
 
 const inRect = (r, x, z) => x >= r[0] - 1e-6 && x <= r[2] + 1e-6 && z >= r[1] - 1e-6 && z <= r[3] + 1e-6;
@@ -90,9 +90,9 @@ test('staffOnLevel: lobi berisi petugas pos di dalam ruangnya; lantai tamu hanya
 
   for (const level of [4, 500, 997]) {
     const list = staffOnLevel(level, 10);
-    assert.ok(list.length <= 1);
-    assert.ok(list.every((s) => s.role === 'housekeeping' && s.level === level));
-    assert.deepEqual(staffOnLevel(level, 23), []);
+    assert.ok(list.every((s) => (s.role === 'housekeeping' || s.role === 'bellboy') && s.level === level));
+    assert.ok(list.filter((s) => s.role === 'housekeeping').length <= 1);
+    assert.ok(staffOnLevel(level, 23).every((s) => s.role === 'bellboy'), 'malam: hanya bellboy yang mungkin ada di lantai tamu');
   }
   assert.deepEqual(staffOnLevel(50, 10), []);
 });
@@ -164,4 +164,86 @@ test('pickNearby: dalam radius, terdekat dahulu, dibatasi jumlahnya', () => {
   assert.ok(STAFF_VIEW_RADIUS > 0);
   // petugas di lobi pada siang hari tidak melebihi batas
   assert.ok(pickNearby(staffOnLevel(0, 10), { x: 0, z: HOTEL_BUILDING[1] + 20 }).length <= STAFF_VIEW_MAX);
+});
+
+const WEST = [HOTEL_SITE.minX + 5, HOTEL_SITE.minZ + 5, HOTEL_BUILDING[0] - 5, HOTEL_SITE.maxZ - 5];
+
+test('semua karyawan bekerja: tiap petugas mengerjakan tugas kerjanya selama shift', () => {
+  for (const staff of STAFF) {
+    const start = SHIFTS[staff.shift].from;
+    const tasks = new Set();
+    for (let sec = 0; sec < 8 * 3600; sec += 7) { // langkah 7 detik: tidak sejajar dengan putaran kerja 60 detik
+      const st = staffState(staff, start + sec / 3600);
+      assert.ok(st, `${staff.id} tanpa keadaan`);
+      assert.ok(Number.isFinite(st.x) && Number.isFinite(st.z), `${staff.id} posisi tidak sah`);
+      assert.ok(Number.isInteger(st.level) && st.level >= 0, `${staff.id} lantai tidak sah`);
+      tasks.add(st.task);
+    }
+    assert.ok([...tasks].some((k) => WORK_TASKS.includes(k)), `${staff.id} (${staff.role}) tidak pernah bekerja: ${[...tasks]}`);
+  }
+});
+
+test('tiap peran bekerja di tempatnya dan tidak teleport', () => {
+  const lobby = hotelRoomsAtLevel(0).find((r) => r.id === 'lobby').rect;
+  const dining = ['grand_dining', 'specialty_dining'].map((id) => hotelRoomsAtLevel(0).find((r) => r.id === id).rect);
+  const pool = hotelRoomsAtLevel(2).find((r) => r.id === 'indoor_pool').rect;
+  const where = {
+    front_desk: (s) => s.level === 0 && inRect(lobby, s.x, s.z),
+    waiter: (s, staff) => s.level === 0 && inRect(dining[staff.index % 2], s.x, s.z),
+    valet: (s) => s.level === 0 && inRect([HOTEL_FORECOURT[0], HOTEL_FORECOURT[1], HOTEL_PARKING[2], HOTEL_PARKING[3]], s.x, s.z), // halaman depan sampai parkir (jalan di antaranya)
+    security: (s) => s.level === 0 && (inRect(HOTEL_FORECOURT, s.x, s.z) || inRect(lobby, s.x, s.z)),
+    gardener: (s) => s.level === 0 && inRect(WEST, s.x, s.z),
+    lifeguard: (s) => s.level === 2 && inRect(pool, s.x, s.z),
+  };
+  const expectTask = { front_desk: ['greeting'], waiter: ['serving'], valet: ['greeting', 'working'], security: ['watching'], gardener: ['working'], lifeguard: ['watching'], parking: ['directing'], bellboy: ['serving', 'riding'] };
+  for (const [role, { count }] of Object.entries(STAFF_ROLES)) {
+    if (role === 'housekeeping') continue;
+    for (const index of new Set([0, Math.floor(count / 2), count - 1])) {
+      const staff = STAFF.find((s) => s.role === role && s.index === index);
+      const start = SHIFTS[staff.shift].from;
+      const tasks = new Set();
+      let prev = null;
+      for (let sec = 0; sec < 8 * 3600; sec++) {
+        const st = staffState(staff, start + sec / 3600);
+        tasks.add(st.task);
+        if (where[role]) assert.ok(where[role](st, staff), `${staff.id} di luar tempat kerjanya (${st.x.toFixed(1)}, ${st.z.toFixed(1)}, lt ${st.level})`);
+        if (prev && prev.level === st.level) assert.ok(Math.hypot(st.x - prev.x, st.z - prev.z) <= 1.4 + 1e-6, `${staff.id} melompat`);
+        prev = st;
+      }
+      for (const k of expectTask[role]) assert.ok(tasks.has(k), `${staff.id} tidak pernah ${k}`);
+    }
+  }
+});
+
+test('bellboy naik lift ke lantai tamu dan mengantar ke kamar', () => {
+  const staff = STAFF.find((s) => s.role === 'bellboy' && s.index === 0);
+  const start = SHIFTS[staff.shift].from;
+  const levels = new Set();
+  const delivered = new Set();
+  let rides = 0;
+  let prevLevel = 0;
+  for (let sec = 0; sec < 8 * 3600; sec++) {
+    const st = staffState(staff, start + sec / 3600);
+    levels.add(st.level);
+    if (st.task === 'riding') rides++;
+    if (st.task === 'serving' && st.level > 0) {
+      const room = hotelRoomsAtLevel(st.level).find((r) => r.no === st.roomNo);
+      assert.ok(room && inRect(room.rect, st.x, st.z), 'mengantar di dalam kamar tujuan');
+      delivered.add(`${st.level}:${st.roomNo}`);
+    }
+    prevLevel = st.level;
+  }
+  assert.ok(prevLevel >= 0 && levels.has(0) && levels.size >= 3, `hanya ${[...levels]}`);
+  assert.ok([...levels].some((l) => cleanerForLevel(l) !== null), 'mengunjungi lantai tamu');
+  assert.ok(rides > 0 && delivered.size >= 4, `naik lift ${rides} detik, kamar ${delivered.size}`);
+});
+
+test('workSummary: sebagian besar petugas yang bertugas sedang mengerjakan sesuatu', () => {
+  for (const h of [8, 12, 16, 20, 23.5, 3]) {
+    const w = workSummary(h);
+    const total = Object.values(w).reduce((a, b) => a + b, 0);
+    assert.equal(total, dutySummary(h).total);
+    const working = Object.entries(w).filter(([k]) => WORK_TASKS.includes(k)).reduce((a, [, n]) => a + n, 0);
+    assert.ok(working / total > 0.3, `jam ${h}: hanya ${working}/${total} bekerja (${JSON.stringify(w)})`);
+  }
 });
