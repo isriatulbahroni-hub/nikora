@@ -1,0 +1,85 @@
+// Katalog model mobil mewah (murni data, tanpa THREE): ukuran, performa, kursi, suara mesin, gaya pintu.
+// Desain terinspirasi empat mobil referensi pemilik (coupe mewah biru, roadster hitam, hypercar perak-merah, SUV mewah merah).
+// Tanpa logo, lambang, atau nama merek asli: semua bentuk dibuat sendiri secara prosedural (lihat luxury-cars.js).
+//
+// Kerangka mobil: depan = +z; kursi: fwd (+ ke depan), side (+ ke kanan mobil). Kursi 0 = pengemudi (kanan depan, setir kanan).
+
+const freeze = (o) => Object.freeze(o);
+const gears = (...speeds) => freeze(speeds); // batas atas kecepatan (m/s) tiap gigi maju
+
+export const CAR_MODELS = freeze({
+  royale: freeze({
+    id: 'royale', name: 'Royale Sweep', kind: 'coupe',
+    length: 5.55, width: 2.0, height: 1.5, wheelBase: 3.5, wheelRadius: 0.38, tireWidth: 0.27,
+    maxSpeed: 31, reverseMax: 5, accel: 6.6, brake: 17, maxSteer: 0.48, steerRate: 3.0,
+    circleRadius: 1.05, circleOffset: 1.75,
+    seats: freeze([{ fwd: 0.35, side: 0.5 }, { fwd: 0.35, side: -0.5 }]), seatLift: -0.05,
+    paint: 0x151f46, accent: 0xd8d4c8, interior: 0xd9c3a0,
+    engine: freeze({ cylinders: 12, idleRpm: 650, maxRpm: 5200, gears: gears(7, 12, 18, 25, 31), timbre: 'smooth' }),
+    doors: freeze({ style: 'coach', open: 1.15 }),
+  }),
+  noir: freeze({
+    id: 'noir', name: 'Noir Aero', kind: 'roadster',
+    length: 4.62, width: 2.04, height: 1.19, wheelBase: 2.75, wheelRadius: 0.36, tireWidth: 0.3,
+    maxSpeed: 37, reverseMax: 5, accel: 10.5, brake: 21, maxSteer: 0.5, steerRate: 3.6,
+    circleRadius: 1.0, circleOffset: 1.3,
+    seats: freeze([{ fwd: 0.2, side: 0.5 }, { fwd: 0.2, side: -0.5 }]), seatLift: -0.2,
+    paint: 0x0b0c10, accent: 0xe0a800, interior: 0x15151a,
+    engine: freeze({ cylinders: 16, idleRpm: 700, maxRpm: 7000, gears: gears(8, 14, 21, 29, 37), timbre: 'deep' }),
+    doors: freeze({ style: 'swing', open: 1.0 }),
+  }),
+  argent: freeze({
+    id: 'argent', name: 'Argent Fury', kind: 'hypercar',
+    length: 4.85, width: 2.06, height: 1.16, wheelBase: 2.9, wheelRadius: 0.36, tireWidth: 0.31,
+    maxSpeed: 39, reverseMax: 5, accel: 12, brake: 22, maxSteer: 0.5, steerRate: 3.8,
+    circleRadius: 1.0, circleOffset: 1.4,
+    seats: freeze([{ fwd: 0.1, side: 0.5 }, { fwd: 0.1, side: -0.5 }]), seatLift: -0.36,
+    paint: 0x8d9298, accent: 0xc01822, interior: 0x101012,
+    engine: freeze({ cylinders: 12, idleRpm: 900, maxRpm: 8400, gears: gears(8, 15, 22, 30, 39), timbre: 'scream' }),
+    doors: freeze({ style: 'scissor', open: 1.05 }),
+  }),
+  rubis: freeze({
+    id: 'rubis', name: 'Rubis Grand', kind: 'suv',
+    length: 5.34, width: 2.0, height: 1.83, wheelBase: 3.3, wheelRadius: 0.44, tireWidth: 0.31,
+    maxSpeed: 28, reverseMax: 5, accel: 6.0, brake: 16, maxSteer: 0.5, steerRate: 3.0,
+    circleRadius: 1.05, circleOffset: 1.65,
+    seats: freeze([{ fwd: 0.75, side: 0.5 }, { fwd: 0.75, side: -0.5 }, { fwd: -0.75, side: 0.5 }, { fwd: -0.75, side: -0.5 }]), seatLift: 0.1,
+    paint: 0x7b0e17, accent: 0xc8ccd2, interior: 0xe6d8bf,
+    engine: freeze({ cylinders: 12, idleRpm: 600, maxRpm: 4800, gears: gears(6, 11, 16, 22, 28), timbre: 'smooth' }),
+    doors: freeze({ style: 'coach', open: 1.15 }),
+  }),
+});
+
+export const MODEL_IDS = freeze(Object.keys(CAR_MODELS));
+export const modelOf = (id) => CAR_MODELS[id] ?? null;
+
+/** Urutan model armada hotel: 8 mobil = tiap model dua kali, berselang-seling supaya parkir terlihat beragam. */
+export const HOTEL_MODEL_ORDER = freeze(['royale', 'noir', 'argent', 'rubis']);
+export const hotelModelFor = (k) => HOTEL_MODEL_ORDER[k % HOTEL_MODEL_ORDER.length];
+
+// ---------------------------------------------------------------- mesin (RPM, gigi) — murni, diuji
+/** Gigi 1..n untuk kecepatan |v| (m/s). 0 = diam/netral. */
+export function gearFor(model, speed) {
+  const v = Math.abs(speed);
+  if (v < 0.25) return 0;
+  const g = model.engine.gears;
+  for (let i = 0; i < g.length; i++) if (v <= g[i]) return i + 1;
+  return g.length;
+}
+
+/** RPM mesin: naik dalam tiap gigi, turun saat pindah gigi; throttle menaikkan RPM saat diam/menahan. */
+export function rpmFor(model, speed, throttle = 0, engineOn = true) {
+  const { idleRpm, maxRpm, gears: g } = model.engine;
+  if (!engineOn) return 0;
+  const v = Math.abs(speed);
+  const gear = gearFor(model, v);
+  if (gear === 0) return idleRpm + (maxRpm - idleRpm) * 0.28 * Math.max(0, throttle);
+  const lo = gear === 1 ? 0 : g[gear - 2] * 0.62; // setelah pindah gigi RPM jatuh ke ~62% batas gigi sebelumnya
+  const hi = g[gear - 1];
+  const t = Math.min(1, Math.max(0, (v - lo) / Math.max(0.001, hi - lo)));
+  const base = idleRpm + (maxRpm * 0.96 - idleRpm) * (gear === 1 ? Math.min(1, v / hi) : 0.38 + 0.62 * t);
+  return Math.min(maxRpm, base + 160 * Math.max(0, throttle));
+}
+
+/** Frekuensi pembakaran (Hz) mesin 4-tak: rpm/60 * silinder/2. */
+export const firingHz = (model, rpm) => (rpm / 60) * (model.engine.cylinders / 2);
