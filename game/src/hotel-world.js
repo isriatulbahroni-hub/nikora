@@ -12,6 +12,7 @@ import {
 import { HIGHWAY_HALF } from './highway.js';
 import { buildHighway } from './highway-world.js';
 import { buildFacade } from './hotel-facade.js';
+import { exteriorOccluders } from './hotel-occluders.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const GOLD = 0xc9a24b;
@@ -84,6 +85,8 @@ function levelOccluders(world, level) {
   add(b[0], b[2], y0 - 0.4, y0, b[1], b[3]); // lantai
   add(b[0], b[2], y0 + HOTEL_WALL_HEIGHT, y0 + HOTEL_LEVEL_HEIGHT + 0.1, b[1], b[3]); // langit-langit
   add(HOTEL_SITE.minX, HOTEL_SITE.maxX, -6, 0.05, HOTEL_SITE.minZ, HOTEL_SITE.maxZ); // tanah di sekitar hotel (di luar area tanah villa)
+  // kanopi, tiang, air mancur, dan badan menara di atas podium (hotel-occluders.js)
+  boxes.push(...exteriorOccluders({ level, building: b, podiumLevels: PODIUM_LEVELS, podiumTopY: hotelLevelY(PODIUM_LEVELS), topY: HOTEL_TOP_Y, canopy: HOTEL_CANOPY, fountain: HOTEL_FOUNTAIN }));
   return boxes;
 }
 
