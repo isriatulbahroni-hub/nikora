@@ -53,6 +53,19 @@ gas/rem keras mengurangi grip samping (lingkaran gesek); tanah/halaman lebih lic
 `vehicle.tyreTemp` (suhu ban) dipakai suara decit ban (`tyreSound` di `car-audio.js`, hanya mobil yang dikemudikan).
 Hambatan udara tidak dihitung sebagai selip. Belum: HUD suhu ban, asap/bekas ban, pindah beban visual dari grip.
 
+## Kamera kabin, setir, spion, suara (tahap 2)
+
+- **Kamera kabin** (`cockpit.js`, `cockpit-view.js`): saat mengemudi, tombol kamera / `C` berputar melalui sudut orbit lalu masuk ke kabin.
+  Mata di kepala pengemudi, menghadap ke depan dan sedikit mengintip ke arah belokan, FOV melebar dengan laju. Avatar disembunyikan.
+- **Setir berputar** di semua mobil mewah (terlihat dari luar juga), **tangan dan lengan** di setir, **jam spidometer/RPM/gigi** di dasbor
+  (kanvas diperbarui maksimal 12x/dtk), dan **tiga spion hidup** (tengah + dua samping): adegan dirender ulang ke tekstur 192x96,
+  satu spion per frame bergiliran, bayangan tidak dihitung ulang. Spion mati (kaca gelap) dengan `?q=low`.
+- **Pedal layar** REM/GAS di kanan bawah (layar sentuh); menimpa gas/rem joystick selama ditekan. HUD kecil jadi hanya tombol klakson di kabin.
+- **Suara mesin v2** (`car-audio.js`, `engineLayers`): knalpot (harmonik pada frekuensi pembakaran + subharmonik setengah-orde, pengeras tanh
+  yang bertambah dengan gas, resonansi pipa), desis intake, gerung gigi, turbo (W16 Noir; bunyi dan blow-off), angin, decit ban,
+  letupan saat pindah gigi, rev limiter. Kamera kabin meredam bunyi luar (lowpass) dan menebalkan dentuman rendah.
+- Belum: suara mesin mobil lain dengan Doppler, HUD suhu ban, asap/bekas ban, jalan berkelok 15 menit.
+
 ## Yang belum
 - Tampilan di perangkat nyata belum diuji (CI hanya menguji logika, geometri, dan build). Cek tinggi kepala avatar di mobil rendah.
 - Mesin mobil pemain lain tidak disuarakan; lampu sein/hazard belum ada; mobil villa masih sedan lama.

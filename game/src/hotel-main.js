@@ -13,6 +13,7 @@ import { createCarAudio } from './car-audio.js';
 import { Fleet, hotelCars } from './vehicle-fleet.js';
 import { createVehicleView } from './vehicle-view.js';
 import { createCarRide } from './car-ride.js';
+import { cockpitFov, eyeWorld, cockpitSpec } from './cockpit.js';
 import { HIGHWAY_LIMIT, arrivalGate, gateArrival, gateAt, gateUrl } from './highway.js';
 import { FLOOR_COLORS, GROUP_ORDER, cssColor, describePlace, hotelPlaces } from './hotel-places.js';
 import { hoursAt, zoneFromSearch } from './day-night.js';
@@ -314,7 +315,7 @@ async function start() {
   const fleet = new Fleet({ specs: hotelCars(), selfId: 'lokal', env: { colliders: world.levels[0].colliders, surfaceAt, limit: HIGHWAY_LIMIT } });
   const carAudio = createCarAudio();
   let doorHook = () => {};
-  const carView = createVehicleView({ scene, fleet, envMap: buildCarEnvMap(renderer), onDoor: (car, opening) => { if (opening) doorHook(car); } });
+  const carView = createVehicleView({ scene, fleet, mirrors: !lowQuality, envMap: buildCarEnvMap(renderer), onDoor: (car, opening) => { if (opening) doorHook(car); } });
   // Karyawan hotel: ratusan petugas disimulasikan sebagai jadwal; hanya yang dekat pemain digambar (hotel-staff.js, hotel-staff-view.js).
   // Jam kerja mengikuti jam asli di zona waktu acara (?tz=, bawaan WIB), sama seperti langit; ?jam=10 mengunci jam (pengujian).
   const staffSearch = new URLSearchParams(window.location.search);
@@ -334,7 +335,15 @@ async function start() {
   let camArm = 0;
   let camPitch = null;
   let preset = 0;
+  let cockpitOn = false; // kamera di dalam kabin (hanya saat mengemudi): setelah preset terakhir, tombol kamera masuk ke kabin
+  let cockpitSeen = false;
   hooks.camera = () => {
+    if (fleet.driving) {
+      if (cockpitOn) { cockpitOn = false; preset = 0; } else if (preset === CAM_PRESETS.length - 1) { cockpitOn = true; return; } else preset += 1;
+      camState.pitch = CAM_PRESETS[preset].pitch;
+      camState.dist = CAM_PRESETS[preset].dist;
+      return;
+    }
     preset = (preset + 1) % CAM_PRESETS.length;
     camState.pitch = CAM_PRESETS[preset].pitch;
     camState.dist = CAM_PRESETS[preset].dist;
@@ -486,6 +495,7 @@ async function start() {
     fleet, view: carView, hud: carHud, audio: carAudio, camState, toast,
     exit: (p) => world.move({ x: p.x, z: p.z, level: 0, stair: null, y: 0 }, 0, 0), // geser bila titik turun mengenai penghalang
     isDragging: () => performance.now() - camInput.lastDrag < 1500,
+    isCabin: () => cockpitOn,
   });
   doorHook = (car) => carAudio.door(Math.hypot(car.x - me.x, car.z - me.z));
   hooks.action = () => {
@@ -605,6 +615,26 @@ async function start() {
     avatar.visible = camArm > 0.95;
     blob.visible = avatar.visible;
 
+    // kamera kabin: mata di kepala pengemudi, menghadap ke depan mobil, sedikit mengintip ke arah belokan; avatar disembunyikan
+    const inCabin = cockpitOn && !!fleet.driving;
+    if (!fleet.driving) cockpitOn = false;
+    carView.setCockpit(inCabin ? fleet.driving : null);
+    carAudio.cabin(inCabin);
+    if (inCabin) {
+      const dc = fleet.driving;
+      const e = eyeWorld(dc, cockpitSpec(dc.spec), dc.steer * 0.35);
+      camera.position.set(e.x, e.y, e.z);
+      camera.lookAt(e.x + Math.sin(e.yaw) * 20, e.y - 0.12, e.z + Math.cos(e.yaw) * 20);
+      camera.fov = cockpitFov(dc.speed, dc.spec.maxSpeed, camera.aspect);
+      camera.updateProjectionMatrix();
+      avatar.visible = false;
+      blob.visible = false;
+      cockpitSeen = true;
+    } else if (cockpitSeen) {
+      cockpitSeen = false;
+      resize(); // kembalikan FOV kamera orbit
+    }
+
     // di dalam ruangan beratap: cahaya langit diredam halus dan lampu ruangan menyala mengikuti pemain
     const info = describePlace(world, me.x, me.z, me.level);
     const indoor = info.indoor && info.inside;
@@ -623,6 +653,7 @@ async function start() {
     sky.update(time); // langit, awan, bintang, dan lampu mengikuti kamera yang sudah final
     const qChange = quality.tick(performance.now());
     if (qChange) renderer.setPixelRatio(qChange.ratio);
+    if (inCabin) carView.renderMirrors(renderer, scene);
     renderer.render(scene, camera);
 
     const key = `${info.id}@${me.level}`;
@@ -644,6 +675,9 @@ async function start() {
     setSky: (mode) => sky.setMode(mode), // auto | day | sunset | night | cycle (pengujian)
     cars: () => fleet.cars.map((c) => ({ id: c.id, model: c.model, x: c.x, z: c.z, heading: c.heading, speed: c.speed, seats: c.seats.slice() })), // pengujian
     board: () => carRide.board(me),
+    cockpit: () => cockpitOn, // kamera kabin aktif (pengujian)
+    cycleCamera: () => hooks.camera(), // sama dengan tombol kamera (pengujian)
+    driving: () => (fleet.driving ? { model: fleet.driving.model, speed: fleet.driving.speed, engine: fleet.driving.engine, steer: fleet.driving.steer, slip: fleet.driving.slip, tyreTemp: fleet.driving.tyreTemp } : null),
     teleport, // hanya untuk pengujian dan menu Jelajah
     leavingTo: () => leavingTo?.id ?? null,
     ride,

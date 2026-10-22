@@ -25,7 +25,7 @@ export const CAR_MODELS = freeze({
     circleRadius: 1.0, circleOffset: 1.3,
     seats: freeze([{ fwd: 0.2, side: 0.5 }, { fwd: 0.2, side: -0.5 }]), seatLift: -0.2,
     paint: 0x0b0c10, accent: 0xe0a800, interior: 0x15151a,
-    engine: freeze({ cylinders: 16, idleRpm: 700, maxRpm: 7000, gears: gears(8, 14, 21, 29, 37), timbre: 'deep' }),
+    engine: freeze({ cylinders: 16, idleRpm: 700, maxRpm: 7000, gears: gears(8, 14, 21, 29, 37), timbre: 'deep', turbo: true }),
     doors: freeze({ style: 'swing', open: 1.0 }),
   }),
   argent: freeze({
@@ -35,7 +35,7 @@ export const CAR_MODELS = freeze({
     circleRadius: 1.0, circleOffset: 1.4,
     seats: freeze([{ fwd: 0.1, side: 0.5 }, { fwd: 0.1, side: -0.5 }]), seatLift: -0.36,
     paint: 0x8d9298, accent: 0xc01822, interior: 0x101012,
-    engine: freeze({ cylinders: 12, idleRpm: 900, maxRpm: 8400, gears: gears(8, 15, 22, 30, 39), timbre: 'scream' }),
+    engine: freeze({ cylinders: 12, idleRpm: 900, maxRpm: 8400, gears: gears(8, 15, 22, 30, 39), timbre: 'scream', turbo: false }),
     doors: freeze({ style: 'scissor', open: 1.05 }),
   }),
   rubis: freeze({

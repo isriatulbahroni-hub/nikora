@@ -5,6 +5,9 @@ import * as THREE from 'three';
 import { carGeometries } from './villa-props.js';
 import { bakeDoors, buildLuxuryCar } from './luxury-cars.js';
 import { wrapAngle } from './vehicle.js';
+import { buildSteeringWheel, createCockpitRig } from './cockpit-view.js';
+import { cockpitSpec, wheelAngle } from './cockpit.js';
+import { hudInfo } from './car-ride.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 export const DOOR_OPEN_S = 1.6; // lama pintu terbuka setelah kursi berganti penghuni
@@ -42,7 +45,7 @@ function plateTexture(text) {
   return t;
 }
 
-export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => {} }) {
+export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => {}, mirrors = true }) {
   const legacy = carGeometries();
   const legacyDetail = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.2 });
   const legacyLight = new THREE.MeshBasicMaterial({ vertexColors: true });
@@ -57,6 +60,10 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
   scene.add(root);
   const textures = [];
   const ownMats = [];
+  const steeringWheels = [];
+  const rigs = new Map(); // mobil -> rig kokpit (dibuat saat pertama dikemudikan dalam mode kabin)
+  let cockpitCar = null;
+  let clock = 0;
 
   const sharedModel = (id) => {
     if (!models.has(id)) models.set(id, buildLuxuryCar(id));
@@ -85,6 +92,10 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     mesh(shared.head, headMat, false);
     mesh(shared.tail, tailMat, false);
     mesh(shared.rev, revMat, false);
+
+    const steering = buildSteeringWheel(cockpitSpec(car.spec));
+    tilt.add(steering.pivot);
+    steeringWheels.push(steering);
 
     const wheels = shared.wheels.map((w) => {
       const pivot = new THREE.Group();
@@ -129,7 +140,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     group.position.set(car.x, 0, car.z);
     group.rotation.y = car.heading;
     root.add(group);
-    return { car, group, tilt, luxury: true, wheels, doors, headMat, tailMat, revMat, paintMat, doorGeos, spinAngle: 0, accel: 0, yaw: 0, steer: 0, brake: false, prev: null, seats: car.seats.slice(), doorTimer: car.seats.map(() => 0), pitch: 0, roll: 0 };
+    return { car, group, tilt, luxury: true, steering, wheels, doors, headMat, tailMat, revMat, paintMat, doorGeos, spinAngle: 0, accel: 0, yaw: 0, steer: 0, brake: false, prev: null, seats: car.seats.slice(), doorTimer: car.seats.map(() => 0), pitch: 0, roll: 0 };
   }
 
   function buildLegacyEntry(car) {
@@ -178,6 +189,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     e.tilt.rotation.z = e.roll;
 
     e.spinAngle += (car.speed * dt) / C.wheelRadius;
+    e.steering.spin.rotation.z = wheelAngle(e.steer, C.maxSteer); // roda setir ikut berputar (juga terlihat dari luar)
     for (const w of e.wheels) {
       w.spin.rotation.x = e.spinAngle * w.side;
       if (w.front) w.pivot.rotation.y = e.steer;
@@ -212,13 +224,33 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
 
   return {
     entries,
+    /** Mode kabin: car = mobil yang kamera-nya di dalam (atau null). Rig (tangan, jam, spion) dibuat sekali per mobil. */
+    setCockpit(car) {
+      if (car === cockpitCar) return;
+      if (cockpitCar) rigs.get(cockpitCar)?.setActive(false);
+      cockpitCar = car;
+      if (!car) return;
+      const entry = entries.find((x) => x.car === car);
+      if (!entry?.luxury) { cockpitCar = null; return; }
+      if (!rigs.has(car)) rigs.set(car, createCockpitRig(entry, { mirrors }));
+      rigs.get(car).setActive(true);
+    },
+    /** Render spion kokpit (satu per frame) sebelum render utama. */
+    renderMirrors(renderer, sceneToRender = scene) {
+      if (cockpitCar) rigs.get(cockpitCar)?.renderMirrors(renderer, sceneToRender);
+    },
     update(delta) {
+      clock += delta;
       const mine = fleet.driving;
       for (const e of entries) {
         const { car, group, tilt } = e;
         group.position.set(car.x, 0, car.z);
         group.rotation.y = car.heading;
-        if (e.luxury) animateLuxury(e, delta, mine);
+        if (e.luxury) {
+          animateLuxury(e, delta, mine);
+          const rig = rigs.get(car);
+          if (rig?.active) rig.update({ wheelRot: wheelAngle(e.steer, car.spec.maxSteer), hud: hudInfo(car), time: clock });
+        }
         else {
           const targetRoll = -(car.steer ?? 0) * Math.min(1, Math.abs(car.speed) / 18) * 0.06;
           tilt.rotation.z += (targetRoll - tilt.rotation.z) * Math.min(1, delta * 6);
@@ -235,6 +267,8 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     },
     dispose() {
       scene.remove(root, head, headTarget);
+      for (const r of rigs.values()) r.dispose();
+      for (const w of steeringWheels) w.dispose();
       for (const e of entries) {
         if (e.bodyMat) e.bodyMat.dispose();
         if (e.doorGeos) for (const d of e.doorGeos) d.geometry.dispose();
