@@ -1,12 +1,12 @@
 // Denah NIKORA Grand Hotel (satuan meter). x ke timur, z ke selatan (utara = -z), sama dengan villa-layout.js.
 // Denah dasar seluruh lantai diturunkan dari TOWER_CENTER dan TOWER_HALF (tidak ada koordinat mutlak di denah lantai),
 // supaya menara bisa digeser atau dilebarkan hanya dengan mengubah dua konstanta itu.
-// Hotel berdiri di dunia villa yang sama, di ujung selatan jalan raya dari gerbang villa (jarak ~300 m),
+// Hotel berdiri di tengah Lingkar NIKORA (highway.js), di selatan gerbang villa (jarak ~300 m); denah dasar 156 x 108 m,
 // sehingga tamu harus berkendara. Modul ini murni data + matematika (tanpa THREE).
 //
 // Menara 1000 lantai (level 0..999, tinggi total 4,2 km). Lantai dibuat malas (lazy) per lantai, tidak sekaligus.
 //   level 0..3   podium: Lobi, restoran | Ballroom, rapat | Spa, kolam renang dalam, gym | Belanja, musala, klub anak, bioskop
-//   level 4..997 kamar tamu (34 kamar per lantai), kecuali Sky Lobby
+//   level 4..997 kamar tamu (76 kamar per lantai), kecuali Sky Lobby
 //   Sky Lobby    tiap 50 lantai (level 50, 100, ... 950): fasilitas publik bergilir
 //   level 998    suite eksekutif | level 999 Sky Lounge, kolam infinity, teras
 import { PLAYER_RADIUS, WALL_THICKNESS, BOUNDS as VILLA_BOUNDS, GATE_HALF_WIDTH, buildWallSegments, wallToRect, propToRect, resolveMove, isWalkable } from './villa-layout.js';
@@ -27,8 +27,8 @@ export const HOTEL_TOP_Y = HOTEL_LEVEL_COUNT * HOTEL_LEVEL_HEIGHT; // 4200 m: pu
 // Inti lift (16 x 16 m) tidak ikut mengecil; hanya bagian luarnya (kamar, petak publik) yang dipadatkan.
 export const TOWER_ZONE_LEVELS = 50;
 export const TOWER_TAPER = 0.3; // penyusutan total di puncak: skala akhir 1 - 0,3 = 0,70
-export const TOWER_CENTER = Object.freeze({ x: 0, z: 448 });
-export const TOWER_HALF = Object.freeze({ x: 36, z: 28 }); // setengah lebar/dalam denah dasar (HOTEL_BUILDING)
+export const TOWER_CENTER = Object.freeze({ x: 0, z: 507 }); // tepi utara denah = 453, tepat di belakang halaman drop-off
+export const TOWER_HALF = Object.freeze({ x: 78, z: 54 }); // setengah lebar/dalam denah dasar (HOTEL_BUILDING): 156 x 108 m (dulu 72 x 56)
 // Turunan denah dasar (meter). Dipakai untuk inti, petak publik, deretan kamar tamu, pintu, dan perabot.
 const CX = TOWER_CENTER.x;
 const CZ = TOWER_CENTER.z;
@@ -36,10 +36,14 @@ const HX = TOWER_HALF.x;
 const HZ = TOWER_HALF.z;
 const CORE_HALF = 8; // setengah sisi inti lift/tangga (16 x 16 m); tidak ikut mengecil
 const WING = 10; // lebar sayap barat/timur = kedalaman deret kamar sisi utara/selatan
-const ROOM_W = 6; // lebar kamar di sisi utara/selatan
-const ROOM_D = 7.2; // dalam kamar di sisi barat/timur
-const NS_ROOMS = Math.round((2 * HX) / ROOM_W); // kamar per sisi utara/selatan (72 m -> 12)
-const WE_ROOMS = Math.round((2 * (HZ - WING)) / ROOM_D); // kamar per sisi barat/timur (36 m -> 5)
+// Jumlah kamar per sisi dibulatkan dari ukuran kamar idaman, lalu lebar/dalam kamar dihitung ulang supaya deret kamar
+// menutup sisi bangunan persis (tanpa celah atau kamar yang menonjol keluar), berapa pun TOWER_HALF.
+const ROOM_W_WANT = 6; // lebar kamar idaman di sisi utara/selatan
+const ROOM_D_WANT = 7.2; // dalam kamar idaman di sisi barat/timur
+const NS_ROOMS = Math.round((2 * HX) / ROOM_W_WANT); // kamar per sisi utara/selatan (156 m -> 26)
+const WE_ROOMS = Math.round((2 * (HZ - WING)) / ROOM_D_WANT); // kamar per sisi barat/timur (88 m -> 12)
+const ROOM_W = (2 * HX) / NS_ROOMS; // 6 m
+const ROOM_D = (2 * (HZ - WING)) / WE_ROOMS; // sekitar 7,33 m
 /** Skala denah pada batas ke-k antar zona (k = 0..20): 1 di bawah, 1 - TOWER_TAPER di puncak (kurva t^1,5 = cekung). */
 export const towerScaleAt = (k) => (k <= 0 ? 1 : 1 - TOWER_TAPER * Math.pow(Math.min(1, (k * TOWER_ZONE_LEVELS) / (HOTEL_LEVEL_COUNT - 1)), 1.5));
 export const towerZone = (level) => Math.floor(Math.max(0, level) / TOWER_ZONE_LEVELS);
@@ -72,10 +76,10 @@ const mapRect = (m, r) => (m ? [m.x(r[0]), m.z(r[1]), m.x(r[2]), m.z(r[3])] : r)
 
 // Tapak bangunan dan halaman.
 export const HOTEL_BUILDING = Object.freeze([CX - HX, CZ - HZ, CX + HX, CZ + HZ]);
-export const HOTEL_SITE = Object.freeze({ minX: -110, maxX: 110, minZ: 372, maxZ: 560 });
-export const HOTEL_FORECOURT = Object.freeze([-30, 380, 30, 420]); // drop-off, valet, putaran mobil
-export const HOTEL_PARKING = Object.freeze([44, 384, 104, 470]);
-export const HOTEL_SPAWN = Object.freeze({ x: 0, z: 404 });
+export const HOTEL_SITE = Object.freeze({ minX: -150, maxX: 150, minZ: 352, maxZ: 566 }); // di dalam Lingkar NIKORA (tepi dalam aspal x = ±152,75; z = 347,25 .. 567,75)
+export const HOTEL_FORECOURT = Object.freeze([-30, 380, 30, 449]); // drop-off, valet, putaran mobil
+export const HOTEL_PARKING = Object.freeze([44, 384, 104, 453]);
+export const HOTEL_SPAWN = Object.freeze({ x: 0, z: 436 });
 
 // Ruas jalan raya lama dari gerbang villa ke hotel (dua lajur, 12 m). Dipertahankan untuk kompatibilitas; jaringan jalan
 // sebenarnya (34,5 m, Lingkar + 4 lengan) ada di highway.js dan dipakai surfaceAt/roomAt/move/canStand di bawah.
@@ -96,7 +100,7 @@ export function surfaceAt(x, z) {
 /** Sky Lobby: lantai publik bergilir tiap SKY_LOBBY_EVERY lantai (bukan lantai atas). */
 export const isSkyLobbyLevel = (level) => Number.isInteger(level) && level > 0 && level % SKY_LOBBY_EVERY === 0 && level < HOTEL_TOP_LEVEL - 1;
 export const isGuestLevel = (level) => Number.isInteger(level) && level >= PODIUM_LEVELS && level <= HOTEL_TOP_LEVEL - 2 && !isSkyLobbyLevel(level);
-export const GUESTS_PER_LEVEL = 2 * NS_ROOMS + 2 * WE_ROOMS; // 34
+export const GUESTS_PER_LEVEL = 2 * NS_ROOMS + 2 * WE_ROOMS; // 76 (26 per sisi utara/selatan, 12 per sisi barat/timur)
 export const GUEST_LEVEL_COUNT = Array.from({ length: HOTEL_LEVEL_COUNT }, (_, l) => l).filter(isGuestLevel).length;
 export const GUEST_ROOM_TOTAL = GUEST_LEVEL_COUNT * GUESTS_PER_LEVEL;
 
@@ -289,8 +293,8 @@ export const HOTEL_ZONES = Object.freeze([
 ]);
 
 // Penghalang tetap di halaman: air mancur dan tiang kanopi drop-off (juga digambar hotel-world.js).
-export const HOTEL_FOUNTAIN = Object.freeze({ x: 0, z: 396, r: 3.2 });
-export const HOTEL_CANOPY = Object.freeze({ rect: [-18, 406, 18, 420], height: 6.4, pillars: Object.freeze([[-15, 410], [15, 410], [-15, 418], [15, 418]]) });
+export const HOTEL_FOUNTAIN = Object.freeze({ x: 0, z: 429, r: 3.2 });
+export const HOTEL_CANOPY = Object.freeze({ rect: [-18, 439, 18, 453], height: 6.4, pillars: Object.freeze([[-15, 443], [15, 443], [-15, 451], [15, 451]]) });
 const FIXED_COLLIDERS = Object.freeze([
   { minX: HOTEL_FOUNTAIN.x - HOTEL_FOUNTAIN.r, maxX: HOTEL_FOUNTAIN.x + HOTEL_FOUNTAIN.r, minZ: HOTEL_FOUNTAIN.z - HOTEL_FOUNTAIN.r, maxZ: HOTEL_FOUNTAIN.z + HOTEL_FOUNTAIN.r },
   ...HOTEL_CANOPY.pillars.map(([x, z]) => ({ minX: x - 0.5, maxX: x + 0.5, minZ: z - 0.5, maxZ: z + 0.5 })),
@@ -299,7 +303,7 @@ const FIXED_COLLIDERS = Object.freeze([
 // Slot parkir tamu (2 baris x 6) dan titik drop-off; dipakai untuk menaruh mobil.
 export const HOTEL_CAR_SPOTS = Object.freeze([
   ...[0, 1].flatMap((row) => [0, 1, 2, 3, 4, 5].map((i) => ({ id: `hp_${row}_${i}`, x: 52 + row * 24, z: 392 + i * 11, heading: Math.PI / 2 }))),
-  ...[-18, -9, 9, 18].map((x, i) => ({ id: `valet_${i}`, x, z: 392, heading: Math.PI })),
+  ...[-18, -9, 9, 18].map((x, i) => ({ id: `valet_${i}`, x, z: 425, heading: Math.PI })),
 ]);
 
 export function roomAt(x, z, level = 0) {
