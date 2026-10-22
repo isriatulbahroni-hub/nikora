@@ -148,6 +148,11 @@ const CLIP_FOR_ACT = { dance: 'samba', walk: 'walk' };
 const POSE_ACTS = ['wave', 'highfive', 'handshake', 'clap', 'bow', 'spin'];
 /** Aksi tangan yang masih boleh ditumpuk di atas klip duduk (bungkuk dan putar tidak masuk akal saat duduk). */
 const SIT_POSE_ACTS = ['wave', 'highfive', 'handshake', 'clap'];
+/**
+ * Semua tempat acara menurunkan avatar duduk 0,3 m dari permukaan tempat duduknya (SEATED_DROP = -0,3, di setiap lantai,
+ * panggung, dan pulau). Klip duduk sudah menurunkan panggul sendiri, jadi penurunan itu diimbangi sebesar ini.
+ */
+export const SEAT_CLIP_LIFT = 0.3;
 
 /** Pengendali animasi satu karakter manusia. */
 export class HumanRig {
@@ -207,16 +212,6 @@ export class HumanRig {
   }
 
   /**
-   * Seberapa jauh grup avatar diturunkan di bawah lantai untuk "duduk" (aula dan Royal menurunkan avatar 0,3 m).
-   * Klip duduk sudah menurunkan panggul sendiri, jadi penurunan itu diimbangi supaya tidak tenggelam dua kali.
-   */
-  seatDrop() {
-    let g = this.root.parent;
-    while (g && !g.userData?.config) g = g.parent;
-    return g ? Math.max(0, -g.position.y) : 0;
-  }
-
-  /**
    * Klip duduk yang harus diputar: 'sit_down' sekali saat baru duduk, 'sit_idle' selama duduk, 'stand_up' sekali saat bangun.
    * Null bila klipnya belum dimuat (avatar memakai pose paha prosedural lama sampai klip siap).
    */
@@ -236,7 +231,7 @@ export class HumanRig {
     }
     if (s.clip) {
       s.t += delta;
-      // sesudah bangun, berjalan langsung memotong transisi; sit_down tidak diputar bila klipnya hilang
+      // sesudah bangun, berjalan langsung memotong transisi
       if (s.t >= this.actions[s.clip].getClip().duration || (!seated && act === 'walk')) s.clip = null;
     }
     if (s.clip) return s.clip;
@@ -258,7 +253,7 @@ export class HumanRig {
     const extra = this.forcedClip && !seated && !sitting && act !== 'walk' && this.extraReady(this.forcedClip) ? this.forcedClip : null;
     // Duduk dengan klip asli: hanya aksi tangan yang ditumpuk, paha tidak dipaksa lagi.
     const wantsPose = sitting ? seated && SIT_POSE_ACTS.includes(act) : seated || (!extra && POSE_ACTS.includes(act));
-    this.root.position.y = sitting && seated ? this.seatDrop() : 0;
+    this.root.position.y = sitting && seated ? SEAT_CLIP_LIFT : 0;
     this.play(sitting ?? extra ?? CLIP_FOR_ACT[act] ?? 'idle');
     this.mixer.update(delta);
     if (!wantsPose) return;
