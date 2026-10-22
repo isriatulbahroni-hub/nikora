@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { HOTEL_TOP_LEVEL, getHotelWorld, isGuestLevel } from './hotel-layout.js';
+import { HOTEL_TOP_LEVEL, TOWER_CENTER, getHotelWorld, isGuestLevel } from './hotel-layout.js';
 import { FLOOR_COLORS, GROUP_ORDER, cssColor, describePlace, featuredLevels, findStandable, hotelPlaces } from './hotel-places.js';
 
 const world = getHotelWorld();
@@ -43,14 +43,15 @@ test('hotel jelajah: findStandable menggeser titik yang tertutup perabot dan men
 });
 
 test('hotel: describePlace menamai lorong lantai tamu, lobi, halaman, dan teras', () => {
-  assert.equal(describePlace(world, 0, 430, 0).id, 'lobby');
-  const corridor = describePlace(world, -17, 448, 4);
+  assert.equal(describePlace(world, 0, TOWER_CENTER.z - 30, 0).id, 'lobby');
+  const corridor = describePlace(world, -17, TOWER_CENTER.z, 4);
   assert.equal(corridor.name, 'Lorong');
   assert.equal(corridor.inside, true);
   const yard = describePlace(world, 0, 404, 0);
   assert.equal(yard.inside, false);
-  // lantai puncak berdenah menyusut (skala 0,70): teras barat ada di x -25,2..-19,1 dan z 428,4..440
-  const terrace = describePlace(world, -22, 432, HOTEL_TOP_LEVEL);
+  // lantai puncak berdenah menyusut (skala 0,70): ambil titik tengah teras barat dari denahnya
+  const tr = world.levels[HOTEL_TOP_LEVEL].rooms.find((r) => r.id === 'sky_terrace_w').rect;
+  const terrace = describePlace(world, (tr[0] + tr[2]) / 2, (tr[1] + tr[3]) / 2, HOTEL_TOP_LEVEL);
   assert.equal(terrace.kind, 'terrace');
   assert.equal(terrace.indoor, false);
   assert.equal(terrace.inside, true);

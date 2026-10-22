@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GUEST_LEVEL_COUNT, HOTEL_PARKING, hotelRoomsAtLevel } from './hotel-layout.js';
+import { GUEST_LEVEL_COUNT, GUESTS_PER_LEVEL, HOTEL_BUILDING, HOTEL_PARKING, hotelRoomsAtLevel } from './hotel-layout.js';
 import {
   STAFF, STAFF_ROLES, STAFF_TOTAL, SHIFTS, CLEAN_MS, onDuty, cleanerForLevel, cleanerLevels, housekeeperState, parkingState, staffOnLevel, dutySummary,
   staffConfig, staffActFor, pickNearby, STAFF_VIEW_MAX, STAFF_VIEW_RADIUS,
@@ -66,7 +66,7 @@ test('cleaning service: membersihkan semua kamar, berada di dalam kamar saat mem
     prev = st;
   }
   assert.ok(cleaningSamples > 0);
-  assert.ok(seen.size >= 34 * levels.length * 0.99, `hanya ${seen.size} kamar dibersihkan`);
+  assert.ok(seen.size >= GUESTS_PER_LEVEL * levels.length * 0.99, `hanya ${seen.size} kamar dibersihkan`);
   assert.ok(maxStep <= 1.4 + 1e-6, `lompatan ${maxStep} m per detik`);
   assert.ok(CLEAN_MS > 0);
 });
@@ -163,5 +163,5 @@ test('pickNearby: dalam radius, terdekat dahulu, dibatasi jumlahnya', () => {
   assert.equal(pickNearby(list, { x: 1000, z: 0 }).length, 0);
   assert.ok(STAFF_VIEW_RADIUS > 0);
   // petugas di lobi pada siang hari tidak melebihi batas
-  assert.ok(pickNearby(staffOnLevel(0, 10), { x: 0, z: 404 }).length <= STAFF_VIEW_MAX);
+  assert.ok(pickNearby(staffOnLevel(0, 10), { x: 0, z: HOTEL_BUILDING[1] + 20 }).length <= STAFF_VIEW_MAX);
 });
