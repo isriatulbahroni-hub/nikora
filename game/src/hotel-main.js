@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { applyPose, createAvatar } from './avatar.js';
 import { loadConfig, toWire } from './avatar-config.js';
 import { createQualityGovernor } from './quality.js';
@@ -6,7 +7,9 @@ import { chooseCameraPose, forwardLookBlend, resolveCameraDistance } from './vil
 import { doorAssist, turnToward } from './villa-motion.js';
 import { FLOOR_NAMES, HOTEL_BUILDING, HOTEL_FORECOURT, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_PARKING, HOTEL_SITE, HOTEL_SPAWN, getHotelWorld, hotelLevelY, surfaceAt } from './hotel-layout.js';
 import { buildHotelWorld } from './hotel-world.js';
-import { mountLiftPanel, mountSpeedHud } from './hotel-ui.js';
+import { mountLiftPanel } from './hotel-ui.js';
+import { mountCarHud } from './car-hud.js';
+import { createCarAudio } from './car-audio.js';
 import { Fleet, hotelCars } from './vehicle-fleet.js';
 import { createVehicleView } from './vehicle-view.js';
 import { createCarRide } from './car-ride.js';
@@ -33,6 +36,19 @@ function showError(message, detail = '') {
   $('hotel-error-detail').textContent = detail;
 }
 
+/** Peta lingkungan ringan (RoomEnvironment) hanya untuk bahan mobil: cat dan krom memantulkan sesuatu, bukan hitam polos. */
+function buildCarEnvMap(renderer) {
+  try {
+    const pm = new THREE.PMREMGenerator(renderer);
+    const tex = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    pm.dispose();
+    return tex;
+  } catch (error) {
+    console.warn('[hotel] peta lingkungan mobil dilewati', error);
+    return null;
+  }
+}
+
 function hasWebGL2() {
   try {
     return !!document.createElement('canvas').getContext('webgl2');
@@ -45,7 +61,7 @@ function hasWebGL2() {
 const held = new Set();
 const joystick = { x: 0, z: 0 };
 const KEYS = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
-const hooks = { map: () => {}, camera: () => {}, places: () => {}, action: () => {}, sky: () => {} };
+const hooks = { map: () => {}, camera: () => {}, places: () => {}, action: () => {}, sky: () => {}, horn: () => {} };
 const camInput = { lastDrag: -1e9 }; // kapan pemain terakhir memutar kamera (kamera mobil tidak melawan putaran itu)
 const CAM_LIMITS = Object.freeze({ minPitch: 0.06, maxPitch: 1.5, minDist: 1.5, maxDist: 140 });
 // Orang ketiga, lebar, udara, dan pandangan menara dari jauh
@@ -81,6 +97,7 @@ function setupInput(canvas, camState) {
     else if (!e.repeat && k === 'c') hooks.camera();
     else if (!e.repeat && k === 'j') hooks.places();
     else if (!e.repeat && k === 'n') hooks.sky(); // ganti mode langit: otomatis, siang, senja, malam, demo
+    else if (!e.repeat && k === 'h') hooks.horn(true);
     else if (!e.repeat && (k === 'e' || k === ' ')) {
       hooks.action(); // naik/turun mobil
       e.preventDefault();
@@ -90,7 +107,7 @@ function setupInput(canvas, camState) {
     else if (k === '-') camState.dist = clamp(camState.dist * 1.1, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
     else if (k === '=' || k === '+') camState.dist = clamp(camState.dist * 0.9, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
   });
-  addEventListener('keyup', (e) => held.delete(e.key.toLowerCase()));
+  addEventListener('keyup', (e) => { held.delete(e.key.toLowerCase()); if (e.key.toLowerCase() === 'h') hooks.horn(false); });
   addEventListener('blur', () => held.clear());
   canvas.addEventListener('wheel', (e) => {
     camState.dist = clamp(camState.dist * (e.deltaY > 0 ? 1.1 : 0.9), CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
@@ -294,7 +311,9 @@ async function start() {
   const built = buildHotelWorld(scene);
   // Mobil bersama di drop-off/parkir hotel (8 mobil). Logika naik/turun/setir/jaringan: car-ride.js (sama dengan vila).
   const fleet = new Fleet({ specs: hotelCars(), selfId: 'lokal', env: { colliders: world.levels[0].colliders, surfaceAt, limit: HIGHWAY_LIMIT } });
-  const carView = createVehicleView({ scene, fleet });
+  const carAudio = createCarAudio();
+  let doorHook = () => {};
+  const carView = createVehicleView({ scene, fleet, envMap: buildCarEnvMap(renderer), onDoor: (car, opening) => { if (opening) doorHook(car); } });
   // Karyawan hotel: ratusan petugas disimulasikan sebagai jadwal; hanya yang dekat pemain digambar (hotel-staff.js, hotel-staff-view.js).
   // Jam kerja mengikuti jam asli di zona waktu acara (?tz=, bawaan WIB), sama seperti langit; ?jam=10 mengunci jam (pengujian).
   const staffSearch = new URLSearchParams(window.location.search);
@@ -461,16 +480,19 @@ async function start() {
 
   // ---------- mobil dan jaringan ----------
   const actBtn = $('act-button');
+  const carHud = mountCarHud({ onHorn: (down) => carRide.horn(down) });
   const carRide = createCarRide({
-    fleet, view: carView, hud: mountSpeedHud(), camState, toast,
+    fleet, view: carView, hud: carHud, audio: carAudio, camState, toast,
     exit: (p) => world.move({ x: p.x, z: p.z, level: 0, stair: null, y: 0 }, 0, 0), // geser bila titik turun mengenai penghalang
     isDragging: () => performance.now() - camInput.lastDrag < 1500,
   });
+  doorHook = (car) => carAudio.door(Math.hypot(car.x - me.x, car.z - me.z));
   hooks.action = () => {
     if (riding) return; // sedang di dalam lift
     if (fleet.mine) carRide.leave(me);
     else if (me.level === 0) carRide.board(me);
   };
+  hooks.horn = (down) => carRide.horn(down);
   actBtn.addEventListener('click', () => hooks.action());
   let multiplayer = null;
   let netStatus = 'Menyambung…';
@@ -619,7 +641,7 @@ async function start() {
     staff: () => staffView.stats(), // petugas yang sedang digambar (pengujian)
     sky: () => sky.info(), // langit dan lampu saat ini (pengujian)
     setSky: (mode) => sky.setMode(mode), // auto | day | sunset | night | cycle (pengujian)
-    cars: () => fleet.cars.map((c) => ({ id: c.id, x: c.x, z: c.z, heading: c.heading, speed: c.speed, seats: c.seats.slice() })), // pengujian
+    cars: () => fleet.cars.map((c) => ({ id: c.id, model: c.model, x: c.x, z: c.z, heading: c.heading, speed: c.speed, seats: c.seats.slice() })), // pengujian
     board: () => carRide.board(me),
     teleport, // hanya untuk pengujian dan menu Jelajah
     leavingTo: () => leavingTo?.id ?? null,
