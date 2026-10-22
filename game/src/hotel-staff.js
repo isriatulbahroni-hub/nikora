@@ -4,7 +4,7 @@
 // Setiap petugas punya pekerjaan berulang (kerja = urutan 'leg': jalan lurus ke titik, lalu diam mengerjakan sesuatu).
 // Rute lorong masih garis lurus antar titik pintu (belum navmesh); avatar petugas digambar hotel-staff-view.js. Lihat docs/HOTEL_KARYAWAN.md.
 import { configFromId, sanitizeConfig } from './avatar-config.js';
-import { HOTEL_LEVEL_COUNT, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_SITE, HOTEL_CAR_SPOTS, isGuestLevel, hotelRoomsAtLevel } from './hotel-layout.js';
+import { HOTEL_LEVEL_COUNT, HOTEL_BUILDING, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_SITE, HOTEL_CAR_SPOTS, isGuestLevel, hotelRoomsAtLevel } from './hotel-layout.js';
 
 export const STAFF_ROLES = Object.freeze({
   housekeeping: Object.freeze({ name: 'Cleaning Service', count: 240 }),
@@ -141,7 +141,7 @@ const spread = (index, r) => ({ x: r[0] + (r[2] - r[0]) * (0.15 + 0.7 * frac(ind
 const rectOf = (level, id) => hotelRoomsAtLevel(level).find((r) => r.id === id)?.rect ?? null;
 const inset = (r, m) => [r[0] + m, r[1] + m, r[2] - m, r[3] - m];
 const corners = (r) => [{ x: r[0], z: r[1] }, { x: r[2], z: r[1] }, { x: r[2], z: r[3] }, { x: r[0], z: r[3] }];
-const WEST_GROUNDS = Object.freeze([HOTEL_SITE.minX + 5, HOTEL_SITE.minZ + 5, -45, HOTEL_SITE.maxZ - 5]); // halaman barat, di luar menara
+const WEST_GROUNDS = Object.freeze([HOTEL_SITE.minX + 5, HOTEL_SITE.minZ + 5, HOTEL_BUILDING[0] - 5, HOTEL_SITE.maxZ - 5]); // halaman barat: antara tepi tapak dan dinding barat menara
 const guestRooms = (level) => hotelRoomsAtLevel(level).filter((r) => r.kind === 'guest');
 const lobbyRect = () => rectOf(0, 'lobby') ?? HOTEL_FORECOURT;
 
