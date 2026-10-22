@@ -14,12 +14,20 @@ export function engineSound(model, speed, throttle, engineOn = true) {
   return { rpm, hz, cutoff: t.cutoff * (0.5 + rpm / model.engine.maxRpm) * (0.6 + 0.4 * load), gain: engineOn ? 0.05 + 0.09 * load : 0, grit: t.grit };
 }
 
+/** Decit ban: gain dan frekuensi filter dari selip (0..1) dan laju (m/s). Murni, diuji. Di bawah ambang selip = hening. */
+export function tyreSound(slip, speed) {
+  const s = Math.max(0, slip - 0.04) / 0.96;
+  const v = Math.min(1, Math.abs(speed) / 30);
+  return { gain: s > 0 ? Math.min(0.14, 0.14 * s ** 0.8 * (0.35 + 0.65 * v)) : 0, freq: 700 + 1100 * v + 500 * s };
+}
+
 export function createCarAudio() {
   const AC = typeof window !== 'undefined' ? window.AudioContext ?? window.webkitAudioContext : null;
   let ctx = null;
   let master = null;
   let eng = null;
   let horn = null;
+  let squeal = null;
   const ensure = () => {
     if (!AC) return null;
     if (!ctx) {
@@ -57,6 +65,27 @@ export function createCarAudio() {
     eng = { filter, gain, saw: tone('sawtooth', 60, filter), sub: tone('square', 30, filter), grit: tone('sawtooth', 61, filter) };
   }
 
+  function startSqueal() {
+    if (squeal || !ensure()) return;
+    const n = Math.floor(ctx.sampleRate * 1.5);
+    const buf = ctx.createBuffer(1, n, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = 9;
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(master);
+    src.start();
+    squeal = { src, filter, gain };
+  }
+
   return {
     /** Dipanggil tiap frame saat mengemudi (car = Vehicle). Mobil null = mesin berhenti. */
     engine(car) {
@@ -66,6 +95,7 @@ export function createCarAudio() {
           eng.gain.gain.setTargetAtTime(0, t, 0.08);
           const dead = eng;
           eng = null;
+          if (squeal) { const q = squeal; squeal = null; q.gain.gain.setTargetAtTime(0, t, 0.05); setTimeout(() => { try { q.src.stop(); } catch { /* sudah berhenti */ } q.gain.disconnect(); }, 300); }
           setTimeout(() => { for (const o of [dead.saw, dead.sub, dead.grit]) { try { o.stop(); } catch { /* sudah berhenti */ } } dead.gain.disconnect(); }, 400);
         }
         return;
@@ -79,6 +109,12 @@ export function createCarAudio() {
       eng.grit.frequency.setTargetAtTime(s.hz * (1 + 0.012 * s.grit * 4), t, 0.04);
       eng.filter.frequency.setTargetAtTime(s.cutoff, t, 0.05);
       eng.gain.gain.setTargetAtTime(s.gain, t, 0.05);
+      const q = tyreSound(car.slip ?? 0, car.speed);
+      if (q.gain > 0) startSqueal();
+      if (squeal) {
+        squeal.filter.frequency.setTargetAtTime(q.freq, t, 0.05);
+        squeal.gain.gain.setTargetAtTime(q.gain, t, 0.04);
+      }
     },
     /** Klakson dua nada; on=true mulai (pemain lokal, ditahan), on=false berhenti. */
     horn(on, gain = 0.16) {
