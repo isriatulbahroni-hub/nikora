@@ -2,9 +2,12 @@
 // Cangkang menara (pelat, tiang kaca, sabuk Sky Lobby, mahkota) digambar sekali untuk seluruh 1000 lantai dengan InstancedMesh.
 // Interior (lantai, dinding, perabot, tempat tidur) hanya dibangun untuk lantai podium dan lantai di sekitar pemain,
 // lalu dibuang lagi saat pemain pindah lantai, supaya tetap ringan di HP.
+// Perabot digambar dari katalog hotel-props.js: tiap perabot = beberapa kotak berwarna; seluruh perabot satu lantai
+// digabung menjadi satu InstancedMesh (warna per instance), tempat tidur memakai bedGeometries (villa-props.js).
 import * as THREE from 'three';
-import { DOOR_HEIGHT } from './villa-layout.js';
+import { DOOR_HEIGHT, wallToRect } from './villa-layout.js';
 import { bedGeometries } from './villa-props.js';
+import { LAMP_COLOR, propParts } from './hotel-props.js';
 import {
   HOTEL_BUILDING, HOTEL_CANOPY, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_FOUNTAIN, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_PARKING, HOTEL_SITE,
   HOTEL_TOP_LEVEL, HOTEL_TOP_Y, HOTEL_WALL_HEIGHT, LIFTS, PODIUM_LEVELS, getHotelWorld, hotelLevelY, isGuestLevel, isSkyLobbyLevel,
@@ -19,7 +22,6 @@ const GOLD = 0xc9a24b;
 const CREAM = 0xf1e9d6;
 const INTERIOR_WINDOW = 1; // lantai di atas dan di bawah pemain yang interiornya ikut dibangun (selain podium)
 const FLOOR_COLORS = { lobby: 0xe9e2d2, restaurant: 0xc7b394, kitchen: 0xbcc2c5, hall: 0xd2b27a, bridal: 0xeed9d4, meeting: 0x9aa3ad, spa: 0xd9d0bf, pool: 0x4aa7c9, gym: 0x4b4f55, shop: 0xded6c6, prayer: 0x2e6b4f, kids: 0xf0c75e, cinema: 0x3a1f2e, games: 0x2b2f4a, library: 0x7a5a3c, guest: 0xb89a72, lounge: 0xa98e6a, suite: 0xcdb28a, terrace: 0xc9bda3, core: 0xd9d3c4 };
-const PROP_LOOK = { desk: [1.8, 1.1, 0.5, 0x6b4a2f], table: [0.85, 0.8, 0.85, 0xd8c8a8], counter: [1.2, 0.95, 0.5, 0xe8e2d6], sofa: [1.1, 0.8, 0.5, 0x23395b], tub: [1.5, 0.6, 1.0, 0xf4f4f0], lounger: [0.33, 0.45, 0.95, 0xf2f0ea] };
 
 function instancedBoxes(parent, items, material, { cast = false, receive = false } = {}) {
   if (!items.length) return null;
@@ -69,13 +71,16 @@ function signTexture() {
   return t;
 }
 
-/** Kotak penghalang kamera untuk satu lantai hotel (dinding, lintel, perabot, pelat atas/bawah). Dihitung sekali per lantai. */
+/** Kotak penghalang kamera untuk satu lantai hotel (dinding, lintel, pelat atas/bawah). Dihitung sekali per lantai. Perabot tidak ikut. */
 function levelOccluders(world, level) {
   const L = world.levels[level];
   const y0 = hotelLevelY(level);
   const boxes = [];
   const add = (minX, maxX, minY, maxY, minZ, maxZ) => boxes.push({ minX, maxX, minY, maxY, minZ, maxZ });
-  for (const c of L.colliders) add(c.minX, c.maxX, y0, y0 + HOTEL_WALL_HEIGHT, c.minZ, c.maxZ);
+  for (const w of L.walls) {
+    const c = wallToRect(w);
+    add(c.minX, c.maxX, y0, y0 + HOTEL_WALL_HEIGHT, c.minZ, c.maxZ);
+  }
   for (const d of L.doors) {
     const hw = d.width / 2;
     if (d.orient === 'h') add(d.x - hw, d.x + hw, y0 + DOOR_HEIGHT, y0 + HOTEL_WALL_HEIGHT, d.z - 0.15, d.z + 0.15);
@@ -213,6 +218,7 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     const lintels = [];
     const ceilingLights = [];
     const props = [];
+    const lamps = [];
     const beds = [];
     const pools = [];
     const rails = [];
@@ -236,19 +242,25 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
       const h = HOTEL_WALL_HEIGHT - DOOR_HEIGHT;
       lintels.push(d.orient === 'h' ? { x: d.x, y: y0 + DOOR_HEIGHT + h / 2, z: d.z, sx: d.width, sy: h, sz: 0.3 } : { x: d.x, y: y0 + DOOR_HEIGHT + h / 2, z: d.z, sx: 0.3, sy: h, sz: d.width });
     }
-    // lampu langit-langit: kotak emisif tiap 6 m di ruang publik dan lorong
+    // lampu langit-langit: kotak emisif tiap 6 m di ruang publik dan lorong (kamar tamu punya lampu sendiri dari perabot)
+    const guestRooms = isGuestLevel(l) ? L.rooms.filter((r) => r.kind === 'guest') : [];
     for (let x = B[0] + 3; x < B[2]; x += 6) for (let z = B[1] + 3; z < B[3]; z += 6) {
-      if (isGuestLevel(l) && (z < 430 || z > 466 || x < -26 || x > 26)) continue; // di dalam kamar tidak perlu
+      if (guestRooms.some((r) => x > r.rect[0] && x < r.rect[2] && z > r.rect[1] && z < r.rect[3])) continue; // di dalam kamar tidak perlu
       ceilingLights.push({ x, y: y0 + HOTEL_WALL_HEIGHT - 0.04, z, sx: 1.6, sy: 0.06, sz: 1.6 });
     }
+    // perabot: tempat tidur penuh lewat bedGeometries, selebihnya kotak-kotak berwarna dari katalog
     for (const p of L.props) {
+      const ry = p.ry ?? 0;
       if (p.type === 'bed') {
-        const ry = p.z < 430 ? 0 : p.z > 466 ? Math.PI : p.x < 0 ? Math.PI / 2 : -Math.PI / 2;
         beds.push({ x: p.x, y: y0, z: p.z, ry });
         continue;
       }
-      const look = PROP_LOOK[p.type];
-      if (look) props.push({ x: p.x, y: y0 + look[1] / 2, z: p.z, sx: look[0] * 2, sy: look[1], sz: look[2] * 2, color: look[3] });
+      const c = Math.cos(ry);
+      const s = Math.sin(ry);
+      for (const q of propParts(p)) {
+        const item = { x: p.x + q.dx * c + q.dz * s, y: y0 + q.dy, z: p.z - q.dx * s + q.dz * c, sx: q.sx, sy: q.sy, sz: q.sz, ry, color: q.color };
+        (q.color === LAMP_COLOR ? lamps : props).push(item);
+      }
     }
     for (const r of L.rooms) {
       if (r.kind === 'pool') pools.push(rectBox([r.rect[0] + 4, r.rect[1] + 4, r.rect[2] - 4, r.rect[3] - 4], y0 + 0.07, 0.04));
@@ -271,6 +283,7 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     instancedBoxes(group, glass, M.glass);
     instancedBoxes(group, rails, M.glass);
     instancedBoxes(group, ceilingLights, M.light);
+    instancedBoxes(group, lamps, M.light);
     instancedBoxes(group, props, M.prop, { cast: false });
     instancedBoxes(group, pools, M.water);
     instancedBoxes(group, liftDoors, M.gold);

@@ -9,8 +9,11 @@
 //   level 4..997 kamar tamu (76 kamar per lantai), kecuali Sky Lobby
 //   Sky Lobby    tiap 50 lantai (level 50, 100, ... 950): fasilitas publik bergilir
 //   level 998    suite eksekutif | level 999 Sky Lounge, kolam infinity, teras
+// Perabot tiap ruang ditata oleh hotel-furnish.js (katalog di hotel-props.js); sekat kamar mandi ikut menjadi dinding.
 import { HIGHWAY_LIMIT, highwayName, onHighway } from './highway.js';
-import { PLAYER_RADIUS, WALL_THICKNESS, BOUNDS as VILLA_BOUNDS, GATE_HALF_WIDTH, buildWallSegments, wallToRect, propToRect, resolveMove, isWalkable } from './villa-layout.js';
+import { PLAYER_RADIUS, WALL_THICKNESS, BOUNDS as VILLA_BOUNDS, GATE_HALF_WIDTH, buildWallSegments, wallToRect, resolveMove, isWalkable } from './villa-layout.js';
+import { furnishLevel } from './hotel-furnish.js';
+import { PROP_DEFS, propRect } from './hotel-props.js';
 
 export const HOTEL_LEVEL_COUNT = 1000;
 export const HOTEL_LEVEL_HEIGHT = 4.2;
@@ -238,32 +241,6 @@ function levelDoors(level) {
   return doors;
 }
 
-function levelProps(level) {
-  const m = planMap(level);
-  // posisi perabot = selisih (dx, dz) dari pusat menara pada denah dasar
-  const p = (type, dx, dz) => ({ type, x: m ? m.x(CX + dx) : CX + dx, z: m ? m.z(CZ + dz) : CZ + dz, level });
-  if (isGuestLevel(level)) return guestCells(level).map((c) => ({ type: 'bed', x: c.bed.x, z: c.bed.z, level }));
-  const out = [];
-  if (level === 0) {
-    out.push(p('desk', -14, -24), p('desk', 14, -24), p('sofa', -6, -16), p('sofa', 6, -16));
-    for (const x of [-30, -22, -14]) for (const z of [0, 12]) out.push(p('table', x, z));
-    for (const x of [14, 22, 30]) for (const z of [0, 12]) out.push(p('table', x, z));
-    out.push(p('counter', -3, 22), p('counter', 3, 22));
-  } else if (level === 1) {
-    for (const x of [-24, -12, 0, 12, 24]) for (const z of [-22, -14]) out.push(p('table', x, z));
-  } else if (level === 2) {
-    out.push(p('tub', -22, 12), p('tub', 22, 22));
-  } else if (isSkyLobbyLevel(level)) {
-    out.push(p('sofa', -6, -16), p('sofa', 6, -16), p('table', -14, -20), p('table', 14, -20), p('table', -22, 12), p('table', 22, 12));
-  } else if (level === HOTEL_TOP_LEVEL - 1) {
-    for (const x of [-33, 33]) for (const z of [-24]) out.push(p('bed', x, z));
-    out.push(p('bed', -31, 22), p('bed', 31, 22), p('sofa', -3, -20), p('sofa', 3, -20));
-  } else if (level === HOTEL_TOP_LEVEL) {
-    out.push(p('table', -6, -22), p('table', 6, -22), p('table', 20, 10), p('table', 28, 10), p('lounger', -22, 2), p('lounger', -16, 2));
-  }
-  return out;
-}
-
 const roomsCache = new Map();
 /** Ruang-ruang satu lantai (dibuat sekali, lalu disimpan). Lantai di luar 0..999 mengembalikan daftar kosong. */
 export function hotelRoomsAtLevel(level) {
@@ -322,10 +299,13 @@ export function getHotelWorld() {
   const levelCache = new Map();
   const buildLevel = (level) => {
     const rooms = hotelRoomsAtLevel(level);
-    const doors = levelDoors(level);
-    const walls = buildWallSegments(rooms.filter((r) => r.kind !== 'terrace'), doors);
-    const props = levelProps(level);
-    const colliders = [...walls.map(wallToRect), ...props.map(propToRect), ...(level === 0 ? FIXED_COLLIDERS : [])];
+    const baseDoors = levelDoors(level);
+    // perabot + sekat kamar mandi; sekat ikut menjadi dinding dan pintunya menjadi pintu lantai
+    const furnishing = furnishLevel({ rooms, doors: baseDoors });
+    const doors = [...baseDoors, ...furnishing.doors.map((d) => ({ level, ...d }))];
+    const walls = buildWallSegments([...rooms.filter((r) => r.kind !== 'terrace'), ...furnishing.rooms], doors);
+    const props = furnishing.props.map((p) => ({ ...p, level }));
+    const colliders = [...walls.map(wallToRect), ...props.filter((p) => PROP_DEFS[p.type].solid).map(propRect), ...(level === 0 ? FIXED_COLLIDERS : [])];
     return Object.freeze({ level, rooms, doors, walls, props, colliders });
   };
   // Seribu lantai tidak dibangun sekaligus: tiap lantai dihitung saat pertama kali dipakai.
