@@ -14,12 +14,13 @@ import { HIGHWAY_LIMIT, arrivalGate, gateArrival, gateAt, gateUrl } from './high
 import { FLOOR_COLORS, GROUP_ORDER, cssColor, describePlace, hotelPlaces } from './hotel-places.js';
 import { hoursAt, zoneFromSearch } from './day-night.js';
 import { createStaffView } from './hotel-staff-view.js';
+import { SKY_MODE_LABELS, createHotelSky } from './hotel-sky.js';
 
 // NIKORA Grand Hotel sebagai halaman sendiri (/hotel.html): menara 15 lantai yang dijelajahi dengan avatar (satu pemain).
 // Geometri 3D dari hotel-world.js dan denah dari hotel-layout.js (dipakai bersama dunia villa); halaman ini hanya
-// menambah langit, rumput, kamera, lift, peta per lantai, dan menu Jelajah.
+// menambah rumput, kamera, lift, peta per lantai, dan menu Jelajah. Langit siang-senja-malam, awan, bintang, bulan, kabut,
+// dan semua lampu menyala otomatis berasal dari hotel-sky.js (?sky=, ?tz=, tombol N).
 const SPEED = 5.2;
-const SKY = 0xbcd9ee;
 const world = getHotelWorld();
 const places = hotelPlaces(world);
 const $ = (id) => document.getElementById(id);
@@ -44,7 +45,7 @@ function hasWebGL2() {
 const held = new Set();
 const joystick = { x: 0, z: 0 };
 const KEYS = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
-const hooks = { map: () => {}, camera: () => {}, places: () => {}, action: () => {} };
+const hooks = { map: () => {}, camera: () => {}, places: () => {}, action: () => {}, sky: () => {} };
 const camInput = { lastDrag: -1e9 }; // kapan pemain terakhir memutar kamera (kamera mobil tidak melawan putaran itu)
 const CAM_LIMITS = Object.freeze({ minPitch: 0.06, maxPitch: 1.5, minDist: 1.5, maxDist: 140 });
 // Orang ketiga, lebar, udara, dan pandangan menara dari jauh
@@ -79,6 +80,7 @@ function setupInput(canvas, camState) {
     } else if (!e.repeat && k === 'm') hooks.map();
     else if (!e.repeat && k === 'c') hooks.camera();
     else if (!e.repeat && k === 'j') hooks.places();
+    else if (!e.repeat && k === 'n') hooks.sky(); // ganti mode langit: otomatis, siang, senja, malam, demo
     else if (!e.repeat && (k === 'e' || k === ' ')) {
       hooks.action(); // naik/turun mobil
       e.preventDefault();
@@ -254,10 +256,8 @@ function createMinimap() {
   };
 }
 
-// ---------- langit, cahaya, dan tanah (hotel-world.js hanya menggambar hotel, jalan, dan halamannya) ----------
+// ---------- cahaya dasar dan tanah (langit, kabut, bintang, dan lampu malam: hotel-sky.js; hotel-world.js hanya menggambar hotel, jalan, dan halamannya) ----------
 function buildEnvironment(scene) {
-  scene.background = new THREE.Color(SKY);
-  scene.fog = new THREE.Fog(SKY, 260, 950);
   const hemi = new THREE.HemisphereLight(0xdbeaff, 0x7a6b55, 1.0);
   const sun = new THREE.DirectionalLight(0xfff1d6, 1.3);
   sun.position.set(150, 260, -120);
@@ -302,7 +302,9 @@ async function start() {
   const jamParam = staffSearch.get('jam');
   const fixedHour = jamParam !== null && jamParam.trim() !== '' && Number.isFinite(Number(jamParam)) ? Number(jamParam) : null;
   const staffView = createStaffView({ scene, hourNow: () => fixedHour ?? hoursAt(Date.now(), staffZone) });
-  const camera = new THREE.PerspectiveCamera(48, 1, 0.2, 1800);
+  // Jarak pandang 6,5 km supaya menara 4,2 km dan lampunya terlihat dari jauh (ketepatan kedalaman ditentukan jarak dekat, bukan jauh).
+  const camera = new THREE.PerspectiveCamera(48, 1, 0.2, 6500);
+  const sky = createHotelSky({ scene, renderer, camera, lights, search: window.location.search, low: lowQuality });
   const indoorLight = new THREE.PointLight(0xffe2b8, 0, 26, 1.3);
   scene.add(indoorLight);
   let indoorK = 0;
@@ -382,6 +384,7 @@ async function start() {
     store('hotel-hint', '1');
     setTimeout(() => toast('Geser joystick untuk berjalan. Masuk ke kabin lift di inti bangunan untuk naik, atau pakai menu Jelajah.', 7000), 1200);
   }
+  hooks.sky = () => toast(`Langit: ${SKY_MODE_LABELS[sky.cycleMode()]}`);
 
   // ---------- peta ----------
   const mapBtn = $('map-button');
@@ -583,8 +586,7 @@ async function start() {
     const info = describePlace(world, me.x, me.z, me.level);
     const indoor = info.indoor && info.inside;
     indoorK += ((indoor ? 1 : 0) - indoorK) * (1 - Math.exp(-3 * delta));
-    lights.hemi.intensity = 1.0 - 0.35 * indoorK;
-    lights.sun.intensity = 1.3 - 0.6 * indoorK;
+    sky.applyLights(indoorK); // intensitas dasar siang 1,0 dan 1,3 seperti semula; malam lebih redup dan kebiruan
     indoorLight.intensity = 24 * indoorK;
     indoorLight.position.set(me.x, me.y + 2.6, me.z);
 
@@ -595,6 +597,7 @@ async function start() {
     if (actText) actBtn.textContent = actText;
     actBtn.hidden = !actText;
 
+    sky.update(time); // langit, awan, bintang, dan lampu mengikuti kamera yang sudah final
     const qChange = quality.tick(performance.now());
     if (qChange) renderer.setPixelRatio(qChange.ratio);
     renderer.render(scene, camera);
@@ -614,6 +617,8 @@ async function start() {
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio() }),
     places: () => places,
     staff: () => staffView.stats(), // petugas yang sedang digambar (pengujian)
+    sky: () => sky.info(), // langit dan lampu saat ini (pengujian)
+    setSky: (mode) => sky.setMode(mode), // auto | day | sunset | night | cycle (pengujian)
     cars: () => fleet.cars.map((c) => ({ id: c.id, x: c.x, z: c.z, heading: c.heading, speed: c.speed, seats: c.seats.slice() })), // pengujian
     board: () => carRide.board(me),
     teleport, // hanya untuk pengujian dan menu Jelajah
