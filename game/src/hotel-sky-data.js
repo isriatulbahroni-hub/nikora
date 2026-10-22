@@ -2,7 +2,7 @@
 // Fase langit (day-night.js): -1 = siang penuh, 0 = senja keemasan, +1 = malam penuh.
 import { GATES, HIGHWAY_HALF, leftOf } from './highway.js';
 import {
-  HOTEL_BUILDING, HOTEL_CANOPY, HOTEL_FOUNTAIN, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_TOP_Y, TOWER_HALF,
+  HOTEL_BUILDING, HOTEL_CANOPY, HOTEL_FOUNTAIN, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_TOP_LEVEL, HOTEL_TOP_Y, PODIUM_LEVELS, TOWER_HALF,
   hotelFootprint, hotelLevelY, isGuestLevel, isSkyLobbyLevel,
 } from './hotel-layout.js';
 
@@ -51,6 +51,19 @@ export const altitudeLevel = (y) => clamp(y / HOTEL_TOP_Y, 0, 1);
 /** Tinggi hamparan awan (m): di antara Sky Lobby 12 dan 13; menara menembusnya dan lantai atas berada di atas awan. */
 export const CLOUD_ALTITUDE = 2300;
 
+// ---------------------------------------------------------------- bentuk cangkang
+/** Nama grup fasad kaca bertekstur di scene (hotel-facade.js). Selama ada, kulit luar menara berupa kotak penuh, tidak meruncing. */
+export const FACADE_NAME = 'hotel-facade';
+/**
+ * Tapak tempat jendela dan sabuk lampu ditaruh. 'taper' = tapak tiap lantai (ikut meruncing, untuk kulit meruncing).
+ * 'box' = kotak bangunan penuh untuk lantai yang tertutup fasad (lantai 4 sampai di bawah Sky Level), karena fasad bertekstur
+ * menempel di kotak itu dan hampir buram; lampu yang diletakkan di dalamnya tertutup.
+ */
+export function shellFootprint(level, shell = 'taper') {
+  if (shell === 'box' && level >= PODIUM_LEVELS && level < HOTEL_TOP_LEVEL) return HOTEL_BUILDING;
+  return hotelFootprint(level);
+}
+
 // ---------------------------------------------------------------- jendela menara
 // Satu titik cahaya per kamar (utara/selatan 26 per sisi, barat/timur 12 per sisi = GUESTS_PER_LEVEL). Jumlah ini harus sama
 // dengan NS_ROOMS dan WE_ROOMS di hotel-layout.js; tes hotel-sky-data.test.js menjaganya.
@@ -64,10 +77,10 @@ const WINDOW_HEIGHT = 2; // di atas lantai
 export const windowKindOf = (level) => (isGuestLevel(level) ? 0 : 1);
 
 /**
- * Posisi semua jendela 1000 lantai mengikuti tapak tiap lantai (hotelFootprint), jadi ikut meruncing bersama menara.
+ * Posisi semua jendela 1000 lantai mengikuti tapak tiap lantai (lihat shellFootprint untuk dua bentuk cangkang).
  * kinds: 0 = kamar tamu, 1 = lantai publik, 2 = kamar tamu dengan cahaya televisi (kelap-kelip kebiruan, 8%).
  */
-export function buildWindowLights() {
+export function buildWindowLights({ shell = 'taper' } = {}) {
   const { ns, we } = WINDOW_FACES;
   const perLevel = 2 * ns + 2 * we;
   const total = HOTEL_LEVEL_COUNT * perLevel;
@@ -89,7 +102,7 @@ export function buildWindowLights() {
     n++;
   };
   for (let l = 0; l < HOTEL_LEVEL_COUNT; l++) {
-    const fp = hotelFootprint(l);
+    const fp = shellFootprint(l, shell);
     const y = hotelLevelY(l) + WINDOW_HEIGHT;
     const kind = windowKindOf(l);
     const w = fp[2] - fp[0];
@@ -113,11 +126,11 @@ export function buildWindowLights() {
 // ---------------------------------------------------------------- sabuk emas Sky Lobby
 export const BELT_STEP = 3; // m antar lampu
 /** Untaian lampu emas mengelilingi tiap Sky Lobby (di atas jendela). Larik datar x,y,z. */
-export function buildBeltLights() {
+export function buildBeltLights({ shell = 'taper' } = {}) {
   const out = [];
   for (let l = 0; l < HOTEL_LEVEL_COUNT; l++) {
     if (!isSkyLobbyLevel(l)) continue;
-    const fp = hotelFootprint(l);
+    const fp = shellFootprint(l, shell);
     const e = 0.9;
     const y = hotelLevelY(l) + HOTEL_LEVEL_HEIGHT - 0.6;
     const x0 = fp[0] - e;
