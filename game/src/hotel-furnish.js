@@ -4,6 +4,7 @@
 // Aturan penataan:
 //  - perabot padat tidak boleh menutup jalur pintu dan lorong (doorKeepouts) dan tidak saling menimpa;
 //  - perabot yang tidak muat (mis. di kamar yang menyusut di lantai atas) dilewati, bukan dipaksa;
+//  - perabot besar (bar, prasmanan, tempat tidur suite) mencoba beberapa posisi sampai ada yang bebas dari jalur pintu;
 //  - kamar tamu memakai kerangka lokal (u = menyamping, v = masuk dari pintu) sehingga empat arah kamar
 //    (utara, selatan, barat, timur) mendapat tata letak yang sama.
 import { PROP_DEFS, propRect } from './hotel-props.js';
@@ -93,8 +94,18 @@ class Lay {
     this.out.push(p);
     return p;
   }
+
+  /** Coba beberapa pergeseran (pecahan lebar ruang dari tengah); berhenti di yang pertama muat. */
+  placeAny(type, offsets, z, ry, extra = {}) {
+    for (const o of offsets) {
+      const p = this.place(type, this.cx + o * this.w, z, ry, extra);
+      if (p) return p;
+    }
+    return null;
+  }
 }
 
+const SHIFTS = [0, -0.25, 0.25, -0.15, 0.15, -0.35, 0.35, -0.4, 0.4];
 const polar = (x, z, a, r) => [x + Math.sin(a) * r, z + Math.cos(a) * r];
 
 function seatsAround(L, x, z, n, r = 1.1, type = 'chair') {
@@ -136,6 +147,7 @@ const GEN = {
     for (const s of [-1, 1]) {
       L.place('desk', L.cx + s * 10, L.south(0.5), FACE.N);
       cluster(L, L.cx + s * 19, L.cz - 1, s < 0 ? FACE.E : FACE.W);
+      for (const k of [33, 47, 61]) cluster(L, L.cx + s * k, L.cz - 1, s < 0 ? FACE.E : FACE.W); // lobi lebar: beberapa kelompok duduk
       L.place('plant', L.cx + s * 24, L.north(0.3));
       L.place('plant', L.cx + s * 7, L.north(0.3));
     }
@@ -156,12 +168,12 @@ const GEN = {
     plants(L);
   },
   lobby_cafe(L) {
-    L.place('bar_counter', L.cx, L.north(0.6), FACE.S, { w: Math.min(8, L.w - 1.5), d: 1.2 });
+    L.placeAny('bar_counter', SHIFTS, L.north(0.6), FACE.S, { w: Math.max(3, Math.min(8, L.w - 1.5)), d: 1.2 });
     for (const x of rowsOf(L.cx - 3, L.cx + 3, 1.5)) L.place('stool', x, L.north(0) + 1.7, FACE.N);
     diningGrid(L, 3.6, 2, 2.2, 3.5);
   },
   dining(L) {
-    L.place('buffet', L.cx, L.north(0.5), FACE.S, { w: Math.min(8, L.w - 4), d: 1.0 });
+    L.placeAny('buffet', SHIFTS, L.north(0.5), FACE.S, { w: Math.max(3, Math.min(8, L.w - 4)), d: 1.0 });
     diningGrid(L, 4.6, 4, 2.4, 2.5);
     plants(L);
   },
@@ -176,7 +188,7 @@ const GEN = {
     for (const x of rowsOf(L.x1 + 3, L.x2 - 3, 4.5)) L.place('kitchen_counter', x, L.cz, FACE.S);
   },
   ballroom(L) {
-    L.place('stage', L.cx, L.north(2.0), FACE.S, { w: Math.min(14, L.w * 0.5), d: 4 });
+    L.placeAny('stage', SHIFTS, L.north(2.0), FACE.S, { w: Math.min(14, L.w * 0.5), d: 4 });
     L.place('arch', L.cx, L.z1 + 0.3, FACE.S, { w: 5 });
     L.place('podium', L.cx + Math.min(9, L.w * 0.3), L.north(0.3) + 0.4, FACE.S);
     for (const x of rowsOf(L.x1 + 3.2, L.x2 - 3.2, 5.4)) {
@@ -308,17 +320,20 @@ const GEN = {
     plants(L);
   },
   lounge(L) {
-    L.place('bar_counter', L.cx, L.north(0.6), FACE.S, { w: Math.max(3, Math.min(10, L.w - 8)), d: 1.2 });
+    L.placeAny('bar_counter', SHIFTS, L.north(0.6), FACE.S, { w: Math.max(3, Math.min(10, L.w - 8)), d: 1.2 });
     for (const x of rowsOf(L.cx - 4, L.cx + 4, 1.6)) L.place('stool', x, L.north(0) + 2.0, FACE.N);
     for (const s of [-1, 1]) {
-      cluster(L, L.cx + s * 12, L.cz + 3, s < 0 ? FACE.E : FACE.W);
-      cluster(L, L.cx + s * 21, L.cz + 3, s < 0 ? FACE.E : FACE.W);
+      for (const k of [12, 21, 33, 45]) cluster(L, L.cx + s * k, L.cz + 3, s < 0 ? FACE.E : FACE.W);
     }
     plants(L);
   },
   suite(L) {
-    const beds = L.w > 20 ? [L.cx - L.w * 0.2, L.cx + L.w * 0.2] : [L.cx];
-    for (const x of beds) L.place('bed', x, L.north(1.12), FACE.S);
+    const wanted = L.w > 20 ? 2 : 1;
+    let placed = 0;
+    for (const o of SHIFTS) {
+      if (placed >= wanted) break;
+      if (L.place('bed', L.cx + o * L.w, L.north(1.12), FACE.S)) placed++;
+    }
     L.place('dresser', L.west(0.25), L.cz - 2, FACE.E);
     L.place('wardrobe', L.east(0.3), L.cz - 2, FACE.W);
     cluster(L, L.cx, L.cz + 2, FACE.N);
