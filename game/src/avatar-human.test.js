@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { HumanRig, boneKeyOf, buildClip, neutralToLocal, proceduralPose, readRest } from './avatar-human.js';
+import { HumanRig, SEAT_CLIP_LIFT, boneKeyOf, buildClip, neutralToLocal, proceduralPose, readRest } from './avatar-human.js';
 
 /** Rig mini: Hips(rotasi rest -90 derajat X) -> Spine -> LeftArm (rest berotasi), dibungkus 'Character' berskala 0.01. */
 function miniRig() {
@@ -116,17 +116,20 @@ test('HumanRig duduk: tanpa klip duduk memakai perilaku lama (idle + paha prosed
   const rig = seatRig(false);
   step(rig, null, true, 0.1);
   assert.equal(rig.current, 'idle');
+  assert.equal(rig.root.position.y, 0, 'tanpa klip duduk tidak ada imbangan');
 });
 
-test('HumanRig duduk: penurunan grup di aula/Royal diimbangi saat duduk dan dilepas saat berdiri', () => {
-  const rig = seatRig();
-  const group = new THREE.Group();
-  group.userData.config = {};
-  group.position.y = -0.3;
-  group.add(rig.root);
-  step(rig, null, true, 0.1);
-  assert.ok(Math.abs(rig.root.position.y - 0.3) < 1e-9, `imbangan 0,3 m, dapat ${rig.root.position.y}`);
-  group.position.y = 0;
-  step(rig, null, false, 0.1);
-  assert.equal(rig.root.position.y, 0);
+test('HumanRig duduk: imbangan 0,3 m tetap di lantai bawah, lantai atas, dan panggung; dilepas saat berdiri', () => {
+  // y grup avatar duduk bergantung tempatnya (-0,3 di lantai dasar, 3,1 di lantai 2 vila, 0,24 di altar), imbangannya sama
+  for (const groupY of [-0.3, 3.1, 0.24, 23.7]) {
+    const rig = seatRig();
+    const group = new THREE.Group();
+    group.userData.config = {};
+    group.position.y = groupY;
+    group.add(rig.root);
+    step(rig, null, true, 0.1);
+    assert.ok(Math.abs(rig.root.position.y - SEAT_CLIP_LIFT) < 1e-9, `y grup ${groupY}: imbangan ${rig.root.position.y}`);
+    step(rig, null, false, 0.1);
+    assert.equal(rig.root.position.y, 0);
+  }
 });
