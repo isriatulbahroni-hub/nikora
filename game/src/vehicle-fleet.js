@@ -7,6 +7,7 @@
 import { CAR, BOARD_RANGE, SEAT_OFFSETS, boardVehicle, createVehicle, exitPose, findBoardable, forward, leaveVehicle, seatWorld, stepVehicle, wrapAngle } from './vehicle.js';
 import { HOTEL_CAR_SPOTS } from './hotel-layout.js';
 import { SEATED_DROP } from './villa-layout.js';
+import { CAR_MODELS, hotelModelFor } from './car-models.js';
 
 export const CAR_SIT_BASE = 1000; // id duduk (`sit`) di jaringan: BASE + indeks mobil * 8 + kursi
 export const carSitId = (index, seat) => CAR_SIT_BASE + index * 8 + seat;
@@ -21,14 +22,21 @@ const SEND_MS = 100;
 const HEARTBEAT_MS = 1000;
 const PREDICT_MAX_S = 0.25;
 
-/** Daftar mobil awal: 6 di parkir depan gerbang villa dan 8 di drop-off/parkir hotel. */
+// Cat varian untuk salinan kedua tiap model hotel (salinan pertama memakai cat asli model).
+const ALT_PAINT = Object.freeze({ royale: 0xe9e4d6, noir: 0x1a2d4a, argent: 0xe8e8ea, rubis: 0x0d0d10 });
+
+/** Daftar mobil awal: 6 di parkir depan gerbang villa (sedan lama) dan 8 mobil mewah di drop-off/parkir hotel. */
 export function defaultCars() {
   const out = [];
   let i = 0;
   for (const x of [-11, 11]) for (const z of [94, 101, 108]) out.push({ id: `villa_${i++}`, x, z, heading: 0 }); // menghadap selatan, ke jalan raya
   const hotel = [...HOTEL_CAR_SPOTS.filter((s) => s.id.startsWith('valet')), ...HOTEL_CAR_SPOTS.filter((s) => s.id.startsWith('hp_0_')).slice(0, 4)];
-  hotel.forEach((s, k) => out.push({ id: `hotel_${k}`, x: s.x, z: s.z, heading: s.heading }));
-  return out.map((c, k) => ({ ...c, color: PALETTE[k % PALETTE.length] }));
+  hotel.forEach((s, k) => {
+    const model = hotelModelFor(k);
+    const color = k < Object.keys(CAR_MODELS).length ? CAR_MODELS[model].paint : ALT_PAINT[model];
+    out.push({ id: `hotel_${k}`, x: s.x, z: s.z, heading: s.heading, model, color });
+  });
+  return out.map((c, k) => ({ ...c, color: c.color ?? PALETTE[k % PALETTE.length] }));
 }
 
 /** Tiap halaman (vila, hotel) punya ruang LiveKit sendiri, jadi masing-masing hanya membuat mobil di wilayahnya (indeks kursi dihitung per halaman). */
@@ -98,9 +106,27 @@ export class Fleet {
   drive(input, dt) {
     const car = this.driving;
     if (!car) return null;
-    stepVehicle(car, input, dt, this.env);
+    // Langkah kecil (<= 1/60 dtk) supaya mobil cepat tidak menembus tembok tipis saat frame rate rendah.
+    const steps = Math.max(1, Math.ceil(dt * 60));
+    let hit = 0;
+    for (let i = 0; i < steps; i++) {
+      stepVehicle(car, input, dt / steps, this.env);
+      hit = Math.max(hit, car.hit);
+    }
+    car.hit = hit;
     this.#broadcast(car);
     return car;
+  }
+
+  /** Klakson pengemudi lokal (dibatasi 4x/dtk); disiarkan ke pemain lain. Mengembalikan true bila berbunyi. */
+  honk() {
+    const car = this.driving;
+    const t = this.now();
+    if (!car || t - (this.lastHonk ?? -1e9) < 250) return false;
+    this.lastHonk = t;
+    this.send({ t: 'v', k: 'h', c: car.index }, { reliable: true });
+    this.onHorn?.(car, true);
+    return true;
   }
 
   #payload(car, withSeats) {
@@ -147,6 +173,10 @@ export class Fleet {
     }
     const car = Number.isInteger(m.c) ? this.cars[m.c] : null;
     if (!car) return;
+    if (m.k === 'h') { // klakson: hanya dipercaya dari pemegang kursi pengemudi
+      if (car.seats[0] === from) this.onHorn?.(car, false);
+      return;
+    }
     if (m.k === 'b') {
       const s = m.s;
       if (!Number.isInteger(s) || s < 0 || s >= car.seats.length) return;
@@ -238,9 +268,9 @@ export class Fleet {
   seatPose(sit) {
     const p = parseCarSit(sit);
     const car = p ? this.cars[p.index] : null;
-    if (!car || p.seat >= SEAT_OFFSETS.length) return null;
+    if (!car || p.seat >= car.seats.length || p.seat >= (car.spec?.seatOffsets ?? SEAT_OFFSETS).length) return null;
     const w = seatWorld(car, p.seat);
-    return { x: w.x, z: w.z, y: SEATED_DROP + 0.12, rotY: w.facing, tilt: 0, snap: true };
+    return { x: w.x, z: w.z, y: SEATED_DROP + 0.12 + (car.spec?.seatLift ?? 0), rotY: w.facing, tilt: 0, snap: true };
   }
 
   exitFor(index, seat) { return exitPose(this.cars[index], seat); }
