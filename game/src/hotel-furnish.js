@@ -60,6 +60,24 @@ export function doorKeepouts(rect, doors) {
   return out;
 }
 
+
+/** Jalur sempit (selebar daun pintu, 1,15 m ke dalam) di depan pintu kamar lain yang membuka ke persegi ini (kamar pojok). */
+function neighborKeepouts(rect, doors) {
+  const [x1, z1, x2, z2] = rect;
+  const out = [];
+  for (const d of doors) {
+    const hw = d.width / 2;
+    if (d.orient === 'h' && d.x > x1 - EPS && d.x < x2 + EPS) {
+      if (near(d.z, z1)) out.push({ minX: d.x - hw, maxX: d.x + hw, minZ: z1 - 1, maxZ: z1 + 1.15 });
+      else if (near(d.z, z2)) out.push({ minX: d.x - hw, maxX: d.x + hw, minZ: z2 - 1.15, maxZ: z2 + 1 });
+    } else if (d.orient === 'v' && d.z > z1 - EPS && d.z < z2 + EPS) {
+      if (near(d.x, x1)) out.push({ minX: x1 - 1, maxX: x1 + 1.15, minZ: d.z - hw, maxZ: d.z + hw });
+      else if (near(d.x, x2)) out.push({ minX: x2 - 1.15, maxX: x2 + 1, minZ: d.z - hw, maxZ: d.z + hw });
+    }
+  }
+  return out;
+}
+
 class Lay {
   constructor(rect, keep, inset = 0.35) {
     [this.x1, this.z1, this.x2, this.z2] = rect;
@@ -230,8 +248,8 @@ const GEN = {
         if (L.place('massage_bed', x, z, FACE.S)) L.place('stool', x + 0.9, z, FACE.W);
       }
     }
-    L.place('tub', L.x1 + 2.5, L.cz, FACE.S);
-    L.place('tub', L.x2 - 2.5, L.cz, FACE.S);
+    L.place('tub', L.x1 + 4.5, L.cz, FACE.S);
+    L.place('tub', L.x2 - 4.5, L.cz, FACE.S);
     plants(L);
   },
   sauna(L) {
@@ -423,8 +441,27 @@ export function guestFrame(cell) {
  * tempat tidur 1,6 m dan kursi malas; kamar lebar mendapat sofa, meja kopi, dan tanaman.
  * Mengembalikan { props, bath } dengan bath = { rect, door } (sekat kamar mandi) atau null.
  */
-export function furnishGuest(cell) {
-  const f = guestFrame(cell);
+export function furnishGuest(cell, doors = []) {
+  const need = ['bed', 'bed_s', 'toilet', 'shower', 'vanity', 'wardrobe', 'tv_unit', 'ac_unit'];
+  const score = (r) => new Set(r.props.map((p) => p.type).filter((t) => need.includes(t))).size;
+  const done = (r) => score(r) >= need.length - 1; // bed dan bed_s saling menggantikan
+  const a = furnishGuestOnce(cell, doors, false, true);
+  if (done(a)) return a;
+  // jalur pintu kamar tetangga (kamar pojok) menutupi satu sisi: coba tata letak dicerminkan
+  const b = furnishGuestOnce(cell, doors, true, true);
+  if (done(b)) return b;
+  // kamar pojok sempit di lantai atas: perabot wajib tetap dipasang, hanya pelengkap yang menghindari jalur
+  return furnishGuestOnce(cell, doors, false, false);
+}
+
+const ESSENTIAL = new Set(['bed', 'bed_s', 'toilet', 'shower', 'vanity', 'wardrobe', 'tv_unit', 'ac_unit']);
+
+function furnishGuestOnce(cell, doors, mirror, strict) {
+  const f0 = guestFrame(cell);
+  const SWAP = { r: 'l', l: 'r' };
+  const f = mirror ? { ...f0, toWorld: (u, v) => f0.toWorld(-u, v), ry: (face) => f0.ry(SWAP[face] ?? face) } : f0;
+  // pintu kamar utara/selatan di pojok membuka ke dalam persegi kamar barat/timur: jalurnya harus bebas
+  const keep = neighborKeepouts(cell.rect, doors.filter((d) => d !== cell.door));
   const { W, D } = f;
   const hw = W / 2;
   const props = [];
@@ -446,6 +483,10 @@ export function furnishGuest(cell) {
     }
     const c = f.toWorld(u, v);
     const p = { type, x: c.x, z: c.z, ry: f.ry(face), room: cell.id, ...extra };
+    if (!def.wall && !def.flat && (strict || !ESSENTIAL.has(type)) && keep.some((k) => overlaps(propRect(p), k))) {
+      if (def.solid) solids.pop();
+      return null;
+    }
     props.push(p);
     return p;
   };
@@ -481,7 +522,7 @@ export function furnishGuest(cell) {
   put('ac_unit', -hw + WALL + 0.1, WALL + 0.6, 'r', { tag: 'ac' });
   put('work_desk', hw - WALL - 0.35, WALL + 0.7, 'l');
   put('chair', hw - WALL - 0.35 - 0.8, WALL + 0.7, 'r');
-  put('tv_unit', hw - WALL - 0.25, 2.45, 'l', { tag: 'tv' });
+  for (const v of [2.45, 3.6, 4.6]) if (put('tv_unit', hw - WALL - 0.25, v, 'l', { tag: 'tv' })) break; // kamar pojok: geser bila jalur pintu tetangga menutupi
   if (full && living >= 4.3) {
     put('sofa', -hw + WALL + 0.5, 2.85, 'r');
     put('coffee_table', -hw + 1.8, 2.85, 'r');
@@ -502,10 +543,11 @@ export function furnishLevel({ rooms, doors }) {
   const props = [];
   const partRooms = [];
   const partDoors = [];
+  const guestDoors = rooms.filter((r) => r.kind === 'guest').map((r) => r.door);
   for (const room of rooms) {
     if (room.kind === 'core') continue;
     if (room.kind === 'guest') {
-      const g = furnishGuest(room);
+      const g = furnishGuest(room, guestDoors);
       props.push(...g.props);
       if (g.bath) {
         partRooms.push({ id: `${room.id}_bath`, rect: g.bath.rect });
