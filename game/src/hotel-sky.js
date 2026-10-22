@@ -351,10 +351,10 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
   root.add(decor.group);
   const moonDir = new THREE.Vector3(...SKY_FRAMES.night.dir).normalize();
 
-  // bintang jatuh sesekali
+  // bintang jatuh sesekali (tanpa kabut, supaya tetap terlihat di jarak 2,6 km)
   const streak = new THREE.Line(
     new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
-    new THREE.LineBasicMaterial({ color: 0xcfe3ff, transparent: true, opacity: 0, depthWrite: false }),
+    new THREE.LineBasicMaterial({ color: 0xcfe3ff, transparent: true, opacity: 0, depthWrite: false, fog: false }),
   );
   streak.frustumCulled = false;
   streak.visible = false;
