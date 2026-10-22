@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_BUILDING, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_SITE, HOTEL_TOP_LEVEL, HOTEL_TOP_Y, GUEST_ROOM_TOTAL, GUEST_LEVEL_COUNT, GUESTS_PER_LEVEL,
   LIFTS, FLOOR_NAMES, ROAD, SKY_LOBBY_EVERY, getHotelWorld, hotelRoomsAtLevel, hotelLevelY, floorName, isGuestLevel, isSkyLobbyLevel, liftTravelMs, rideLift, liftAt, roomAt, HOTEL_CAR_SPOTS, surfaceAt,
-  hotelFootprint,
+  hotelFootprint, TOWER_CENTER,
 } from './hotel-layout.js';
 import { BOUNDS, WORLD_LIMIT } from './villa-layout.js';
 
@@ -77,13 +77,13 @@ test('hotel: menara meruncing per zona 50 lantai, tapak tidak pernah melebar, in
   const base = area(HOTEL_BUILDING);
   assert.ok(area(hotelFootprint(50)) < base, 'zona 1 sudah menyusut');
   const top = hotelFootprint(TOP);
-  assert.ok(Math.abs(top[2] - top[0] - 72 * 0.7) < 1e-6, 'lebar puncak = 70% dari dasar');
-  assert.ok(Math.abs(top[3] - top[1] - 56 * 0.7) < 1e-6, 'dalam puncak = 70% dari dasar');
-  assert.ok(Math.abs((top[0] + top[2]) / 2) < 1e-9 && Math.abs((top[1] + top[3]) / 2 - 448) < 1e-9, 'tetap sepusat dengan dasar');
+  assert.ok(Math.abs(top[2] - top[0] - (HOTEL_BUILDING[2] - HOTEL_BUILDING[0]) * 0.7) < 1e-6, 'lebar puncak = 70% dari dasar');
+  assert.ok(Math.abs(top[3] - top[1] - (HOTEL_BUILDING[3] - HOTEL_BUILDING[1]) * 0.7) < 1e-6, 'dalam puncak = 70% dari dasar');
+  assert.ok(Math.abs((top[0] + top[2]) / 2) < 1e-9 && Math.abs((top[1] + top[3]) / 2 - TOWER_CENTER.z) < 1e-9, 'tetap sepusat dengan dasar');
   for (const l of [0, 5, 50, 500, 998, TOP]) assert.deepEqual(hotelRoomsAtLevel(l).find((r) => r.kind === 'core').rect, HOTEL_CORE, `inti lantai ${l} tidak mengecil`);
 });
 
-test('hotel: 975 lantai kamar tamu x 34 kamar, nomor kamar dan id unik, fasilitas lengkap di podium, Sky Lobby, dan puncak', () => {
+test('hotel: 975 lantai kamar tamu x 76 kamar, nomor kamar dan id unik, fasilitas lengkap di podium, Sky Lobby, dan puncak', () => {
   const names = new Set();
   const ids = new Set();
   let guestLevels = 0;
@@ -105,13 +105,14 @@ test('hotel: 975 lantai kamar tamu x 34 kamar, nomor kamar dan id unik, fasilita
 });
 
 test('hotel: Sky Lobby memakai program podium bergilir dengan id unik antar lantai', () => {
-  assert.equal(roomAt(0, 430, 50).name, 'Sky · Grand Lobby & Reception');
-  assert.equal(roomAt(0, 430, 100).name, 'Sky · Shopping Arcade');
-  assert.equal(roomAt(0, 430, 150).name, 'Sky · Spa & Wellness');
-  assert.equal(roomAt(0, 430, 200).name, 'Sky · Grand Ballroom');
-  assert.equal(roomAt(0, 430, 250).name, 'Sky · Grand Lobby & Reception');
-  assert.notEqual(roomAt(0, 430, 50).id, roomAt(0, 430, 250).id);
-  assert.equal(roomAt(0, 430, 50).floorName, 'Sky Lobby 1');
+  const LOBBY_Z = HOTEL_BUILDING[1] + 20; // di dalam lobi (utara inti), terhadap denah dasar
+  assert.equal(roomAt(0, LOBBY_Z, 50).name, 'Sky · Grand Lobby & Reception');
+  assert.equal(roomAt(0, LOBBY_Z, 100).name, 'Sky · Shopping Arcade');
+  assert.equal(roomAt(0, LOBBY_Z, 150).name, 'Sky · Spa & Wellness');
+  assert.equal(roomAt(0, LOBBY_Z, 200).name, 'Sky · Grand Ballroom');
+  assert.equal(roomAt(0, LOBBY_Z, 250).name, 'Sky · Grand Lobby & Reception');
+  assert.notEqual(roomAt(0, LOBBY_Z, 50).id, roomAt(0, LOBBY_Z, 250).id);
+  assert.equal(roomAt(0, LOBBY_Z, 50).floorName, 'Sky Lobby 1');
 });
 
 test('hotel: 4 lift di dalam inti, melayani 1000 lantai, perjalanan ekspres di bawah 30 detik', () => {
@@ -138,8 +139,8 @@ test('hotel: jalan kaki dari halaman -> lobi -> inti -> lift -> lantai 1000 -> l
   const w = getHotelWorld();
   let pos = { x: 0, z: HOTEL_FORECOURT[3] - 6, level: 0 };
   const walk = (dx, dz, steps) => { for (let i = 0; i < steps; i++) pos = w.move(pos, dx, dz); };
-  walk(0, 0.2, 150); // 30 m ke selatan: lewat pintu utama (z=420), lobi, lalu pintu inti (z=440)
-  assert.ok(pos.z > 441, `masuk inti, z=${pos.z}`);
+  walk(0, 0.2, Math.ceil((HOTEL_CORE[1] + 2 - pos.z) / 0.2)); // ke selatan: lewat pintu utama (tepi utara bangunan), lobi, lalu pintu inti (tepi utara inti)
+  assert.ok(pos.z > HOTEL_CORE[1] + 1, `masuk inti, z=${pos.z}`);
   assert.equal(w.roomAt(pos.x, pos.z, 0).id, 'core_0');
   assert.equal(w.roomAt(pos.x, pos.z, 0).kind, 'core');
   walk(0.2, 0, Math.round((LIFTS[2].rect[0] + 1 - pos.x) / 0.2)); // ke kabin 3 (x ~ 1.75)
@@ -150,15 +151,15 @@ test('hotel: jalan kaki dari halaman -> lobi -> inti -> lift -> lantai 1000 -> l
   assert.equal(pos.level, TOP);
   assert.equal(w.roomAt(pos.x, pos.z, TOP).kind, 'core');
   walk(-0.2, 0, 9); // ke tengah kabin/inti dulu supaya pas dengan pintu selatan inti
-  walk(0, 0.2, 100); // keluar dari inti ke selatan lewat pintu (z=456)
-  assert.ok(pos.z > 457, `keluar inti di lantai 1000, z=${pos.z}`);
+  walk(0, 0.2, Math.ceil((HOTEL_CORE[3] + 2 - pos.z) / 0.2)); // keluar dari inti ke selatan lewat pintu (tepi selatan inti)
+  assert.ok(pos.z > HOTEL_CORE[3] + 1, `keluar inti di lantai 1000, z=${pos.z}`);
   assert.equal(pos.y, hotelLevelY(TOP));
   assert.ok(w.canStand(TOP, pos.x, pos.z));
 });
 
 test('hotel: tembok kamar menghalangi, pintu kamar dari lorong bisa dimasuki, tepi lantai atas berpagar', () => {
   const w = getHotelWorld();
-  // lantai 6 (level 5): kamar utara pertama [-36..-30] pintu di (-33, 430)
+  // lantai 6 (level 5): kamar utara pertama di sudut barat laut, pintunya di tepi selatan kamar
   const room = hotelRoomsAtLevel(5).find((r) => r.kind === 'guest');
   const door = w.levels[5].doors.find((d) => d.x === room.rect[0] + 3 && d.z === room.rect[3]);
   assert.ok(door, 'kamar punya pintu ke lorong');
@@ -171,26 +172,28 @@ test('hotel: tembok kamar menghalangi, pintu kamar dari lorong bisa dimasuki, te
   assert.ok(q.x >= HOTEL_BUILDING[0], 'tidak keluar bangunan');
   // tepi bangunan lantai teratas (teras): tidak bisa melangkah ke luar tapak lantai itu (tapak menyusut di puncak)
   const fpTop = hotelFootprint(TOP);
-  let t = { x: -22, z: 432, level: TOP };
+  let t = { x: fpTop[0] + 3, z: fpTop[1] + 3, level: TOP };
   for (let i = 0; i < 100; i++) t = w.move(t, -0.1, -0.1);
   assert.ok(t.x >= fpTop[0] && t.z >= fpTop[1], `tetap di dalam tapak puncak (${t.x.toFixed(2)}, ${t.z.toFixed(2)})`);
   // dan di lantai kamar jauh di atas pun berlaku sama
   const fp701 = hotelFootprint(701);
-  let u = { x: -27, z: 428, level: 701 };
+  let u = { x: fp701[0] + 3, z: fp701[1] + 3, level: 701 };
   for (let i = 0; i < 100; i++) u = w.move(u, -0.1, -0.1);
   assert.ok(u.x >= fp701[0] && u.z >= fp701[1], `tetap di dalam tapak lantai 702 (${u.x.toFixed(2)}, ${u.z.toFixed(2)})`);
   assert.equal(u.y, hotelLevelY(701));
 });
 
 test('hotel: roomAt memberi nama ruang, halaman, dan jalan', () => {
-  assert.equal(roomAt(0, 430, 0).name, 'Grand Lobby & Reception');
+  const north = HOTEL_BUILDING[1];
+  const south = HOTEL_BUILDING[3];
+  assert.equal(roomAt(0, north + 20, 0).name, 'Grand Lobby & Reception');
   assert.equal(roomAt(0, 400, 0).name, 'Drop-off & Valet');
   assert.equal(roomAt(0, 300, 0).name, 'Jalan Raya NIKORA · Arah Villa');
-  assert.equal(roomAt(-30, 450, 2).name, 'Indoor Swimming Pool');
+  assert.equal(roomAt(-30, (HOTEL_CORE[3] + south) / 2, 2).name, 'Indoor Swimming Pool');
   // lantai 998/999 berdenah menyusut (skala 0,70): titik uji dipilih di dalam petak yang sudah dipadatkan
-  assert.equal(roomAt(-20, 450, TOP).kind, 'terrace');
-  assert.equal(roomAt(0, 432, TOP).name, 'Sky Lounge & Bar');
-  assert.equal(roomAt(-22, 432, 998).name, 'Royal Suite');
+  assert.equal(roomAt(hotelFootprint(TOP)[0] + 3, north + 27, TOP).kind, 'terrace');
+  assert.equal(roomAt(0, north + 27, TOP).name, 'Sky Lounge & Bar');
+  assert.equal(roomAt(hotelFootprint(998)[0] + 3, north + 27, 998).name, 'Royal Suite');
 });
 
 test('hotel: slot parkir dan valet ada di atas aspal dan di luar bangunan', () => {
