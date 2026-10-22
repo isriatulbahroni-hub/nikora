@@ -10,7 +10,9 @@ export function settingsFor(tier, deviceRatio, cap) {
   return { tier, ratio, shadows: tier < 3 };
 }
 
-export function createQualityGovernor({ deviceRatio = 1, cap = 1.75, floor = 0 } = {}) {
+/** maxTier: tingkat terendah yang boleh dipakai (bawaan: semua tingkat). Hotel memakai 2 supaya resolusi tidak jatuh di bawah 1x dan fasad tidak jadi buram atau bergerigi. */
+export function createQualityGovernor({ deviceRatio = 1, cap = 1.75, floor = 0, maxTier = TIER_COUNT - 1 } = {}) {
+  const worst = Math.max(floor, Math.min(TIER_COUNT - 1, maxTier | 0));
   let tier = floor;
   let minTier = floor;
   let ema = 16.7;
@@ -24,7 +26,7 @@ export function createQualityGovernor({ deviceRatio = 1, cap = 1.75, floor = 0 }
     settings: result,
     /** Batas bawah kualitas (mis. naik ke 1 saat video diputar). Mengembalikan pengaturan baru bila tier berubah. */
     setFloor(n) {
-      minTier = Math.max(0, Math.min(TIER_COUNT - 1, n | 0));
+      minTier = Math.max(0, Math.min(worst, n | 0));
       if (tier < minTier) { tier = minTier; return result(); }
       return null;
     },
@@ -36,7 +38,7 @@ export function createQualityGovernor({ deviceRatio = 1, cap = 1.75, floor = 0 }
       if (dt <= 0 || dt > 250) return null; // tab tersembunyi / hentakan sesaat: abaikan
       ema = ema * 0.94 + dt * 0.06;
       if (++frames % 30 !== 0) return null;
-      if (ema > SLOW_MS && tier < TIER_COUNT - 1 && nowMs - lastChange > 2000) {
+      if (ema > SLOW_MS && tier < worst && nowMs - lastChange > 2000) {
         tier += 1; lastChange = nowMs; goodChecks = 0;
         return result();
       }
