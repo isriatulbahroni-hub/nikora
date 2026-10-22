@@ -52,3 +52,13 @@ test('governor: naik lagi pelan-pelan setelah perangkat lancar, tidak di bawah b
   assert.equal(gov.setFloor(1), null);
   assert.equal(floorChange === null || floorChange.tier >= 1, true);
 });
+
+test('governor: maxTier membatasi tingkat terendah (hotel tidak jatuh ke resolusi 0,75x)', () => {
+  const gov = createQualityGovernor({ deviceRatio: 3, cap: 2.25, maxTier: 2 });
+  gov.tick(0);
+  run(gov, 60, 4000, 0); // 16 fps terus-menerus
+  assert.equal(gov.tier, 2);
+  assert.equal(gov.settings().ratio, 1);
+  assert.equal(gov.settings().shadows, true);
+  assert.equal(createQualityGovernor({ floor: 3, maxTier: 1 }).tier, 3, 'floor tetap menang atas maxTier');
+});
