@@ -11,6 +11,7 @@ import {
 } from './hotel-layout.js';
 import { HIGHWAY_HALF } from './highway.js';
 import { buildHighway } from './highway-world.js';
+import { buildFacade } from './hotel-facade.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const GOLD = 0xc9a24b;
@@ -46,12 +47,6 @@ function instancedBoxes(parent, items, material, { cast = false, receive = false
 const rectBox = (r, y, h, extra = {}) => ({ x: (r[0] + r[2]) / 2, y, z: (r[1] + r[3]) / 2, sx: r[2] - r[0], sy: h, sz: r[3] - r[1], ...extra });
 const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0, ...o });
 const onPerimeter = (w) => (w.orient === 'h' ? (w.coord === HOTEL_BUILDING[1] || w.coord === HOTEL_BUILDING[3]) : (w.coord === HOTEL_BUILDING[0] || w.coord === HOTEL_BUILDING[2]));
-
-/** Titik-titik sama jarak (maks. `step` m) dari a sampai b, termasuk kedua ujung. */
-function spaced(a, b, step) {
-  const n = Math.max(1, Math.ceil((b - a) / step));
-  return Array.from({ length: n + 1 }, (_, i) => a + ((b - a) * i) / n);
-}
 
 function signTexture() {
   const c = document.createElement('canvas');
@@ -92,7 +87,7 @@ function levelOccluders(world, level) {
   return boxes;
 }
 
-export function buildHotelWorld(scene) {
+export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
   const world = getHotelWorld();
   const root = new THREE.Group();
   root.name = 'nikora-grand-hotel';
@@ -160,8 +155,10 @@ export function buildHotelWorld(scene) {
   const belts = [];
   for (let l = 0; l < HOTEL_LEVEL_COUNT; l++) {
     const y0 = hotelLevelY(l);
-    if (l > 0) slabs.push(rectBox(B, y0 - 0.15, 0.3, { color: 0xe3dccb }));
-    edges.push(rectBox([B[0] - 0.5, B[1] - 0.5, B[2] + 0.5, B[3] + 0.5], y0 + H - 0.12, 0.24, { color: GOLD })); // list emas di tepi pelat
+    const inFacade = l >= PODIUM_LEVELS && l < HOTEL_TOP_LEVEL; // lantai yang tertutup fasad bertekstur (hotel-facade.js)
+    const inset = inFacade ? 0.4 : 0; // pelat di balik kaca dimundurkan supaya tidak menempel di bidang kaca
+    if (l > 0) slabs.push(rectBox([B[0] + inset, B[1] + inset, B[2] - inset, B[3] - inset], y0 - 0.15, 0.3, { color: 0xe3dccb }));
+    if (!inFacade) edges.push(rectBox([B[0] - 0.5, B[1] - 0.5, B[2] + 0.5, B[3] + 0.5], y0 + H - 0.12, 0.24, { color: GOLD })); // list emas di tepi pelat (di fasad sudah ada di tekstur)
     if (isSkyLobbyLevel(l)) { // sabuk emas Sky Lobby: bingkai menonjol setebal pelat, di atas jendela
       const e = 1.2;
       const by = y0 + H - 0.6;
@@ -176,17 +173,7 @@ export function buildHotelWorld(scene) {
   // dinding kaca tirai dari lantai 5 sampai lantai 999 (podium dan Sky Level digambar per lantai karena punya pintu dan teras)
   const gy0 = hotelLevelY(PODIUM_LEVELS);
   const gh = hotelLevelY(HOTEL_TOP_LEVEL) - gy0;
-  const gy = gy0 + gh / 2;
-  const midX = (B[0] + B[2]) / 2;
-  const midZ = (B[1] + B[3]) / 2;
-  instancedBoxes(root, [
-    { x: midX, y: gy, z: B[1], sx: B[2] - B[0], sy: gh, sz: 0.12 }, { x: midX, y: gy, z: B[3], sx: B[2] - B[0], sy: gh, sz: 0.12 },
-    { x: B[0], y: gy, z: midZ, sx: 0.12, sy: gh, sz: B[3] - B[1] }, { x: B[2], y: gy, z: midZ, sx: 0.12, sy: gh, sz: B[3] - B[1] },
-  ], M.glass);
-  const fins = [];
-  for (const x of spaced(B[0], B[2], 6)) for (const z of [B[1], B[3]]) fins.push({ x, y: gy, z, sx: 0.28, sy: gh, sz: 0.4 });
-  for (const z of spaced(B[1], B[3], 6)) for (const x of [B[0], B[2]]) fins.push({ x, y: gy, z, sx: 0.4, sy: gh, sz: 0.28 });
-  instancedBoxes(root, fins, M.gold, { cast: true });
+  const facade = buildFacade(root, { B, y0: gy0, height: gh, levelHeight: H, anisotropy });
 
   // mahkota atap: helipad, empat tiang sudut, dan antena
   const helipad = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 0.12, 40), std(0x3a3d44));
@@ -341,6 +328,6 @@ export function buildHotelWorld(scene) {
     },
     builtLevels: () => [...groups.keys()].sort((a, b) => a - b),
     highway,
-    dispose: () => { highway.dispose(); scene.remove(root); },
+    dispose: () => { facade.dispose(); highway.dispose(); scene.remove(root); },
   };
 }
