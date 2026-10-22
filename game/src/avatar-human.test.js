@@ -66,3 +66,67 @@ test('HumanRig: model dihadapkan ke -Z (depan game), bukan +Z bawaan Mixamo', ()
   const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(rig.root.quaternion); // +Z model -> arah dunia
   assert.ok(forward.z < -0.99, `depan model harus -Z, dapat z=${forward.z}`);
 });
+
+/** Rig dengan klip kosong bernama seperti klip asli, cukup untuk menguji pemilihan klip duduk. */
+function seatRig(withSit = true) {
+  const holder = new THREE.Group();
+  holder.add(miniRig());
+  const rest = readRest(holder);
+  const mk = (name, duration, loop) => {
+    const c = new THREE.AnimationClip(name, duration, []);
+    c.userData = { loop };
+    return c;
+  };
+  const clips = { idle: mk('idle', 1, true), walk: mk('walk', 1, true) };
+  if (withSit) Object.assign(clips, { sit_idle: mk('sit_idle', 2, true), sit_down: mk('sit_down', 1, false), stand_up: mk('stand_up', 1, false) });
+  return new HumanRig({ holder, rest, clips });
+}
+const step = (rig, act, seated, seconds) => {
+  for (let i = 0; i < Math.round(seconds / 0.016); i += 1) rig.update(act, i * 0.016, 0.016, seated);
+};
+
+test('HumanRig duduk: sit_down sekali, lalu sit_idle, lalu stand_up, lalu kembali idle', () => {
+  const rig = seatRig();
+  step(rig, null, false, 0.1);
+  assert.equal(rig.current, 'idle');
+  step(rig, null, true, 0.1);
+  assert.equal(rig.current, 'sit_down');
+  step(rig, null, true, 1.2);
+  assert.equal(rig.current, 'sit_idle');
+  step(rig, null, false, 0.1);
+  assert.equal(rig.current, 'stand_up');
+  step(rig, null, false, 1.2);
+  assert.equal(rig.current, 'idle');
+});
+
+test('HumanRig duduk: avatar yang baru muncul sudah duduk langsung sit_idle tanpa transisi', () => {
+  const rig = seatRig();
+  step(rig, null, true, 0.1);
+  assert.equal(rig.current, 'sit_idle');
+});
+
+test('HumanRig duduk: berjalan sesudah bangun memotong stand_up', () => {
+  const rig = seatRig();
+  step(rig, null, true, 0.1);
+  step(rig, 'walk', false, 0.1);
+  assert.equal(rig.current, 'walk');
+});
+
+test('HumanRig duduk: tanpa klip duduk memakai perilaku lama (idle + paha prosedural)', () => {
+  const rig = seatRig(false);
+  step(rig, null, true, 0.1);
+  assert.equal(rig.current, 'idle');
+});
+
+test('HumanRig duduk: penurunan grup di aula/Royal diimbangi saat duduk dan dilepas saat berdiri', () => {
+  const rig = seatRig();
+  const group = new THREE.Group();
+  group.userData.config = {};
+  group.position.y = -0.3;
+  group.add(rig.root);
+  step(rig, null, true, 0.1);
+  assert.ok(Math.abs(rig.root.position.y - 0.3) < 1e-9, `imbangan 0,3 m, dapat ${rig.root.position.y}`);
+  group.position.y = 0;
+  step(rig, null, false, 0.1);
+  assert.equal(rig.root.position.y, 0);
+});
