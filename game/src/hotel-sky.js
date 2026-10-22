@@ -3,22 +3,25 @@ import { DAY_MODES, blendSky, createPhaseTracker, skyModeFromSearch, zoneFromSea
 import { createNightDecor } from './night-sky.js';
 import { HOTEL_TOP_Y } from './hotel-layout.js';
 import {
-  CLOUD_ALTITUDE, FOUNTAIN_LIGHT, GROUND_LAMP_HEIGHT, MAST_TIP, SKY_FRAMES, WINDOW_SIZE, altitudeLevel, beaconLevel, beaconSpots, buildBeltLights,
+  CLOUD_ALTITUDE, FACADE_NAME, FOUNTAIN_LIGHT, GROUND_LAMP_HEIGHT, MAST_TIP, SKY_FRAMES, WINDOW_SIZE, altitudeLevel, beaconLevel, beaconSpots, buildBeltLights,
   buildWindowLights, canopyLights, gateLights, groundLampSpots, helipadLights, horizonDip, lampLevel, nightLevel, sunsetLevel, windowLevel,
 } from './hotel-sky-data.js';
 
 // Langit, cahaya, dan lampu NIKORA Grand Hotel yang berganti otomatis mengikuti jam asli (siang, senja, malam).
 // ?sky=auto|day|sunset|night|cycle dan ?tz=WIB|WITA|WIT mengatur mode dan zona waktu (sama dengan villa, masjid, dan aula); tombol N berganti mode.
 // Modul ini TIDAK mengubah hotel-world.js: ia menambah kubah langit, hamparan awan, bintang, bulan, dan lapisan lampu sendiri,
-// dan hanya mencari bahan lampu jalan raya (nikora-highway) dan ujung antena/helipad yang sudah ada di scene.
+// dan hanya mencari bahan lampu jalan raya (nikora-highway), ujung antena/helipad, dan fasad (hotel-facade) yang sudah ada di scene.
 // Semua lapisan lampu memakai THREE.Points aditif yang tidak terkena kabut, sehingga jendela dan lampu menara tetap terlihat
-// berkilau dari jarak kilometer di malam hari, dan membesar halus saat didekati.
+// berkilau dari jarak kilometer di malam hari, dan membesar halus saat didekati. Lampu digambar SESUDAH fasad kaca
+// (renderOrder 1, hampir buram): tanpa itu fasad menimpa lampu dan jendela tampak redup.
 
 export const SKY_MODE_LABELS = Object.freeze({ auto: 'otomatis (jam asli)', day: 'siang', sunset: 'senja', night: 'malam', cycle: 'demo satu hari 20 menit' });
 
 const SRGB = THREE.SRGBColorSpace;
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const LAMP_HEX = 0xfff0c8; // warna bahan lampu jalan raya dan lampu hotel
+const GLOW_ORDER = 10; // sesudah fasad (renderOrder 1)
+const POOL_ORDER = 9;
 
 // ---------------------------------------------------------------- kubah langit
 // Bola yang selalu mengikuti kamera. z = w memaksa kedalamannya tepat di bidang jauh, jadi tidak pernah terpotong jarak pandang.
@@ -234,6 +237,7 @@ function glowPoints({ positions, size, seeds, kinds, mode = 1, shape = 1, colorA
   });
   const points = new THREE.Points(g, material);
   points.frustumCulled = false;
+  points.renderOrder = GLOW_ORDER;
   points.name = name;
   points.visible = false;
   return points;
@@ -396,6 +400,8 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
   // ---- lampu
   const hw = collectHighwayLamps(scene);
   const crown = findCrown(scene);
+  // Selama fasad bertekstur ada, kulit luar menara berupa kotak penuh (tidak meruncing): jendela dan sabuk ditaruh di luar kotak itu.
+  const shell = scene.getObjectByName(FACADE_NAME) ? 'box' : 'taper';
   const lampMats = hw.mats;
   const ground = groundLampSpots();
   const groundLampMat = new THREE.MeshBasicMaterial({ color: LAMP_HEX });
@@ -433,6 +439,7 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
     for (let i = 0; i < poolSpots.length / 3; i++) pools.setMatrixAt(i, m.compose(p.set(poolSpots[i * 3], 0.11, poolSpots[i * 3 + 1]), q, s.set(poolSpots[i * 3 + 2], 1, poolSpots[i * 3 + 2])));
     pools.instanceMatrix.needsUpdate = true;
     pools.frustumCulled = false;
+    pools.renderOrder = POOL_ORDER;
     pools.visible = false;
     root.add(pools);
   }
@@ -444,9 +451,9 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
     layers.push({ points, level });
     return points;
   };
-  const win = buildWindowLights();
+  const win = buildWindowLights({ shell });
   addLayer(glowPoints({ positions: win.positions, size: WINDOW_SIZE, seeds: win.seeds, kinds: win.kinds, mode: 0, shape: 0, colorA: 0xffb866, colorB: 0xffeacc, near: 90, minPx: 1.5, maxPx: 30, name: 'sky-windows' }), windowLevel);
-  addLayer(glowPoints({ positions: buildBeltLights(), size: 1.1, mode: 3, shape: 0.35, colorA: 0xffc94d, colorB: 0xffe08a, near: 40, minPx: 2, maxPx: 22, gain: 1.1, name: 'sky-belts' }), lampLevel);
+  addLayer(glowPoints({ positions: buildBeltLights({ shell }), size: 1.1, mode: 3, shape: 0.35, colorA: 0xffc94d, colorB: 0xffe08a, near: 40, minPx: 2, maxPx: 22, gain: 1.1, name: 'sky-belts' }), lampLevel);
   if (hw.bulbs.length) addLayer(glowPoints({ positions: hw.bulbs, size: 7, shape: 1, colorA: 0xffd9a0, near: 16, minPx: 3, maxPx: 90, gain: 0.9, name: 'sky-street-lamps' }), lampLevel);
   if (hw.caps.length) addLayer(glowPoints({ positions: hw.caps, size: 14, shape: 1, colorA: 0xffe0a0, near: 30, minPx: 4, maxPx: 120, gain: 1.0, name: 'sky-pylons' }), lampLevel);
   addLayer(glowPoints({ positions: Float32Array.from(ground.flatMap((g) => [g.x, GROUND_LAMP_HEIGHT + 0.1, g.z])), size: 8, shape: 1, colorA: 0xffd9a0, near: 14, minPx: 3, maxPx: 80, gain: 0.9, name: 'sky-ground-lamps' }), lampLevel);
@@ -525,7 +532,7 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
       if (sun) sun.intensity = base.sunI * (1 - 0.46 * indoorK);
     },
     info: () => ({
-      phase: tracker.phase, mode: tracker.mode, windows: win.count, streetLamps: hw.bulbs.length / 3, pylons: hw.caps.length / 3, groundLamps: ground.length,
+      phase: tracker.phase, mode: tracker.mode, shell, windows: win.count, streetLamps: hw.bulbs.length / 3, pylons: hw.caps.length / 3, groundLamps: ground.length,
       lampMaterials: lampMats.size, beacons: beacons.length, mast: crown.mast, helipad: crown.helipad, farClip: camera.far, motion,
       visibleLayers: layers.filter((l) => l.points.visible).map((l) => l.points.name),
     }),

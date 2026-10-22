@@ -6,8 +6,8 @@ import {
   hotelFootprint, hotelLevelY, isGuestLevel, isSkyLobbyLevel,
 } from './hotel-layout.js';
 import {
-  GROUND_LAMP_HEIGHT, MAST_TIP, SKY_FRAMES, WINDOW_FACES, altitudeLevel, beaconLevel, beaconSpots, buildBeltLights, buildWindowLights, canopyLights,
-  gateLights, groundLampSpots, helipadLights, horizonDip, lampLevel, nightLevel, sunsetLevel, windowLevel, windowKindOf,
+  FACADE_NAME, GROUND_LAMP_HEIGHT, MAST_TIP, SKY_FRAMES, WINDOW_FACES, altitudeLevel, beaconLevel, beaconSpots, buildBeltLights, buildWindowLights, canopyLights,
+  gateLights, groundLampSpots, helipadLights, horizonDip, lampLevel, nightLevel, shellFootprint, sunsetLevel, windowLevel, windowKindOf,
 } from './hotel-sky-data.js';
 
 const close = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
@@ -83,26 +83,41 @@ test('jendela: satu per kamar per lantai dan jumlah per sisi sama dengan denah',
   }
 });
 
-test('jendela: tiap titik tepat 0,3 m di luar tapak lantainya (ikut meruncing) dan di dalam tinggi lantainya', () => {
-  const w = buildWindowLights();
-  for (const l of [0, 3, 4, 49, 50, 120, 500, 997, 998, 999]) {
-    const fp = hotelFootprint(l);
-    const y0 = hotelLevelY(l);
-    for (let k = 0; k < w.perLevel; k++) {
-      const i = l * w.perLevel + k;
-      const x = w.positions[i * 3];
-      const y = w.positions[i * 3 + 1];
-      const z = w.positions[i * 3 + 2];
-      assert.ok(y > y0 && y < y0 + HOTEL_LEVEL_HEIGHT, `lantai ${l} y=${y}`);
-      const dx = Math.max(fp[0] - x, 0, x - fp[2]);
-      const dz = Math.max(fp[1] - z, 0, z - fp[3]);
-      assert.ok(Math.abs(Math.max(dx, dz) - 0.3) < 1e-3, `lantai ${l} jarak ${Math.max(dx, dz)}`);
-      assert.ok(Math.min(dx, dz) < 1e-3, `lantai ${l} titik di sudut`);
-    }
+// Memeriksa bahwa jendela satu lantai berada tepat 0,3 m di luar persegi `fp` dan di dalam tinggi lantainya.
+function assertWindowsOutsideRect(w, l, fp, label) {
+  const y0 = hotelLevelY(l);
+  for (let k = 0; k < w.perLevel; k++) {
+    const i = l * w.perLevel + k;
+    const x = w.positions[i * 3];
+    const y = w.positions[i * 3 + 1];
+    const z = w.positions[i * 3 + 2];
+    assert.ok(y > y0 && y < y0 + HOTEL_LEVEL_HEIGHT, `${label} lantai ${l} y=${y}`);
+    const dx = Math.max(fp[0] - x, 0, x - fp[2]);
+    const dz = Math.max(fp[1] - z, 0, z - fp[3]);
+    assert.ok(Math.abs(Math.max(dx, dz) - 0.3) < 1e-3, `${label} lantai ${l} jarak ${Math.max(dx, dz)}`);
+    assert.ok(Math.min(dx, dz) < 1e-3, `${label} lantai ${l} titik di sudut`);
   }
+}
+
+test('jendela: bentuk meruncing menaruh titik tepat 0,3 m di luar tapak tiap lantai', () => {
+  const w = buildWindowLights();
+  for (const l of [0, 3, 4, 49, 50, 120, 500, 997, 998, 999]) assertWindowsOutsideRect(w, l, hotelFootprint(l), 'taper');
   // menara meruncing: lantai teratas lebih sempit daripada podium
   const widthAt = (l) => hotelFootprint(l)[2] - hotelFootprint(l)[0];
   assert.ok(widthAt(997) < widthAt(0));
+});
+
+test('jendela: bentuk kotak (fasad bertekstur) menaruh titik 0,3 m di luar kotak bangunan pada lantai fasad', () => {
+  assert.equal(FACADE_NAME, 'hotel-facade');
+  const w = buildWindowLights({ shell: 'box' });
+  assert.equal(w.count, HOTEL_LEVEL_COUNT * GUESTS_PER_LEVEL);
+  for (const l of [4, 49, 50, 500, 997, 998]) assertWindowsOutsideRect(w, l, HOTEL_BUILDING, 'box');
+  // podium dan Sky Level tidak tertutup fasad: tetap mengikuti tapak lantainya
+  for (const l of [0, 3, 999]) assertWindowsOutsideRect(w, l, hotelFootprint(l), 'box');
+  assert.equal(shellFootprint(500, 'box'), HOTEL_BUILDING);
+  assert.equal(shellFootprint(500, 'taper'), hotelFootprint(500));
+  assert.equal(shellFootprint(999, 'box'), hotelFootprint(999));
+  assert.equal(shellFootprint(2, 'box'), hotelFootprint(2));
 });
 
 test('jendela: lantai publik menyala semua, lantai tamu acak dengan sebagian kecil berlampu televisi', () => {
@@ -139,6 +154,20 @@ test('sabuk emas: hanya di Sky Lobby, di dalam tinggi lantainya, dan mengeliling
     assert.ok(isSkyLobbyLevel(l), `y=${y} bukan Sky Lobby`);
     const fp = hotelFootprint(l);
     assert.ok(x >= fp[0] - 0.95 && x <= fp[2] + 0.95 && z >= fp[1] - 0.95 && z <= fp[3] + 0.95, `titik (${x}, ${z}) di dekat tapak`);
+  }
+});
+
+test('sabuk emas: bentuk kotak mengelilingi kotak bangunan penuh di semua Sky Lobby', () => {
+  const b = buildBeltLights({ shell: 'box' });
+  const taper = buildBeltLights();
+  assert.ok(b.length > taper.length, 'kotak penuh lebih panjang daripada tapak yang meruncing');
+  const B = HOTEL_BUILDING;
+  for (let i = 0; i < b.length / 3; i += 29) {
+    const x = b[i * 3];
+    const y = b[i * 3 + 1];
+    const z = b[i * 3 + 2];
+    assert.ok(isSkyLobbyLevel(Math.floor(y / HOTEL_LEVEL_HEIGHT)), `y=${y}`);
+    assert.ok(x >= B[0] - 0.95 && x <= B[2] + 0.95 && z >= B[1] - 0.95 && z <= B[3] + 0.95, `titik (${x}, ${z}) di dekat kotak bangunan`);
   }
 });
 
