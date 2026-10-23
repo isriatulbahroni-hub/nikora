@@ -71,10 +71,18 @@ const rz = (a) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0
 const D = Math.PI / 180;
 const mul = (...qs) => qs.reduce((a, b) => a.multiply(b), new THREE.Quaternion());
 
-/** Delta (bingkai induk-rest dunia) per tulang untuk satu aksi. Mengembalikan {Kunci: Quaternion}. */
+/**
+ * Delta (bingkai induk-rest dunia) per tulang untuk satu aksi. Mengembalikan {Kunci: Quaternion}.
+ * seated: false | true (kursi biasa: paha mendatar, betis tegak ke lantai) | 'car' (kursi mobil: betis maju ke bawah dasbor).
+ */
 export function proceduralPose(act, t, seated) {
   const d = {};
-  if (seated) {
+  if (seated === 'car') {
+    // Duduk di mobil: paha hampir mendatar dan betis miring ke depan (sekitar 48 derajat dari tegak). Pose kursi biasa membuat telapak
+    // menjuntai sampai ke tanah, menembus lantai mobil dan terlihat di bawah pintu.
+    d.LeftUpLeg = rx(-86 * D); d.RightUpLeg = rx(-86 * D);
+    d.LeftLeg = rx(38 * D); d.RightLeg = rx(38 * D);
+  } else if (seated) {
     d.LeftUpLeg = rx(-88 * D); d.RightUpLeg = rx(-88 * D);
     d.LeftLeg = rx(88 * D); d.RightLeg = rx(88 * D);
   }
@@ -180,6 +188,13 @@ export class HumanRig {
     this.recolor.apply(cfg);
   }
 
+  /** 'car' bila grup avatar pembungkus rig ini ditandai userData.seatKind = 'car' (duduk di kursi mobil); selain itu null. */
+  seatKind() {
+    let g = this.root.parent;
+    while (g && !g.userData?.legs) g = g.parent; // grup avatar = yang menyimpan userData.legs (createAvatar)
+    return g?.userData.seatKind ?? null;
+  }
+
   addAction(name, clip) {
     const a = this.mixer.clipAction(clip);
     if (clip.userData?.loop === false) {
@@ -214,11 +229,12 @@ export class HumanRig {
   update(act, t, delta, seated = false) {
     this.syncColors();
     const extra = this.forcedClip && !seated && act !== 'walk' && this.extraReady(this.forcedClip) ? this.forcedClip : null;
-    const wantsPose = seated || (!extra && ['wave', 'highfive', 'handshake', 'clap', 'bow', 'spin'].includes(act));
+    const seat = seated && this.seatKind() === 'car' ? 'car' : seated; // duduk di mobil: pose kaki khusus
+    const wantsPose = seat || (!extra && ['wave', 'highfive', 'handshake', 'clap', 'bow', 'spin'].includes(act));
     this.play(extra ?? CLIP_FOR_ACT[act] ?? 'idle');
     this.mixer.update(delta);
     if (!wantsPose) return;
-    const delta3 = proceduralPose(act, t, seated);
+    const delta3 = proceduralPose(act, t, seat);
     for (const [key, dq] of Object.entries(delta3)) {
       const info = this.model.rest.bones.get(key);
       const bone = this.bones.get(key);

@@ -58,6 +58,15 @@ test('proceduralPose: duduk menekuk kaki, aksi tangan menyentuh tulang yang bena
   assert.deepEqual(proceduralPose('ngawur', 0, false), {});
 });
 
+test('proceduralPose: duduk di mobil memiringkan betis ke depan, bukan tegak seperti kursi biasa', () => {
+  const chair = proceduralPose(null, 0, true);
+  const car = proceduralPose(null, 0, 'car');
+  assert.deepEqual(Object.keys(car).sort(), ['LeftLeg', 'LeftUpLeg', 'RightLeg', 'RightUpLeg']);
+  const shinTilt = (p) => p.LeftUpLeg.clone().multiply(p.LeftLeg).angleTo(new THREE.Quaternion()); // paha * betis = kemiringan betis dari tegak
+  assert.ok(shinTilt(chair) < 1e-6, 'kursi biasa: betis tegak lurus');
+  assert.ok(shinTilt(car) > 0.5, 'mobil: betis miring ke depan');
+});
+
 test('HumanRig: model dihadapkan ke -Z (depan game), bukan +Z bawaan Mixamo', () => {
   const holder = new THREE.Group();
   holder.add(miniRig());
@@ -65,4 +74,17 @@ test('HumanRig: model dihadapkan ke -Z (depan game), bukan +Z bawaan Mixamo', ()
   const rig = new HumanRig({ holder, rest, clips: {} });
   const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(rig.root.quaternion); // +Z model -> arah dunia
   assert.ok(forward.z < -0.99, `depan model harus -Z, dapat z=${forward.z}`);
+});
+
+test('HumanRig.seatKind: membaca penanda kursi mobil dari grup avatar pembungkus', () => {
+  const holder = new THREE.Group();
+  holder.add(miniRig());
+  const rig = new HumanRig({ holder, rest: readRest(holder), clips: {} });
+  assert.equal(rig.seatKind(), null, 'tanpa grup avatar');
+  const avatar = new THREE.Group();
+  avatar.userData.legs = {};
+  avatar.add(rig.root);
+  assert.equal(rig.seatKind(), null, 'belum ditandai');
+  avatar.userData.seatKind = 'car';
+  assert.equal(rig.seatKind(), 'car');
 });
