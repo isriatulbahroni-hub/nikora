@@ -1,6 +1,7 @@
 // Tampilan mobil armada (THREE). Mobil bermodel mewah (car.model) memakai luxury-cars.js: roda berputar dan membelok mengikuti
 // kecepatan, suspensi menunduk/miring, pintu terbuka saat kursi berganti penghuni, lampu depan/rem/mundur menyala.
 // Mobil tanpa model memakai sedan lama (villa-props.js). Kinematik mobil pemain lain diturunkan dari pose (tanpa protokol baru).
+// Opsional (?glb=1): badan prosedural diganti model GLB dari katalog carros (glb-car-view.js); tanpa berkas GLB tampilan tidak berubah.
 import * as THREE from 'three';
 import { carGeometries } from './villa-props.js';
 import { bakeDoors, buildLuxuryCar } from './luxury-cars.js';
@@ -8,6 +9,7 @@ import { wrapAngle } from './vehicle.js';
 import { buildSteeringWheel, createCockpitRig } from './cockpit-view.js';
 import { cockpitSpec, wheelAngle } from './cockpit.js';
 import { hudInfo } from './car-ride.js';
+import { applyGlbSkins, defaultGlbBase } from './glb-car-view.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 export const DOOR_OPEN_S = 1.6; // lama pintu terbuka setelah kursi berganti penghuni
@@ -45,7 +47,7 @@ function plateTexture(text) {
   return t;
 }
 
-export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => {}, mirrors = true }) {
+export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => {}, mirrors = true, glbBase = defaultGlbBase() }) {
   const legacy = carGeometries();
   const legacyDetail = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.2 });
   const legacyLight = new THREE.MeshBasicMaterial({ vertexColors: true });
@@ -161,6 +163,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
   }
 
   const entries = fleet.cars.map((car) => (car.model ? buildLuxuryEntry(car) : buildLegacyEntry(car)));
+  const glb = glbBase ? applyGlbSkins(entries, { base: glbBase, envMap }) : null; // opsional: badan GLB menggantikan badan prosedural
 
   const head = new THREE.SpotLight(0xfff1cf, 0, 70, 0.6, 0.55, 1.1);
   head.castShadow = false;
@@ -266,6 +269,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
       } else head.intensity += (0 - head.intensity) * Math.min(1, delta * 5);
     },
     dispose() {
+      glb?.dispose();
       scene.remove(root, head, headTarget);
       for (const r of rigs.values()) r.dispose();
       for (const w of steeringWheels) w.dispose();
