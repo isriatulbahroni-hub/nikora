@@ -1,6 +1,7 @@
 // HUD mengemudi untuk mobil mewah (DOM murni, tanpa berkas CSS). Meniru kontrol game balap seluler: semua kecil, transparan, di tepi layar,
-// supaya jalan di depan tetap terlihat. Kiri bawah: penggeser setir mendatar (lepas = kembali ke tengah). Kanan bawah: pedal rem dan gas.
-// Kiri atas: lencana kecil gigi + km/j. Tombol klakson bulat di atas penggeser setir. Warna mengikuti panel hotel (emas #c9a24b).
+// supaya jalan di depan tetap terlihat. Kiri bawah: penggeser setir mendatar (lepas = kembali ke tengah). Kanan bawah: pedal rem dan gas,
+// dengan tombol R (mundur) di atas pedal rem. Kiri atas: lencana kecil gigi + km/j. Tombol klakson bulat di atas penggeser setir.
+// Warna mengikuti panel hotel (emas #c9a24b).
 const BASE = 'position:fixed;z-index:30;font:600 13px system-ui,sans-serif;color:#fff;';
 const SAFE_TOP = 'max(12px,env(safe-area-inset-top))';
 const SAFE_BOTTOM = 'max(24px,env(safe-area-inset-bottom))';
@@ -12,7 +13,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 /**
  * set(kmh, info, compact) dipanggil tiap frame (kmh null = sembunyi). info = { gear } atau null. compact tidak lagi mengubah tampilan
  * (lencana kecil tetap ada di kamera kabin, seperti game acuan); parameter dipertahankan agar car-ride.js tidak berubah.
- * pedals() = { gas, brake } (0/1); steer() = posisi penggeser setir -1..1 (kanan = +, sama dengan sumbu x joystick).
+ * pedals() = { gas, brake, reverse } (0/1); steer() = posisi penggeser setir -1..1 (kanan = +, sama dengan sumbu x joystick).
  */
 export function mountCarHud({ onHorn = () => {} } = {}) {
   const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
@@ -67,7 +68,7 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
   document.body.appendChild(slider);
 
   // pedal rem (lebar, pendek) dan gas (sempit, tinggi), kanan bawah; ditahan = ditekan
-  const pedals = { gas: 0, brake: 0 };
+  const pedals = { gas: 0, brake: 0, reverse: 0 };
   const pedalBox = document.createElement('div');
   pedalBox.style.cssText = `${BASE}right:14px;bottom:${SAFE_BOTTOM};display:none;gap:12px;align-items:flex-end;touch-action:none`;
   const pedal = (label, key, w, h) => {
@@ -84,6 +85,17 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
   pedalBox.append(pedal('rem', 'brake', 64, 84), pedal('gas', 'gas', 46, 118));
   document.body.appendChild(pedalBox);
 
+  // tombol R (mundur): tahan = mobil mundur; di atas pedal rem
+  const rev = document.createElement('button');
+  rev.type = 'button';
+  rev.textContent = 'R';
+  rev.setAttribute('aria-label', 'Mundur (tahan, atau tombol S)');
+  rev.style.cssText = `${BASE}right:72px;bottom:calc(${SAFE_BOTTOM} + 94px);display:none;width:46px;height:46px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:${GLASS};color:#f1e9d6;font:800 18px system-ui,sans-serif;padding:0;touch-action:none;user-select:none;-webkit-user-select:none`;
+  const revSet = (on) => { pedals.reverse = on ? 1 : 0; rev.style.background = on ? '#c9a24b' : GLASS; rev.style.color = on ? '#1a1306' : '#f1e9d6'; };
+  rev.addEventListener('pointerdown', (e) => { e.preventDefault(); rev.setPointerCapture?.(e.pointerId); revSet(true); });
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) rev.addEventListener(ev, () => revSet(false));
+  document.body.appendChild(rev);
+
   let shown = false;
   return {
     set(kmh, info = null) {
@@ -94,9 +106,10 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
         horn.style.display = visible ? 'block' : 'none';
         slider.style.display = visible && coarse ? 'block' : 'none';
         pedalBox.style.display = visible && coarse ? 'flex' : 'none';
+        rev.style.display = visible && coarse ? 'block' : 'none';
         // saat mengemudi: judul, nama tempat, dan joystick jalan disembunyikan (lihat body.driving di hotel.html)
         document.body.classList.toggle('driving', visible);
-        if (!visible) { pedals.gas = 0; pedals.brake = 0; steerValue = 0; steerTarget = 0; steerPointer = null; knob.style.transform = ''; }
+        if (!visible) { pedals.gas = 0; pedals.brake = 0; pedals.reverse = 0; steerValue = 0; steerTarget = 0; steerPointer = null; knob.style.transform = ''; }
       }
       if (!visible) return;
       steerValue += (steerTarget - steerValue) * (steerPointer === null ? 0.35 : 0.6); // lepas: pegas lembut ke tengah
@@ -106,10 +119,10 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
       gear.style.display = info ? '' : 'none';
       if (info) gear.textContent = String(info.gear);
     },
-    /** Keadaan pedal layar { gas, brake } (0/1). */
+    /** Keadaan pedal layar { gas, brake, reverse } (0/1). */
     pedals: () => pedals,
     /** Posisi penggeser setir -1..1 (kanan = +). 0 bila tidak disentuh. */
     steer: () => steerValue,
-    dispose: () => { badge.remove(); horn.remove(); slider.remove(); pedalBox.remove(); document.body.classList.remove('driving'); },
+    dispose: () => { badge.remove(); horn.remove(); slider.remove(); pedalBox.remove(); rev.remove(); document.body.classList.remove('driving'); },
   };
 }
