@@ -38,3 +38,14 @@ test('kamera yang mengorbit ke dalam menara dari halaman dipendekkan', () => {
   assert.equal(r.blocked, true);
   assert.ok(eye.z + r.dist < 430, 'kamera berhenti sebelum dinding menara');
 });
+
+test('badan menara meruncing dan menara pendamping: kotak tambahan hanya di lantai dasar dan podium', () => {
+  const towerBoxes = [{ minX: -30, maxX: 30, minY: 20, maxY: 200, minZ: 430, maxZ: 470 }, { minX: -25, maxX: 25, minY: 200, maxY: 400, minZ: 433, maxZ: 467 }];
+  const satellites = [{ minX: 60, maxX: 90, minY: 0, maxY: 900, minZ: 440, maxZ: 470 }];
+  const lantai0 = exteriorOccluders({ ...args, level: 0, towerBoxes, satellites });
+  assert.equal(lantai0.length, 2 + 1 + 2 + 2 + 1, 'dua zona menara + satu pendamping + kanopi, dua tiang, kolam, tugu');
+  assert.deepEqual(lantai0.slice(0, 2), towerBoxes);
+  assert.equal(exteriorOccluders({ ...args, level: 3, towerBoxes, satellites }).length, 3);
+  assert.equal(exteriorOccluders({ ...args, level: 5, towerBoxes, satellites }).length, 0);
+  assert.equal(exteriorOccluders({ ...args, level: 400, towerBoxes, satellites }).length, 0);
+});
