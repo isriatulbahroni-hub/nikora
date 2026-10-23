@@ -10,6 +10,7 @@
 //   Sky Lobby    tiap 50 lantai (level 50, 100, ... 950): fasilitas publik bergilir
 //   level 998    suite eksekutif | level 999 Sky Lounge, kolam infinity, teras
 import { HIGHWAY_LIMIT, highwayName, onHighway } from './highway.js';
+import { satelliteColliders } from './hotel-satellites.js';
 import { PLAYER_RADIUS, WALL_THICKNESS, BOUNDS as VILLA_BOUNDS, GATE_HALF_WIDTH, buildWallSegments, wallToRect, propToRect, resolveMove, isWalkable } from './villa-layout.js';
 
 export const HOTEL_LEVEL_COUNT = 1000;
@@ -297,6 +298,7 @@ export const HOTEL_CANOPY = Object.freeze({ rect: [-18, 439, 18, 453], height: 6
 const FIXED_COLLIDERS = Object.freeze([
   { minX: HOTEL_FOUNTAIN.x - HOTEL_FOUNTAIN.r, maxX: HOTEL_FOUNTAIN.x + HOTEL_FOUNTAIN.r, minZ: HOTEL_FOUNTAIN.z - HOTEL_FOUNTAIN.r, maxZ: HOTEL_FOUNTAIN.z + HOTEL_FOUNTAIN.r },
   ...HOTEL_CANOPY.pillars.map(([x, z]) => ({ minX: x - 0.5, maxX: x + 0.5, minZ: z - 0.5, maxZ: z + 0.5 })),
+  ...satelliteColliders(), // empat menara pendamping (hotel-satellites.js)
 ]);
 
 // Slot parkir tamu (2 baris x 6) dan titik drop-off; dipakai untuk menaruh mobil.
