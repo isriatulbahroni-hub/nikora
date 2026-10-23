@@ -31,7 +31,10 @@
       .place-group { margin: 12px 0 6px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #e7c76a; }
       .place-group:first-child { margin-top: 2px; }
       .place-btn { display: block; width: 100%; text-align: left; margin: 0 0 6px; padding: 9px 12px; border-radius: 10px; border: 0; background: rgba(255,255,255,.12); color: #fff; font: 500 13px ui-sans-serif, sans-serif; cursor: pointer; }
-      .place-btn:hover, .place-btn:active { background: #c9a24b; color: #1a1306; }
+      .place-btn:hover, .place-btn:active, .place-btn.on { background: #c9a24b; color: #1a1306; }
+      .cam-bar { position: fixed; z-index: 8; right: 20px; bottom: calc(max(28px, env(safe-area-inset-bottom)) + 130px); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+      .cam-bar[hidden], .cam-bar .rb[hidden], #cam-cycle[hidden], #cam-panel[hidden] { display: none; }
+      .cam-bar .rb { width: 56px; touch-action: none; }
       .toast { position: fixed; z-index: 9; left: 50%; bottom: 140px; transform: translateX(-50%); padding: 8px 14px; border-radius: 12px; background: rgba(20,17,13,.9); font-size: 13px; max-width: 86vw; text-align: center; display: none; }
       .topbar small { padding: 4px 11px; border-radius: 999px; background: rgba(20,17,13,.68); font-size: 12px; font-weight: 600; max-width: 60vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .act { position: fixed; z-index: 8; right: 20px; bottom: calc(max(28px, env(safe-area-inset-bottom)) + 28px); width: 88px; height: 88px; border-radius: 50%; border: 3px solid #f6e3a6; background: radial-gradient(circle at 35% 30%, #f2d58c, #c9993a); color: #3a2a0c; font: 700 15px ui-sans-serif, sans-serif; letter-spacing: .06em; text-transform: uppercase; box-shadow: 0 4px 14px rgba(0,0,0,.4); cursor: pointer; touch-action: manipulation; }
@@ -63,17 +66,28 @@
       <small id="online">Menyambung…</small>
       <div class="rbs">
         <button id="places-button" class="rb" type="button" aria-label="Jelajah ke ruangan" title="Jelajah (J)"><span class="ic">&#128205;</span><span class="lb">Jelajah</span></button>
-        <button id="cam-button" class="rb" type="button" aria-label="Ganti sudut kamera" title="Sudut kamera (C)"><span class="ic">&#127909;</span><span class="lb">Kamera</span></button>
+        <button id="cam-button" class="rb" type="button" aria-label="Pilih mode kamera" title="Mode kamera (V) · jarak (C)"><span class="ic">&#127909;</span><span class="lb">Kamera</span></button>
         <button id="map-button" class="rb" type="button" aria-label="Tampilkan peta" aria-pressed="true" title="Peta (M)"><span class="ic">&#128506;</span><span class="lb">Peta</span></button>
       </div>
     </div>
     <canvas id="minimap" width="220" height="184"></canvas>
+    <div id="cam-panel" class="panel" hidden>
+      <div class="panel-head"><strong>Mode kamera</strong><button id="cam-close" type="button" aria-label="Tutup">&#10005;</button></div>
+      <div id="cam-list"></div>
+      <button id="cam-cycle" class="place-btn" type="button" style="margin-top:10px;background:rgba(231,199,106,.25)">Ganti jarak kamera (C)</button>
+    </div>
+    <div id="cam-bar" class="cam-bar" hidden>
+      <button id="cam-up" class="rb" type="button" aria-label="Naik" title="Naik (R)" hidden><span class="ic">&#9650;</span><span class="lb">Naik</span></button>
+      <button id="cam-down" class="rb" type="button" aria-label="Turun" title="Turun (F)" hidden><span class="ic">&#9660;</span><span class="lb">Turun</span></button>
+      <button id="cam-focus" class="rb" type="button" aria-label="Ganti sasaran kamera" hidden><span class="ic">&#127919;</span><span class="lb">Fokus</span></button>
+      <button id="cam-back" class="rb" type="button" aria-label="Kembali ke sudut pandang manusia"><span class="ic">&#129485;</span><span class="lb">Kembali</span></button>
+    </div>
     <div id="places-panel" class="panel" hidden>
       <div class="panel-head"><strong>Jelajah ke ruangan</strong><button id="places-close" type="button" aria-label="Tutup">&#10005;</button></div>
       <div id="places-list"></div>
     </div>
     <div class="lift-fade" id="lift-fade"><span id="lift-msg"></span></div>
-    <div class="hud hint">WASD: jalan · masuk kabin lift (inti bangunan) lalu pilih lantai · seret: putar kamera · scroll: zoom · C: sudut · M: peta · J: jelajah · E: naik/turun mobil</div>
+    <div class="hud hint">WASD: jalan · masuk kabin lift (inti bangunan) lalu pilih lantai · seret: putar kamera · scroll: zoom · V: mode kamera (1–7) · C: jarak/sasaran · kamera bebas: R/F naik-turun, Shift cepat · M: peta · J: jelajah · E: naik/turun mobil</div>
     <button id="act-button" class="act" type="button" hidden>Naik</button>
     <div class="toast" id="toast"></div>
     <div class="joy-zone" id="joy-zone"><div class="joy-base" id="joy-base"><div class="joy-knob" id="joy-knob"></div></div></div>
