@@ -40,24 +40,56 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
   for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) horn.addEventListener(ev, up);
   el.append(name, row, bar, horn);
   document.body.appendChild(el);
+
+  // pedal rem dan gas di kanan bawah (layar sentuh); ditahan = ditekan. Menimpa gas/rem joystick selama ditekan.
+  const pedals = { gas: 0, brake: 0 };
+  const pedalBox = document.createElement('div');
+  pedalBox.style.cssText = `${BASE}right:14px;bottom:18px;display:none;gap:12px;align-items:flex-end;touch-action:none`;
+  const pedal = (label, key, h) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.setAttribute('aria-label', `Pedal ${label}`);
+    b.style.cssText = `width:62px;height:${h}px;border-radius:12px;border:1px solid #c9a24b;background:#2a2318;color:#f1e9d6;font:800 13px system-ui,sans-serif;touch-action:none;user-select:none`;
+    const set = (on) => { pedals[key] = on ? 1 : 0; b.style.background = on ? '#c9a24b' : '#2a2318'; b.style.color = on ? '#1a1306' : '#f1e9d6'; };
+    b.addEventListener('pointerdown', (e) => { e.preventDefault(); b.setPointerCapture?.(e.pointerId); set(true); });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, () => set(false));
+    return b;
+  };
+  pedalBox.append(pedal('REM', 'brake', 84), pedal('GAS', 'gas', 112));
+  document.body.appendChild(pedalBox);
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   let shown = false;
+  let isCompact = false;
   return {
-    set(kmh, info = null) {
+    /** compact = kamera kabin: spidometer sudah ada di dasbor 3D, jadi hanya tombol klakson yang tersisa (pojok kiri bawah). */
+    set(kmh, info = null, compact = false) {
       const visible = kmh !== null;
       if (visible !== shown) {
         shown = visible;
         el.style.display = visible ? 'block' : 'none';
+        pedalBox.style.display = visible && coarse ? 'flex' : 'none';
+        if (!visible) { pedals.gas = 0; pedals.brake = 0; }
       }
       if (!visible) return;
+      if (compact !== isCompact) {
+        isCompact = compact;
+        for (const n of [name, row, bar]) n.style.display = compact ? 'none' : '';
+        el.style.cssText = compact
+          ? `${BASE}left:14px;bottom:96px;top:auto;transform:none;display:block;padding:0;background:none;border:none`
+          : `${BASE}left:50%;top:60px;transform:translateX(-50%);display:block;min-width:210px;padding:8px 14px 10px;border-radius:14px;background:rgba(20,17,13,.82);border:1px solid #c9a24b;text-align:center`;
+      }
       speed.textContent = String(Math.round(Math.abs(kmh)));
       name.textContent = info?.name ?? 'Mobil';
-      gear.style.display = bar.style.display = info ? '' : 'none';
+      if (!compact) gear.style.display = bar.style.display = info ? '' : 'none';
       if (info) {
         gear.textContent = String(info.gear);
         fill.style.width = `${Math.round(Math.min(1, info.rpm / info.rpmMax) * 100)}%`;
         fill.style.background = info.rpm / info.rpmMax > 0.88 ? '#d5412f' : '#c9a24b';
       }
     },
-    dispose: () => el.remove(),
+    /** Keadaan pedal layar { gas, brake } (0/1). */
+    pedals: () => pedals,
+    dispose: () => { el.remove(); pedalBox.remove(); },
   };
 }

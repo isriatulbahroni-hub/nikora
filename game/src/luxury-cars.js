@@ -4,6 +4,7 @@
 //   wheel (satu roda: ban+pelek+kaliper, sumbu x, sisi luar +x), doors (satu geometri per pintu, cat sudah dibakar), wheels/plates (jangkar).
 import * as THREE from 'three';
 import { CAR_MODELS } from './car-models.js';
+import { DASH } from './cockpit.js';
 import { box, cyl, loftGeometry, merge, part, rbox, stationAt } from './car-loft.js';
 
 const W = '#ffffff';
@@ -68,8 +69,7 @@ function cabinInterior(b, m, { z0, z1, floorY, dashY, dashH = 0.3, dashZ }) {
     b.trim.push(part(rbox(0.36, top - floorY - 0.1, 0.4, 0.03), '#16171a', { x, y: floorY + (top - floorY) / 2 - 0.02, z: s.fwd }));
     b.trim.push(part(rbox(0.5, 0.62, 0.13, 0.05), inter, { x, y: top + 0.31, z: s.fwd - 0.27, rx: -0.2 }));
     b.trim.push(part(rbox(0.24, 0.2, 0.11, 0.05), inter, { x, y: top + 0.74, z: s.fwd - 0.33, rx: -0.2 }));
-    if (i === 0) { // setir di kanan
-      b.trim.push(part(new THREE.TorusGeometry(0.17, 0.02, 8, 22), '#15161a', { x, y: top + 0.36, z: s.fwd + 0.62, rx: -0.35 }));
+    if (i === 0) { // kolom setir di kanan; roda setir yang berputar: cockpit-view.js
       b.trim.push(part(cyl(0.025, 0.025, 0.36, 8), GUN, { x, y: top + 0.24, z: s.fwd + 0.74, rx: Math.PI / 2 - 0.35 }));
     }
   });
@@ -114,7 +114,7 @@ function royale(b, m, paint) {
   b.paint.push(part(loftGeometry(rear), W), part(loftGeometry(front), W));
   b.paint.push(part(loftGeometry(mid, { arc: [Math.PI * 0.62, Math.PI * 2.38], segments: 16 }), W));
   b.glass.push(part(loftGeometry(cabin, { segments: 24 }), GLASSY));
-  cabinInterior(b, m, { z0: -0.9, z1: 1.05, floorY: 0.42, dashY: 0.92, dashZ: 0.82 });
+  cabinInterior(b, m, { z0: -0.9, z1: 1.05, floorY: 0.42, dashY: DASH.royale.y, dashH: DASH.royale.h, dashZ: DASH.royale.z });
   const L = m.length / 2;
   // gril krom besar bergaya kuil + bumper krom + lampu bulat
   b.trim.push(part(rbox(0.74, 0.68, 0.08, 0.025), CHROME, { y: 0.7, z: L + 0.02 }));
@@ -151,7 +151,7 @@ function noir(b, m, paint) {
   const { rear, mid, front } = splitTub(tub, -0.9, 1.0);
   b.paint.push(part(loftGeometry(rear), W), part(loftGeometry(front), W));
   b.paint.push(part(loftGeometry(mid, { arc: [Math.PI * 0.6, Math.PI * 2.4], segments: 16 }), W));
-  cabinInterior(b, m, { z0: -0.9, z1: 1.0, floorY: 0.4, dashY: 0.74, dashH: 0.26, dashZ: 0.8 });
+  cabinInterior(b, m, { z0: -0.9, z1: 1.0, floorY: 0.4, dashY: DASH.noir.y, dashH: DASH.noir.h, dashZ: DASH.noir.z });
   const L = m.length / 2;
   // kaca depan miring, tiang hitam, tulang punggung + dua punuk di belakang jok
   b.glass.push(part(box(1.5, 0.02, 0.62), GLASSY, { y: 1.0, z: 0.66, rx: -0.62 }));
@@ -199,7 +199,7 @@ function argent(b, m, paint) {
   b.paint.push(part(loftGeometry(mid, { arc: [Math.PI * 0.62, Math.PI * 2.38], segments: 16 }), W));
   b.glass.push(part(loftGeometry(cabin, { segments: 22 }), GLASSY));
   b.paint.push(part(loftGeometry(cabin.slice(0, 3).map((s) => ({ ...s, hw: s.hw * 0.7, y0: s.y1 - 0.045, y1: s.y1 + 0.012 })), { segments: 16 }), W));
-  cabinInterior(b, m, { z0: -0.7, z1: 1.05, floorY: 0.36, dashY: 0.62, dashH: 0.22, dashZ: 0.86 });
+  cabinInterior(b, m, { z0: -0.7, z1: 1.05, floorY: 0.36, dashY: DASH.argent.y, dashH: DASH.argent.h, dashZ: DASH.argent.z });
   const L = m.length / 2;
   // splitter karbon bergaris merah, intake besar, sayap belakang, difuser, knalpot segi enam, lampu bentuk Y
   b.trim.push(part(rbox(1.66, 0.035, 0.22, 0.012), DARK, { y: 0.13, z: L - 0.02 }));
@@ -248,7 +248,7 @@ function rubis(b, m, paint) {
   b.paint.push(part(loftGeometry(mid, { arc: [Math.PI * 0.64, Math.PI * 2.36], segments: 16 }), W));
   b.glass.push(part(loftGeometry(cabin, { segments: 24 }), GLASSY));
   b.paint.push(part(loftGeometry(cabin.slice(1, 4).map((s) => ({ ...s, hw: s.hw * 0.82, y0: s.y1 - 0.07, y1: s.y1 + 0.012 })), { segments: 16 }), W));
-  cabinInterior(b, m, { z0: -2.3, z1: 1.2, floorY: 0.5, dashY: 1.0, dashH: 0.34, dashZ: 1.0 });
+  cabinInterior(b, m, { z0: -2.3, z1: 1.2, floorY: 0.5, dashY: DASH.rubis.y, dashH: DASH.rubis.h, dashZ: DASH.rubis.z });
   const L = m.length / 2;
   // gril kuil krom tinggi, lampu LED tipis, bemper krom, rel atap, garis kaca krom, knalpot ganda
   b.trim.push(part(rbox(0.86, 1.0, 0.1, 0.03), CHROME, { y: 0.78, z: L + 0.02 }));

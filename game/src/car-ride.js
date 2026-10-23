@@ -2,6 +2,7 @@
 // Tanpa THREE: tampilan mobil (vehicle-view.js) dan speedometer (hotel-ui.js) diterima dari pemanggil.
 
 import { gearFor, rpmFor } from './car-models.js';
+import { mergeControls } from './cockpit.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -25,7 +26,7 @@ export function carControls(input) {
  * fleet: Fleet; view: createVehicleView(); hud: mountSpeedHud(); exit({x,z}) -> {x,z} titik turun yang sah (bukan di dalam tembok);
  * camState: { yaw, dist, pitch } kamera orbit; isDragging(): pemain sedang/baru saja memutar kamera sendiri; toast(text).
  */
-export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p, camState = null, isDragging = () => false, toast = () => {} }) {
+export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p, camState = null, isDragging = () => false, isCabin = () => false, toast = () => {} }) {
   /** Naik ke kursi kosong terdekat. Mengembalikan true bila berhasil. */
   function board(me) {
     const r = fleet.board(me);
@@ -72,7 +73,7 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
   function step(me, { delta, rawInput }) {
     const driving = fleet.driving;
     if (driving) {
-      fleet.drive(carControls(rawInput), delta);
+      fleet.drive(mergeControls(carControls(rawInput), hud.pedals?.()), delta);
       if (driving.hit > 6) toast('Tabrakan!');
       if (camState && !isDragging()) {
         // kamera pelan-pelan berputar ke belakang mobil (konvensi kamera: yaw = heading + PI berarti kamera di belakang)
@@ -82,7 +83,7 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     }
     fleet.update(delta);
     view.update(delta);
-    hud.set(driving ? driving.speed * 3.6 : null, driving ? hudInfo(driving) : null);
+    hud.set(driving ? driving.speed * 3.6 : null, driving ? hudInfo(driving) : null, Boolean(driving && isCabin()));
     audio?.engine(driving);
     const sit = fleet.sitId;
     const seatPose = sit !== null ? fleet.seatPose(sit) : null;
