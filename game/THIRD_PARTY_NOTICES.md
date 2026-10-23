@@ -38,3 +38,13 @@ SOFTWARE.
 
 - LibreCorsa: https://github.com/KhazP/librecorsa (MIT). `game/src/tyre-model.js` terinspirasi model ban bersuhu proyek ini; kode ditulis ulang dan disederhanakan, tidak disalin.
 - ICEsim: https://github.com/Agent00PED/ice-simulator (README menyatakan MIT; repo tidak menyertakan berkas LICENSE). Dipakai sebagai acuan lapisan suara mesin/ban; belum ada kode yang disalin.
+
+## Model mobil GLB (pedrosoandre/carros) — opsional, aktif dengan `?glb=1`
+
+Sumber: https://github.com/pedrosoandre/carros (kode katalog MIT; model 3D milik pembuatnya masing-masing, diunduh dari Sketchfab dengan lisensi CC BY 4.0 atau CC BY-SA 4.0).
+
+`game/src/glb-car-catalog.js` dan `game/src/glb-car-view.js` memakai model GLB dari katalog itu sebagai tampilan luar mobil mewah bila diaktifkan. Berkas GLB tidak disimpan di repo: `node scripts/copy-car-models.mjs <folder carros>` menyalinnya ke `game/public/cars/` beserta `credits.json` (pembuat, tautan karya asli, lisensi tiap model).
+
+- CC BY 4.0 mewajibkan atribusi pembuat, tautan ke lisensi, dan keterangan bila model diubah. Model dari katalog sudah dikompres (weld, simplify, prune, meshopt) dan di nikora juga diskalakan, diputar, dan dipindah saat dimuat. Tampilkan isi `credits.json` di halaman publik sebelum fitur ini dibuka untuk umum.
+- Model CC BY-SA (`porsche-911-carrera`, `porsche-959`, `porsche-mission`) sengaja tidak dipakai; ini dijaga oleh `glb-car-catalog.test.js`.
+- Nama dan bentuk mobil nyata dimiliki pabrikannya masing-masing; model hanya dipakai untuk menampilkan kendaraan.
