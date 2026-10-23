@@ -89,6 +89,7 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
         const speed = Math.hypot(tx - group.position.x, tz - group.position.z) / Math.max(delta, 1e-3);
         // duduk: pose duduk (tilt 0) atau, tanpa poseFor (aula), titik duduk apa pun; berbaring (tilt != 0) bukan duduk
         group.userData.seated = pose ? pose.tilt === 0 : target.sit != null;
+        group.userData.seatKind = pose?.snap ? 'car' : null; // kursi mobil: kaki maju ke bawah dasbor, bukan menjuntai seperti di kursi biasa (avatar-human.js)
         applyPose(group, avatar.act ?? (speed > 0.8 ? 'walk' : null), time, delta);
         const kp = pose?.snap ? 1 : k; // kursi mobil yang melaju: tempel ke kursi (interpolasi akan membuat penumpang tertinggal di luar mobil)
         group.position.x += (tx - group.position.x) * kp;
