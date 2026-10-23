@@ -5,6 +5,7 @@ import { facadeLayout, facadeRepeat, facadeSides } from './hotel-facade-data.js'
 // tiang emas 0,28 m dan pelat tepi 0,24 m lebih kecil dari satu piksel dari jauh, sehingga dulu berkedip, bergelombang (moire), dan
 // kadang hilang. Dengan mipmap + anisotropic filtering, jarak jauh merata-ratakan kaca biru dan emas jadi warna yang sama dan stabil,
 // sementara dari dekat garis tiang tetap tajam. Sisi depan bidang menghadap keluar, jadi dari dalam gedung orang tetap melihat ke luar.
+// bayTexture juga dipakai kulit menara yang meruncing (hotel-tower-skin.js).
 const SRGB = THREE.SRGBColorSpace;
 const GOLD = '#c9a24b';
 const GOLD_HI = '#e8cf86';
@@ -42,7 +43,7 @@ function paintBay(layout) {
   return c;
 }
 
-function bayTexture(layout, anisotropy, u, v) {
+export function bayTexture(layout, anisotropy, u, v) {
   const t = new THREE.CanvasTexture(paintBay(layout));
   t.colorSpace = SRGB;
   t.wrapS = THREE.RepeatWrapping;
