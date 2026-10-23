@@ -21,6 +21,7 @@ import { createStaffView } from './hotel-staff-view.js';
 import { SKY_MODE_LABELS, createHotelSky } from './hotel-sky.js';
 import { nightLevel } from './hotel-sky-data.js';
 import { buildHotelSurroundings } from './hotel-surroundings.js';
+import { BIRD_TARGET, BLEND_SECONDS, CAMERA_MODES, CINEMATIC_FOV, MODE_LIMITS, OBSERVER_POINTS, ORBIT_TARGETS, blendPose, cinematicPose, lookDir, observerFov, observerPoint, orbitPose, stepFree } from './hotel-camera.js';
 
 // NIKORA Grand Hotel sebagai halaman sendiri (/hotel.html): menara 15 lantai yang dijelajahi dengan avatar (satu pemain).
 // Geometri 3D dari hotel-world.js dan denah dari hotel-layout.js (dipakai bersama dunia villa); halaman ini hanya
@@ -64,8 +65,10 @@ function hasWebGL2() {
 const held = new Set();
 const joystick = { x: 0, z: 0 };
 const KEYS = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
-const hooks = { map: () => {}, camera: () => {}, places: () => {}, action: () => {}, sky: () => {}, horn: () => {} };
-const camInput = { lastDrag: -1e9 }; // kapan pemain terakhir memutar kamera (kamera mobil tidak melawan putaran itu)
+const hooks = { map: () => {}, camera: () => {}, modes: () => {}, mode: () => {}, places: () => {}, action: () => {}, sky: () => {}, horn: () => {} };
+const vertKeys = new Set(); // R/F = naik/turun di kamera bebas
+// lastDrag: kapan pemain terakhir memutar kamera (kamera mobil tidak melawan putaran itu); boost: Shift = kamera bebas 4x lebih cepat; vert: tombol naik/turun di layar
+const camInput = { lastDrag: -1e9, boost: 1, vert: 0 };
 const CAM_LIMITS = Object.freeze({ minPitch: 0.06, maxPitch: 1.5, minDist: 1.5, maxDist: 140 });
 // Orang ketiga, lebar, udara, dan pandangan menara dari jauh
 const CAM_PRESETS = Object.freeze([{ pitch: 0.28, dist: 5.6 }, { pitch: 0.55, dist: 11 }, { pitch: 0.95, dist: 21 }, { pitch: 0.4, dist: 110 }]);
@@ -90,8 +93,9 @@ function cameraRelative(input, yaw) {
   return { x: rx * input.x - fx * input.z, z: rz * input.x - fz * input.z };
 }
 
-function setupInput(canvas, camState) {
+function setupInput(canvas, ctl) {
   addEventListener('keydown', (e) => {
+    camInput.boost = e.shiftKey ? 4 : 1;
     const k = e.key.toLowerCase();
     if (k in KEYS) {
       held.add(k);
@@ -105,15 +109,18 @@ function setupInput(canvas, camState) {
       hooks.action(); // naik/turun mobil
       e.preventDefault();
     }
-    else if (k === '[') camState.yaw += 0.12;
-    else if (k === ']') camState.yaw -= 0.12;
-    else if (k === '-') camState.dist = clamp(camState.dist * 1.1, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
-    else if (k === '=' || k === '+') camState.dist = clamp(camState.dist * 0.9, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
+    else if (k === '[') ctl.turn(-0.12);
+    else if (k === ']') ctl.turn(0.12);
+    else if (k === '-') ctl.zoom(1.1);
+    else if (k === '=' || k === '+') ctl.zoom(0.9);
+    else if (!e.repeat && k === 'v') hooks.modes();
+    else if (!e.repeat && /^[1-7]$/.test(k)) hooks.mode(Number(k) - 1);
+    else if (k === 'r' || k === 'f') vertKeys.add(k);
   });
-  addEventListener('keyup', (e) => { held.delete(e.key.toLowerCase()); if (e.key.toLowerCase() === 'h') hooks.horn(false); });
-  addEventListener('blur', () => held.clear());
+  addEventListener('keyup', (e) => { camInput.boost = e.shiftKey ? 4 : 1; vertKeys.delete(e.key.toLowerCase()); held.delete(e.key.toLowerCase()); if (e.key.toLowerCase() === 'h') hooks.horn(false); });
+  addEventListener('blur', () => { held.clear(); vertKeys.clear(); });
   canvas.addEventListener('wheel', (e) => {
-    camState.dist = clamp(camState.dist * (e.deltaY > 0 ? 1.1 : 0.9), CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
+    ctl.zoom(e.deltaY > 0 ? 1.1 : 0.9);
     e.preventDefault();
   }, { passive: false });
 
@@ -138,15 +145,14 @@ function setupInput(canvas, camState) {
     p.y = e.clientY;
     camInput.lastDrag = performance.now();
     if (pointers.size === 1) {
-      camState.yaw -= dx * 0.006;
-      camState.pitch = clamp(camState.pitch + dy * 0.005, CAM_LIMITS.minPitch, CAM_LIMITS.maxPitch);
+      ctl.look(dx, dy);
     } else if (pointers.size === 2 && pinch) {
       const now = twoFingers();
-      if (now.d > 1 && pinch.d > 1) camState.dist = clamp(camState.dist * (pinch.d / now.d), CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
+      if (now.d > 1 && pinch.d > 1) ctl.zoom(pinch.d / now.d);
       let turn = now.angle - pinch.angle;
       if (turn > Math.PI) turn -= Math.PI * 2;
       if (turn < -Math.PI) turn += Math.PI * 2;
-      camState.yaw -= turn;
+      ctl.turn(turn);
       pinch = now;
     }
   });
@@ -340,7 +346,7 @@ async function start() {
   let preset = 0;
   let cockpitOn = false; // kamera di dalam kabin (hanya saat mengemudi): setelah preset terakhir, tombol kamera masuk ke kabin
   let cockpitSeen = false;
-  hooks.camera = () => {
+  const cyclePreset = () => {
     if (fleet.driving) {
       if (cockpitOn) { cockpitOn = false; preset = 0; } else if (preset === CAM_PRESETS.length - 1) { cockpitOn = true; return; } else preset += 1;
       camState.pitch = CAM_PRESETS[preset].pitch;
@@ -351,16 +357,139 @@ async function start() {
     camState.pitch = CAM_PRESETS[preset].pitch;
     camState.dist = CAM_PRESETS[preset].dist;
   };
+  const baseFov = () => clamp(48 + (1.2 - camera.aspect) * 26, 48, 62);
   const resize = () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
-    camera.fov = clamp(48 + (1.2 - camera.aspect) * 26, 48, 62);
+    camera.fov = baseFov();
     camera.updateProjectionMatrix();
   };
   resize();
   addEventListener('resize', resize);
-  setupInput(renderer.domElement, camState);
-  $('cam-button').addEventListener('click', () => hooks.camera());
+  // ---------- mode kamera: orang ketiga / pertama / bebas / orbit / burung / sinematik / pengamat (hotel-camera.js) ----------
+  let camMode = 'follow';
+  let lastPose = null; // pose kamera terakhir yang dipakai (titik awal peralihan halus antar mode)
+  let blend = null; // { t, from }
+  let camClock = 0;
+  let observerIdx = 0;
+  let orbitIdx = 0;
+  let fovTarget = 48;
+  const orbitState = { ...ORBIT_TARGETS[0], yaw: 0.6 };
+  const orbitNow = { ...orbitState };
+  const freeCam = { x: 0, y: 5, z: 0, yaw: 0, pitch: 0.3 };
+  const modeState = () => (camMode === 'orbit' || camMode === 'bird' ? orbitState : camMode === 'free' ? freeCam : camState);
+  const canLook = () => camMode !== 'cinematic' && camMode !== 'observer';
+  const ctl = {
+    look(dx, dy) {
+      if (!canLook()) return;
+      const s = modeState();
+      const L = MODE_LIMITS[camMode];
+      s.yaw -= dx * 0.006;
+      s.pitch = clamp(s.pitch + dy * 0.005, L.minPitch, L.maxPitch);
+    },
+    turn(a) { if (canLook()) modeState().yaw -= a; },
+    zoom(f) {
+      const L = MODE_LIMITS[camMode];
+      if (L.maxDist > 0) { const s = modeState(); s.dist = clamp(s.dist * f, L.minDist, L.maxDist); }
+    },
+  };
+  const observerYaw = () => { const o = OBSERVER_POINTS[observerIdx]; return Math.atan2(o.x - me.x, o.z - me.z); };
+  const moveYaw = () => (camMode === 'orbit' || camMode === 'bird' ? orbitNow.yaw : camMode === 'observer' ? observerYaw() : camNow.yaw);
+  let refreshCamUi = () => {};
+  const setMode = (id) => {
+    if (id === camMode || !CAMERA_MODES.some((m) => m.id === id)) return;
+    if (id === 'first' && fleet.driving) { // saat mengemudi, "orang pertama" = kamera kabin
+      if (camMode !== 'follow') setMode('follow');
+      cockpitOn = true;
+      toast('Kamera kabin');
+      return;
+    }
+    if (camMode === 'first') camState.pitch = CAM_PRESETS[preset].pitch;
+    if (lastPose) blend = { t: 0, from: lastPose };
+    camMode = id;
+    cockpitOn = false;
+    if (id === 'first') {
+      camState.pitch = 0;
+      camState.yaw = shownFacing;
+      camNow.yaw = shownFacing;
+      camNow.pitch = 0;
+    } else if (id === 'free') {
+      const d = camera.getWorldDirection(new THREE.Vector3());
+      Object.assign(freeCam, { x: camera.position.x, y: Math.max(1.2, camera.position.y), z: camera.position.z, yaw: Math.atan2(-d.x, -d.z), pitch: clamp(Math.asin(-d.y), -1.5, 1.5) });
+    } else if (id === 'orbit') {
+      Object.assign(orbitState, ORBIT_TARGETS[orbitIdx], { yaw: camNow.yaw });
+      Object.assign(orbitNow, orbitState);
+    } else if (id === 'bird') {
+      Object.assign(orbitState, BIRD_TARGET, { yaw: camNow.yaw });
+      Object.assign(orbitNow, orbitState);
+    } else if (id === 'observer') {
+      observerIdx = OBSERVER_POINTS.indexOf(observerPoint(me));
+    }
+    refreshCamUi();
+    toast(CAMERA_MODES.find((m) => m.id === id).label);
+  };
+  const focusNext = () => {
+    if (camMode === 'orbit') {
+      orbitIdx = (orbitIdx + 1) % ORBIT_TARGETS.length;
+      Object.assign(orbitState, ORBIT_TARGETS[orbitIdx]);
+      toast(`Fokus: ${ORBIT_TARGETS[orbitIdx].name}`);
+    } else if (camMode === 'observer') {
+      observerIdx = (observerIdx + 1) % OBSERVER_POINTS.length;
+      toast(`Pengamat: ${OBSERVER_POINTS[observerIdx].name}`);
+    } else if (camMode === 'bird') {
+      Object.assign(orbitState, BIRD_TARGET);
+      toast('Pandangan burung diatur ulang');
+    }
+  };
+  hooks.camera = () => (camMode === 'follow' ? cyclePreset() : focusNext());
+  hooks.mode = (i) => { if (CAMERA_MODES[i]) setMode(CAMERA_MODES[i].id); };
+  /** Pose kamera final menurut mode; followPose = pose kamera orbit-pemain lama (tetap dihitung agar peralihan kembali halus). */
+  const applyCameraMode = (followPose, delta, rawInput) => {
+    let pose = followPose;
+    let fov = baseFov();
+    if (camMode === 'first') {
+      const dir = lookDir(camNow.yaw, camNow.pitch);
+      const p = [me.x, me.y + 1.62, me.z];
+      pose = { pos: p, look: [p[0] + dir.x * 10, p[1] + dir.y * 10, p[2] + dir.z * 10] };
+      fov = 72;
+    } else if (camMode === 'free') {
+      const vertical = camInput.vert + (vertKeys.has('r') ? 1 : 0) - (vertKeys.has('f') ? 1 : 0);
+      const drive = !fleet.mine; // di dalam mobil joystick mengemudi; kamera bebas naik/turun lewat tombol saja
+      Object.assign(freeCam, stepFree(freeCam, { right: drive ? rawInput.x : 0, forward: drive ? rawInput.z : 0, up: vertical }, delta, camInput.boost));
+      const dir = lookDir(freeCam.yaw, freeCam.pitch);
+      pose = { pos: [freeCam.x, freeCam.y, freeCam.z], look: [freeCam.x + dir.x * 10, freeCam.y + dir.y * 10, freeCam.z + dir.z * 10] };
+    } else if (camMode === 'orbit' || camMode === 'bird') {
+      const k = 1 - Math.exp(-5 * delta);
+      for (const key of ['x', 'y', 'z', 'dist', 'pitch', 'yaw']) orbitNow[key] += (orbitState[key] - orbitNow[key]) * k;
+      pose = orbitPose(orbitNow);
+      if (camMode === 'bird') fov = 55;
+    } else if (camMode === 'cinematic') {
+      camClock += delta;
+      pose = cinematicPose(camClock);
+      fov = CINEMATIC_FOV;
+    } else if (camMode === 'observer') {
+      const o = OBSERVER_POINTS[observerIdx];
+      pose = { pos: [o.x, o.y, o.z], look: [me.x, me.y + 1.4, me.z] };
+      fov = observerFov(Math.hypot(o.x - me.x, o.y - me.y - 1.4, o.z - me.z));
+    }
+    if (blend) {
+      blend.t += delta / BLEND_SECONDS;
+      pose = blendPose(blend.from, pose, blend.t);
+      if (blend.t >= 1) blend = null;
+    }
+    fovTarget = fov;
+    return pose;
+  };
+  const updateFov = (delta) => {
+    if (cockpitOn && fleet.driving) return; // kamera kabin mengatur FOV-nya sendiri
+    const d = fovTarget - camera.fov;
+    if (Math.abs(d) > 0.02) {
+      camera.fov += d * (1 - Math.exp(-5 * delta));
+      camera.updateProjectionMatrix();
+    }
+  };
+  setupInput(renderer.domElement, ctl);
+  $('cam-button').addEventListener('click', () => hooks.modes());
 
   const storage = (() => {
     try {
@@ -482,11 +611,50 @@ async function start() {
   }
   hooks.places = () => {
     panel.hidden = !panel.hidden;
+    $('cam-panel').hidden = true;
   };
   $('places-button').addEventListener('click', () => hooks.places());
   $('places-close').addEventListener('click', () => {
     panel.hidden = true;
   });
+
+  // ---------- menu mode kamera ----------
+  const camPanel = $('cam-panel');
+  const camList = $('cam-list');
+  const camCycle = $('cam-cycle');
+  const modeBtns = CAMERA_MODES.map((m) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'place-btn';
+    b.textContent = `${m.icon} ${m.label}`;
+    b.addEventListener('click', () => { setMode(m.id); camPanel.hidden = true; });
+    camList.appendChild(b);
+    return b;
+  });
+  const holdVertical = (id, dir) => {
+    const el = $(id);
+    el.addEventListener('pointerdown', (e) => { el.setPointerCapture(e.pointerId); camInput.vert = dir; });
+    const stop = () => { camInput.vert = 0; };
+    el.addEventListener('pointerup', stop);
+    el.addEventListener('pointercancel', stop);
+  };
+  holdVertical('cam-up', 1);
+  holdVertical('cam-down', -1);
+  $('cam-focus').addEventListener('click', () => focusNext());
+  $('cam-back').addEventListener('click', () => setMode('follow'));
+  camCycle.addEventListener('click', () => hooks.camera());
+  $('cam-close').addEventListener('click', () => { camPanel.hidden = true; });
+  refreshCamUi = () => {
+    modeBtns.forEach((b, i) => b.classList.toggle('on', CAMERA_MODES[i].id === camMode));
+    $('cam-bar').hidden = camMode === 'follow';
+    $('cam-up').hidden = camMode !== 'free';
+    $('cam-down').hidden = camMode !== 'free';
+    $('cam-focus').hidden = !(camMode === 'orbit' || camMode === 'bird' || camMode === 'observer');
+    camCycle.hidden = !(camMode === 'follow' || camMode === 'orbit' || camMode === 'bird' || camMode === 'observer');
+    camCycle.textContent = camMode === 'follow' ? 'Ganti jarak kamera (C)' : camMode === 'bird' ? 'Atur ulang pandangan (C)' : 'Ganti sasaran (C)';
+  };
+  hooks.modes = () => { camPanel.hidden = !camPanel.hidden; panel.hidden = true; };
+  refreshCamUi();
 
   const drawMap = createMinimap();
   let last = performance.now();
@@ -536,8 +704,9 @@ async function start() {
 
     const rawInput = riding ? { x: 0, z: 0 } : readInput();
     let move = { x: 0, z: 0 };
-    if (!riding && !fleet.mine) { // di dalam mobil joystick = gas dan setir, bukan berjalan
-      move = cameraRelative(rawInput, camNow.yaw);
+    const frozen = camMode === 'free' || camMode === 'cinematic'; // joystick menggerakkan kamera (bebas) atau tidak dipakai (sinematik)
+    if (!riding && !fleet.mine && !frozen) { // di dalam mobil joystick = gas dan setir, bukan berjalan
+      move = cameraRelative(rawInput, moveYaw());
       move = doorAssist(me, move, world.levels[me.level].doors);
     }
     const moving = move.x !== 0 || move.z !== 0;
@@ -566,6 +735,7 @@ async function start() {
 
     // mobil: pengemudi menjalankan fisika; pengemudi dan penumpang menempel di kursinya
     const car = carRide.step(me, { delta, rawInput });
+    if (fleet.mine && camMode === 'first') setMode('follow'); // naik mobil dari mode orang pertama: kembali ke kamera pemain
     // Gerbang tempat acara di ujung jalan raya: berjalan atau mengemudi melewatinya = pindah ke halaman tempat acara itu
     const gate = leavingTo || me.level !== 0 ? null : gateAt(me.x, me.z);
     if (gate) {
@@ -593,7 +763,8 @@ async function start() {
     staffView.update(me, delta, time / 1000); // petugas hotel yang dekat pemain
 
     // kamera mengorbit pemain; bila terhalang dinding atau langit-langit, dinaikkan halus atau dipendekkan
-    camState.pitch = clamp(camState.pitch, CAM_LIMITS.minPitch, CAM_LIMITS.maxPitch);
+    const camL = MODE_LIMITS[camMode === 'first' ? 'first' : 'follow'];
+    camState.pitch = clamp(camState.pitch, camL.minPitch, camL.maxPitch);
     camState.dist = clamp(camState.dist, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
     const ck = 1 - Math.exp(-12 * delta);
     camNow.yaw += (camState.yaw - camNow.yaw) * ck;
@@ -604,18 +775,25 @@ async function start() {
     const want = camNow.dist * fit;
     const eye = { x: me.x, y: me.y + 1.45, z: me.z };
     const boxes = riding ? [] : built.occluders(me.level);
-    const camPose = chooseCameraPose(eye, camNow.yaw, camNow.pitch, want, boxes);
+    const camPose = chooseCameraPose(eye, camNow.yaw, Math.max(CAM_LIMITS.minPitch, camNow.pitch), want, boxes);
     camPitch = camPitch === null ? camPose.pitch : camPitch + (camPose.pitch - camPitch) * (1 - Math.exp(-6 * delta));
     const cp = Math.cos(camPitch);
     const dir = { x: Math.sin(camNow.yaw) * cp, y: Math.sin(camPitch), z: Math.cos(camNow.yaw) * cp };
     const { dist: freeArm } = resolveCameraDistance(eye, dir, want, boxes);
     camArm = camArm === 0 || freeArm < camArm ? freeArm : camArm + (freeArm - camArm) * (1 - Math.exp(-4 * delta));
-    camera.position.set(eye.x + dir.x * camArm, eye.y + dir.y * camArm, eye.z + dir.z * camArm);
     const look = forwardLookBlend(camArm);
     const ahead = { x: eye.x - Math.sin(camNow.yaw) * 6, y: eye.y - 0.3, z: eye.z - Math.cos(camNow.yaw) * 6 };
     const lookY = me.y + 1.2;
-    camera.lookAt(me.x + (ahead.x - me.x) * look, lookY + (ahead.y - lookY) * look, me.z + (ahead.z - me.z) * look);
-    avatar.visible = camArm > 0.95;
+    const followPose = {
+      pos: [eye.x + dir.x * camArm, eye.y + dir.y * camArm, eye.z + dir.z * camArm],
+      look: [me.x + (ahead.x - me.x) * look, lookY + (ahead.y - lookY) * look, me.z + (ahead.z - me.z) * look],
+    };
+    const pose = applyCameraMode(followPose, delta, rawInput); // mode kamera (hotel-camera.js), dengan peralihan halus antar mode
+    camera.position.set(pose.pos[0], pose.pos[1], pose.pos[2]);
+    camera.lookAt(pose.look[0], pose.look[1], pose.look[2]);
+    lastPose = pose;
+    updateFov(delta);
+    avatar.visible = camMode === 'follow' ? camArm > 0.95 : camMode !== 'first';
     blob.visible = avatar.visible;
 
     // kamera kabin: mata di kepala pengemudi, menghadap ke depan mobil, sedikit mengintip ke arah belokan; avatar disembunyikan
@@ -681,7 +859,10 @@ async function start() {
     cars: () => fleet.cars.map((c) => ({ id: c.id, model: c.model, x: c.x, z: c.z, heading: c.heading, speed: c.speed, seats: c.seats.slice() })), // pengujian
     board: () => carRide.board(me),
     cockpit: () => cockpitOn, // kamera kabin aktif (pengujian)
-    cycleCamera: () => hooks.camera(), // sama dengan tombol kamera (pengujian)
+    cycleCamera: () => hooks.camera(), // sama dengan tombol C: ganti jarak (orang ketiga) atau sasaran (orbit/pengamat) (pengujian)
+    camMode: () => camMode,
+    setCameraMode: (id) => setMode(id), // pengujian dan menu mode kamera
+    freeCam: () => ({ ...freeCam }),
     driving: () => (fleet.driving ? { model: fleet.driving.model, speed: fleet.driving.speed, engine: fleet.driving.engine, steer: fleet.driving.steer, slip: fleet.driving.slip, tyreTemp: fleet.driving.tyreTemp } : null),
     teleport, // hanya untuk pengujian dan menu Jelajah
     leavingTo: () => leavingTo?.id ?? null,
