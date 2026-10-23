@@ -12,6 +12,7 @@ export const DASH = Object.freeze({
 
 export const WHEEL_LOCK = 1.9; // putaran setir (rad) dari tengah ke kunci penuh = sekitar 109 derajat
 export const SEAT_TOP = 0.665; // permukaan dudukan (selaras cabinInterior di luxury-cars.js)
+export const WHEEL_RADIUS = 0.14; // dulu 0,17: setir dan tangan dikecilkan supaya tidak menutupi jalan (acuan: game balap seluler)
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -26,7 +27,7 @@ export function cockpitSpec(model) {
   const x = -s.side;
   const eye = { x, y: top + 0.66, z: s.fwd - 0.1 };
   const dashTop = d.y + d.h / 2;
-  const wheel = { x, y: Math.min(eye.y - 0.1, Math.max(top + 0.36, dashTop + 0.12)), z: s.fwd + 0.62, r: 0.17, tilt: -0.35 }; // setir di atas dasbor supaya terlihat dari kursi
+  const wheel = { x, y: Math.min(eye.y - 0.1, Math.max(top + 0.36, dashTop + 0.12)), z: s.fwd + 0.62, r: WHEEL_RADIUS, tilt: -0.35 }; // setir di atas dasbor supaya terlihat dari kursi
 
   const cluster = { x, y: Math.max(wheel.y + 0.2, dashTop + 0.11), z: Math.max(d.z, wheel.z) + 0.03, w: 0.34, h: 0.17 };
   const half = model.width / 2;
@@ -58,8 +59,8 @@ export function eyeWorld(car, spec, look = 0) {
   return { x: p.x, y: p.y, z: p.z, yaw: car.heading + look, pitch: 0 };
 }
 
-/** FOV kamera kokpit: makin cepat makin lebar sedikit. */
-export const cockpitFov = (speed, maxSpeed, aspect = 1.8) => clamp(66 + 8 * clamp(Math.abs(speed) / Math.max(1, maxSpeed), 0, 1) + (aspect < 1 ? 14 : 0), 60, 92);
+/** FOV kamera kokpit: makin cepat makin lebar sedikit; lebih lebar di layar potret supaya setir tidak memenuhi layar. */
+export const cockpitFov = (speed, maxSpeed, aspect = 1.8) => clamp(70 + 8 * clamp(Math.abs(speed) / Math.max(1, maxSpeed), 0, 1) + (aspect < 1 ? 16 : 0), 60, 92);
 
 /** Sudut jarum (rad) pada jam 240 derajat: frac 0..1 -> dari -210 ke +30 derajat (searah jarum jam). */
 export const dialAngle = (frac) => (-210 + 240 * clamp(frac, 0, 1)) * (Math.PI / 180);
