@@ -24,14 +24,16 @@ export function carControls(input) {
 
 /**
  * Kontrol final satu frame: joystick/keyboard (rawInput) digabung dengan HUD layar sentuh.
- * hud.pedals() = { gas, brake }, hud.steer() = penggeser setir -1..1 (kanan = +). Rem ditahan saat hampir berhenti = mundur.
+ * hud.pedals() = { gas, brake, reverse }, hud.steer() = penggeser setir -1..1 (kanan = +).
+ * Tombol R ditahan = mundur; rem ditahan saat hampir berhenti juga = mundur.
  */
 export function driveControls(rawInput, hud, speed = 0) {
   const pedals = hud?.pedals?.();
   let ctl = mergeControls(carControls(rawInput), pedals);
   const slide = hud?.steer?.() ?? 0;
   if (slide) ctl = { ...ctl, steer: carControls({ x: slide, z: 0 }).steer };
-  if (pedals?.brake && !pedals.gas && speed < 0.5) ctl = { ...ctl, throttle: -1, brake: false };
+  if (pedals?.reverse) ctl = { ...ctl, throttle: -1, brake: false };
+  else if (pedals?.brake && !pedals.gas && speed < 0.5) ctl = { ...ctl, throttle: -1, brake: false };
   return ctl;
 }
 
@@ -48,7 +50,7 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
       camState.dist = Math.max(camState.dist, 9); // kamera menjauh supaya mobil terlihat
       camState.pitch = Math.min(camState.pitch, 0.5);
     }
-    toast(r.seat === 0 ? 'Kamu mengemudi: geser setir di kiri, pedal gas dan rem di kanan (atau W/S/A/D). E = turun.' : 'Kamu penumpang. E = turun.');
+    toast(r.seat === 0 ? 'Kamu mengemudi: geser setir di kiri, pedal gas dan rem di kanan, tombol R untuk mundur (atau W/S/A/D). E = turun.' : 'Kamu penumpang. E = turun.');
     return true;
   }
 
