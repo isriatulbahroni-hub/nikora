@@ -22,7 +22,7 @@ import { SKY_MODE_LABELS, createHotelSky } from './hotel-sky.js';
 import { nightLevel } from './hotel-sky-data.js';
 import { buildHotelSurroundings } from './hotel-surroundings.js';
 
-// NIKORA Grand Hotel sebagai halaman sendiri (/hotel.html): menara 15 lantai yang dijelajahi dengan avatar (satu pemain).
+// NIKORA Grand Hotel sebagai halaman sendiri (/hotel.html): menara 1000 lantai yang dijelajahi dengan avatar (satu pemain).
 // Geometri 3D dari hotel-world.js dan denah dari hotel-layout.js (dipakai bersama dunia villa); halaman ini hanya
 // menambah rumput, kamera, lift, peta per lantai, dan menu Jelajah. Langit siang-senja-malam, awan, bintang, bulan, kabut,
 // dan semua lampu menyala otomatis berasal dari hotel-sky.js (?sky=, ?tz=, tombol N).
@@ -582,6 +582,16 @@ async function start() {
     avatar.rotation.y = shownFacing;
     avatar.userData.seated = !!seatPose;
     applyPose(avatar, moving ? 'walk' : null, time / 1000, delta);
+    if (seatPose) {
+      // duduk di mobil: paha hampir mendatar dan betis maju ke bawah dasbor. Pose kursi biasa (betis tegak ke lantai) membuat kaki
+      // menembus lantai mobil dan terlihat menjuntai di bawah pintu.
+      const legs = avatar.userData.legs;
+      if (legs) for (const [side, spread] of [['r', 0.06], ['l', -0.06]]) {
+        legs[side].hip.rotation.x = 1.45;
+        legs[side].hip.rotation.z = spread;
+        legs[side].knee.rotation.x = -0.5;
+      }
+    }
     const others = multiplayer ? multiplayer.net.players.filter((p) => p.id !== multiplayer.net.id) : [];
     if (multiplayer) {
       multiplayer.view.update(delta, time / 1000); // pemain lain
