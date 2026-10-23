@@ -15,8 +15,11 @@
       .title strong { display: block; font-size: 18px; letter-spacing: .12em; font-weight: 600; }
       .title span { font-size: 11px; opacity: .85; }
       .place { top: calc(max(12px, env(safe-area-inset-top)) + 46px); left: 14px; max-width: calc(100vw - 28px); padding: 5px 12px; border-radius: 999px; background: rgba(20,17,13,.68); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: none; }
-      /* saat mengemudi: judul dan nama tempat disembunyikan supaya layar bersih (car-hud.js memasang kelas ini) */
+      /* saat mengemudi (car-hud.js memasang kelas ini): layar bersih seperti game balap. Judul dan nama tempat hilang, joystick jalan diganti
+         penggeser setir dan pedal, dan tombol Turun mengecil ke kiri atas di bawah lencana kecepatan. */
       body.driving .title, body.driving .place { display: none; }
+      body.driving .joy-zone { display: none !important; }
+      body.driving .act { top: calc(max(12px, env(safe-area-inset-top)) + 40px); left: 14px; right: auto; bottom: auto; width: auto; height: 34px; padding: 0 14px; border-width: 1px; border-radius: 8px; font-size: 12px; letter-spacing: .04em; box-shadow: none; opacity: .85; }
       .topbar { position: fixed; z-index: 7; top: max(10px, env(safe-area-inset-top)); right: 10px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
       .rbs { display: flex; gap: 8px; }
       .rb { width: 48px; height: 52px; border-radius: 14px; border: 1px solid rgba(231,199,106,.45); background: rgba(20,17,13,.7); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; padding: 0; cursor: pointer; opacity: .92; }
