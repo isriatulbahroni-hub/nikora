@@ -11,6 +11,12 @@ export const CITY_TINTS = Object.freeze([0xffffff, 0xe9dcc8, 0xbcd6ea, 0xd2dbe0,
 export const SURROUND_BOUNDS = Object.freeze({ minX: -480, maxX: 480, minZ: 200, maxZ: 880 }); // area kota (gerbang villa di z=100, gerbang aula/royal di x=±520, masjid di z=916)
 /** Tepi luar aspal Lingkar NIKORA; seluruh persegi ini (aspal + tapak hotel di dalamnya) tidak boleh ditempati apa pun. */
 export const RING_OUTER = Object.freeze([RING.minX - HIGHWAY_HALF, RING.minZ - HIGHWAY_HALF, RING.maxX + HIGHWAY_HALF, RING.maxZ + HIGHWAY_HALF]);
+/** Sabuk lapang di luar Lingkar: tanpa gedung kota (hanya pohon), supaya menara tidak terhimpit gedung-gedung yang menempel di tepi jalan. */
+export const RING_BUFFER = 75;
+/** Tinggi gedung dibatasi menurut jarak dari Lingkar: dekat Lingkar rendah (<= 79,2 m), baru ke luar boleh menjulang. */
+export const NEAR_RING_LIMITS = Object.freeze([{ within: 150, maxBucket: 2 }, { within: 260, maxBucket: 4 }]);
+/** Jarak (m) dari titik ke persegi luar Lingkar; 0 bila di dalamnya. */
+export const ringDistance = (x, z) => Math.hypot(Math.max(RING_OUTER[0] - x, 0, x - RING_OUTER[2]), Math.max(RING_OUTER[1] - z, 0, z - RING_OUTER[3]));
 
 const sat = (id, x, z, radius, height) => Object.freeze({ id, x, z, radius, height, taper: 0.78, sides: 12 });
 /** Lima menara satelit kaca berfaset (12 sisi, meruncing), di keempat sudut luar Lingkar dan di selatan. */
@@ -65,8 +71,10 @@ function mulberry32(seed) {
 const CELL = 40; // sel kota; gedung 16..28 m dengan geseran ±4 m sehingga antar gedung selalu ada celah >= 4 m
 let cityCache = null;
 /**
- * Gedung kota: {x, z, w, d, bucket, height, tint}. Makin dekat ke menara hotel makin tinggi (36 m di pinggir kota, sampai 244,8 m di dekat Lingkar).
- * Sel yang menimpa jalan, Lingkar, gerbang, satelit, arena, atau lapangan dilewati; sekitar 16% sel sengaja kosong (taman).
+ * Gedung kota: {x, z, w, d, bucket, height, tint}. Tinggi naik ke arah menara hotel (36 m di pinggir kota), tetapi tidak menempel di Lingkar:
+ * dalam RING_BUFFER (75 m) dari Lingkar tidak ada gedung, dan sampai 150 m dari Lingkar gedung dibatasi <= 79,2 m (NEAR_RING_LIMITS),
+ * jadi menara tetap terlihat dari jalan. Sel yang menimpa jalan, Lingkar, gerbang, satelit, arena, atau lapangan dilewati; 16% sel sengaja
+ * kosong (taman), dan makin dekat Lingkar makin banyak yang kosong (sampai 50%).
  */
 export function cityBuildings() {
   if (cityCache) return cityCache;
@@ -79,14 +87,18 @@ export function cityBuildings() {
       const d = 16 + rand() * 12;
       const jx = (rand() - 0.5) * 8;
       const jz = (rand() - 0.5) * 8;
-      const empty = rand() < 0.16;
+      const pickEmpty = rand();
       const pickH = rand();
       const pickTint = rand();
       const x = gx + CELL / 2 + jx;
       const z = gz + CELL / 2 + jz;
-      if (empty || !isClear(rectOf(x, z, w / 2, d / 2))) continue;
+      const rect = rectOf(x, z, w / 2, d / 2);
+      const dRing = ringDistance(x, z);
+      const emptyP = 0.16 + 0.34 * clamp(1 - (dRing - RING_BUFFER) / 125, 0, 1);
+      if (pickEmpty < emptyP || overlaps(rect, RING_OUTER, RING_BUFFER) || !isClear(rect)) continue;
       const near = clamp(1 - (Math.hypot(x - TOWER_CENTER.x, z - TOWER_CENTER.z) - 200) / 400, 0, 1);
-      const bucket = clamp(Math.round(near * 4 + pickH * 2.2), 0, CITY_HEIGHTS.length - 1);
+      const maxBucket = NEAR_RING_LIMITS.find((l) => dRing < l.within)?.maxBucket ?? CITY_HEIGHTS.length - 1;
+      const bucket = clamp(Math.round(near * 4 + pickH * 2.2), 0, maxBucket);
       out.push(Object.freeze({ x, z, w, d, bucket, height: CITY_HEIGHTS[bucket], tint: Math.floor(pickTint * CITY_TINTS.length) }));
     }
   }
@@ -117,7 +129,7 @@ export function forestTrees() {
       n++;
     }
   };
-  scatter(NEAR_BOX, 380);
+  scatter(NEAR_BOX, 260);
   scatter(FAR_BOX, 320);
   forestCache = Object.freeze(out);
   return forestCache;

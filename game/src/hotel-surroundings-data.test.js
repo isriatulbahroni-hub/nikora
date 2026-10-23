@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GATES, HIGHWAY_SEGMENTS } from './highway.js';
 import { HOTEL_SITE, TOWER_CENTER } from './hotel-layout.js';
-import { ARENA, CITY_HEIGHTS, CITY_TINTS, FIELD, RING_OUTER, SATELLITES, SURROUND_BOUNDS, TILE_HEIGHT, cityBuildings, forestTrees, isClear } from './hotel-surroundings-data.js';
+import { ARENA, CITY_HEIGHTS, CITY_TINTS, FIELD, NEAR_RING_LIMITS, RING_BUFFER, RING_OUTER, SATELLITES, SURROUND_BOUNDS, TILE_HEIGHT, cityBuildings, forestTrees, isClear, ringDistance } from './hotel-surroundings-data.js';
 
 const rectOf = (x, z, hw, hd) => [x - hw, z - hd, x + hw, z + hd];
 const overlaps = (a, b, m = 0) => a[0] < b[2] + m && a[2] > b[0] - m && a[1] < b[3] + m && a[3] > b[1] - m;
@@ -66,13 +66,45 @@ test('kota: tidak ada gedung di jalan, Lingkar, gerbang, satelit, arena, lapanga
   });
 });
 
-test('kota: gedung dekat menara hotel lebih tinggi daripada yang jauh', () => {
-  const dist = (b) => Math.hypot(b.x - TOWER_CENTER.x, b.z - TOWER_CENTER.z);
+test('kota: sabuk lapang di sekeliling Lingkar tanpa gedung, supaya menara tidak terhimpit', () => {
+  const a = cityBuildings();
+  assert.ok(RING_BUFFER >= 60);
+  assert.equal(ringDistance(0, 450), 0, 'di dalam Lingkar jaraknya 0');
+  assert.equal(ringDistance(RING_OUTER[2] + 30, 450), 30);
+  for (const b of a) {
+    const foot = rectOf(b.x, b.z, b.w / 2, b.d / 2);
+    assert.ok(!overlaps(foot, RING_OUTER, RING_BUFFER), `gedung di (${b.x.toFixed(0)}, ${b.z.toFixed(0)}) masuk sabuk lapang`);
+  }
+});
+
+test('kota: dekat Lingkar rendah, baru ke luar boleh menjulang (batas NEAR_RING_LIMITS)', () => {
+  const a = cityBuildings();
+  for (const b of a) {
+    const limit = NEAR_RING_LIMITS.find((l) => ringDistance(b.x, b.z) < l.within);
+    if (limit) assert.ok(b.bucket <= limit.maxBucket, `gedung setinggi ${b.height} m hanya ${ringDistance(b.x, b.z).toFixed(0)} m dari Lingkar`);
+  }
+  const dekat = a.filter((b) => ringDistance(b.x, b.z) < NEAR_RING_LIMITS[0].within);
+  assert.ok(dekat.length > 5, 'masih ada gedung rendah di dekat Lingkar');
+  assert.ok(Math.max(...dekat.map((b) => b.height)) <= 79.2 + 1e-9);
+});
+
+test('kota: pita gedung di luar sabuk lebih tinggi daripada yang di pinggir kota (menuju menara = naik)', () => {
   const avg = (xs) => xs.reduce((s, b) => s + b.height, 0) / xs.length;
-  const near = cityBuildings().filter((b) => dist(b) < 300);
-  const far = cityBuildings().filter((b) => dist(b) > 430);
-  assert.ok(near.length > 5 && far.length > 5);
-  assert.ok(avg(near) > avg(far) * 1.4, `dekat ${avg(near).toFixed(0)} m, jauh ${avg(far).toFixed(0)} m`);
+  const a = cityBuildings();
+  const tengah = a.filter((b) => ringDistance(b.x, b.z) >= NEAR_RING_LIMITS[0].within && ringDistance(b.x, b.z) < NEAR_RING_LIMITS[1].within);
+  const luar = a.filter((b) => ringDistance(b.x, b.z) >= NEAR_RING_LIMITS[1].within);
+  assert.ok(tengah.length > 30 && luar.length > 5);
+  assert.ok(avg(tengah) > avg(luar) * 1.2, `tengah ${avg(tengah).toFixed(0)} m, luar ${avg(luar).toFixed(0)} m`);
+});
+
+test('kota: makin dekat Lingkar makin banyak petak kosong (lapang), bukan deretan gedung rapat', () => {
+  const a = cityBuildings();
+  const hitung = (lo, hi) => a.filter((b) => ringDistance(b.x, b.z) >= lo && ringDistance(b.x, b.z) < hi).length;
+  // luas pita sama (satu sel 40 m): bandingkan kepadatan per meter persegi perkiraan: pita dekat harus lebih jarang daripada pita 150-260
+  const luasPita = (lo, hi) => { let n = 0; for (let x = -500; x < 500; x += 20) for (let z = 150; z < 900; z += 20) { const d = ringDistance(x, z); if (d >= lo && d < hi) n++; } return n || 1; };
+  const dekat = hitung(75, 150) / luasPita(75, 150);
+  const tengah = hitung(150, 260) / luasPita(150, 260);
+  assert.ok(dekat < tengah * 0.8, `kepadatan dekat ${dekat.toFixed(4)} vs tengah ${tengah.toFixed(4)}`);
 });
 
 test('hutan kota: deterministik, banyak, dan tidak menimpa jalan atau gedung', () => {
