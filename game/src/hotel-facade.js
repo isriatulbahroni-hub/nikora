@@ -42,7 +42,7 @@ function paintBay(layout) {
   return c;
 }
 
-function bayTexture(layout, anisotropy, u, v) {
+export function bayTexture(layout, anisotropy, u, v) {
   const t = new THREE.CanvasTexture(paintBay(layout));
   t.colorSpace = SRGB;
   t.wrapS = THREE.RepeatWrapping;

@@ -1,11 +1,16 @@
 // Kotak penghalang kamera di luar gedung hotel (murni matematika, tanpa THREE, supaya bisa diuji).
 // Tanpa ini kamera bisa menembus kanopi drop-off, tiang, air mancur, atau badan menara dan layar jadi krem polos atau kaca biru polos.
 // building = [minX, minZ, maxX, maxZ]; canopy = { rect, height, pillars: [[x, z]] }; fountain = { x, z, r }.
-export function exteriorOccluders({ level, building, podiumLevels, podiumTopY, topY, canopy, fountain }) {
+export function exteriorOccluders({ level, building, podiumLevels, podiumTopY, topY, canopy, fountain, towerBoxes = null, satellites = [] }) {
   const boxes = [];
   const add = (minX, maxX, minY, maxY, minZ, maxZ) => boxes.push({ minX, maxX, minY, maxY, minZ, maxZ });
   // Badan menara di atas podium: pemain di luar atau di podium tidak boleh mengorbitkan kamera ke dalam kaca dan lantai menara.
-  if (level < podiumLevels) add(building[0], building[2], podiumTopY, topY, building[1], building[3]);
+  // towerBoxes (opsional) = satu kotak per zona mengikuti kulit yang meruncing; tanpa itu dipakai satu kotak persegi penuh.
+  if (level < podiumLevels) {
+    if (towerBoxes) boxes.push(...towerBoxes);
+    else add(building[0], building[2], podiumTopY, topY, building[1], building[3]);
+    for (const b of satellites) boxes.push(b); // menara pendamping (kotak { minX, maxX, minY, maxY, minZ, maxZ })
+  }
   if (level === 0) {
     const r = canopy.rect;
     add(r[0] - 0.2, r[2] + 0.2, canopy.height - 0.2, canopy.height + 0.3, r[1] - 0.2, r[3] + 0.2); // pelat kanopi dan list tepinya
