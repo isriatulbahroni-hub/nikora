@@ -581,6 +581,7 @@ async function start() {
     avatar.position.y = seatPose ? seatPose.y : me.y + (moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0);
     avatar.rotation.y = shownFacing;
     avatar.userData.seated = !!seatPose;
+    avatar.userData.seatKind = seatPose ? 'car' : null; // di hotel satu-satunya kursi adalah kursi mobil: model manusia memakai pose kaki mobil (avatar-human.js)
     applyPose(avatar, moving ? 'walk' : null, time / 1000, delta);
     if (seatPose) {
       // duduk di mobil: paha hampir mendatar dan betis maju ke bawah dasbor. Pose kursi biasa (betis tegak ke lantai) membuat kaki
