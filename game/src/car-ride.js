@@ -23,6 +23,19 @@ export function carControls(input) {
 }
 
 /**
+ * Kontrol final satu frame: joystick/keyboard (rawInput) digabung dengan HUD layar sentuh.
+ * hud.pedals() = { gas, brake }, hud.steer() = penggeser setir -1..1 (kanan = +). Rem ditahan saat hampir berhenti = mundur.
+ */
+export function driveControls(rawInput, hud, speed = 0) {
+  const pedals = hud?.pedals?.();
+  let ctl = mergeControls(carControls(rawInput), pedals);
+  const slide = hud?.steer?.() ?? 0;
+  if (slide) ctl = { ...ctl, steer: carControls({ x: slide, z: 0 }).steer };
+  if (pedals?.brake && !pedals.gas && speed < 0.5) ctl = { ...ctl, throttle: -1, brake: false };
+  return ctl;
+}
+
+/**
  * fleet: Fleet; view: createVehicleView(); hud: mountSpeedHud(); exit({x,z}) -> {x,z} titik turun yang sah (bukan di dalam tembok);
  * camState: { yaw, dist, pitch } kamera orbit; isDragging(): pemain sedang/baru saja memutar kamera sendiri; toast(text).
  */
@@ -35,7 +48,7 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
       camState.dist = Math.max(camState.dist, 9); // kamera menjauh supaya mobil terlihat
       camState.pitch = Math.min(camState.pitch, 0.5);
     }
-    toast(r.seat === 0 ? 'Kamu mengemudi: W/S gas dan rem, A/D belok (atau joystick). E = turun.' : 'Kamu penumpang. E = turun.');
+    toast(r.seat === 0 ? 'Kamu mengemudi: geser setir di kiri, pedal gas dan rem di kanan (atau W/S/A/D). E = turun.' : 'Kamu penumpang. E = turun.');
     return true;
   }
 
@@ -73,7 +86,7 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
   function step(me, { delta, rawInput }) {
     const driving = fleet.driving;
     if (driving) {
-      fleet.drive(mergeControls(carControls(rawInput), hud.pedals?.()), delta);
+      fleet.drive(driveControls(rawInput, hud, driving.speed), delta);
       if (driving.hit > 6) toast('Tabrakan!');
       if (camState && !isDragging()) {
         // kamera pelan-pelan berputar ke belakang mobil (konvensi kamera: yaw = heading + PI berarti kamera di belakang)
