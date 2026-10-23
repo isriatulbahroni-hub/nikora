@@ -44,7 +44,7 @@ export function createVehicle({ id, x = 0, z = 0, heading = 0, color = 0xf2f2f0,
 
 /**
  * Satu langkah fisika. input = { throttle: -1..1, steer: -1..1 (kanan positif), brake?: bool }.
- * env = { colliders, surfaceAt, limit? } (limit = batas dunia; bawaan WORLD_LIMIT villa, hotel memakai HIGHWAY_LIMIT). Mengubah dan mengembalikan `v`. v.hit = kekuatan benturan langkah ini (0 = tidak ada).
+ * env = { colliders, surfaceAt, limit?, barrier? } (barrier(x, z) = pagar pengaman jalan berkelok: titik terkoreksi + arah jalan, atau null; limit = batas dunia; bawaan WORLD_LIMIT villa, hotel memakai HIGHWAY_LIMIT). Mengubah dan mengembalikan `v`. v.hit = kekuatan benturan langkah ini (0 = tidak ada).
  */
 export function stepVehicle(v, input, dt, env = {}) {
   const C = v.spec ?? CAR;
@@ -112,6 +112,21 @@ export function stepVehicle(v, input, dt, env = {}) {
       v.z += oz / 2;
       v.hit = Math.abs(v.speed);
       v.speed *= 0.2; // benturan: hampir berhenti
+    }
+  }
+  // pagar pengaman: ditahan di tepi, laju terkikis menurut sudut benturan, arah dibelokkan sejajar pagar (menggesek, bukan berhenti mati)
+  if (env.barrier) {
+    const r = env.barrier(v.x, v.z);
+    if (r) {
+      const head = forward(v.heading);
+      const into = Math.max(0, -(head.x * r.nx + head.z * r.nz)); // 0 = sejajar pagar, 1 = tegak lurus
+      v.x = r.x;
+      v.z = r.z;
+      const along = head.x * r.tx + head.z * r.tz >= 0 ? 1 : -1;
+      const tangent = Math.atan2(r.tx * along, r.tz * along);
+      v.heading = wrapAngle(v.heading + wrapAngle(tangent - v.heading) * Math.min(1, 0.35 + 0.4 * into));
+      v.speed *= 1 - Math.min(0.85, 0.12 + 0.75 * into);
+      if (Math.abs(v.speed) > 3) v.hit = Math.max(v.hit, Math.abs(v.speed) * (0.4 + into));
     }
   }
   const b = env.limit ?? WORLD_LIMIT;

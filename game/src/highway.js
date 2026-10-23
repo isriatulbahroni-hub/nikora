@@ -8,10 +8,13 @@
 //       utara -> villa   (gerbang di depan pagar selatan villa; lengan ini juga masuk ke halaman drop-off hotel)
 //       barat -> aula    timur -> royal    selatan -> masjid
 //   - Tiap jalan: 3 lajur per arah + median bertanaman + bahu jalan = 34,5 m (dulu 12 m, dua lajur).
+// Keempat lengan sepanjang ARM_LENGTH (3 km) kini BERKELOK: garis tengahnya melenggok kiri-kanan (road-curve.js), lurus di pangkal (menyambung ke
+// Lingkar) dan di ujung (gerbang + portal rambu). Pagar pengaman di kedua sisi (roadBarrier) menahan mobil tetap di jalan.
 // Tiap tempat acara adalah halaman/dunia sendiri; mengemudi melewati gerbang = pindah ke halaman tempat acara itu
 // (gateUrl). Antar-tempat acara tidak saling tersambung: semua lewat hotel.
 import { BOUNDS as VILLA_BOUNDS } from './villa-layout.js';
 import { VENUES } from './venues.js';
+import { buildCurvedRoad } from './road-curve.js';
 
 export const LANE_WIDTH = 3.75;
 export const LANES_PER_DIRECTION = 3;
@@ -25,7 +28,9 @@ export const HUB = Object.freeze({ x: 0, z: 448 }); // pusat menara hotel
 export const FORECOURT_Z = 380; // tepi utara halaman drop-off (= HOTEL_FORECOURT[1])
 export const RING = Object.freeze({ minX: -170, maxX: 170, minZ: 330, maxZ: 585 }); // garis tengah Lingkar NIKORA
 /** Pengaman jarak khusus halaman hotel: jaringan jalan jauh lebih luas daripada dunia villa (±600). */
-export const HIGHWAY_LIMIT = Object.freeze({ minX: -700, maxX: 700, minZ: -600, maxZ: 1000 });
+export const HIGHWAY_LIMIT = Object.freeze({ minX: -3500, maxX: 3500, minZ: -3500, maxZ: 3900 });
+export const ARM_LENGTH = 3000; // panjang sumbu tiap lengan dari tepi Lingkar sampai gerbang (jalan sebenarnya lebih panjang karena berkelok)
+export const BARRIER_HALF = HIGHWAY_HALF + 1.2; // pagar pengaman di luar bahu
 
 const H = HIGHWAY_HALF;
 
@@ -38,25 +43,63 @@ function segment(id, name, axis, c, a, b, marks) {
 
 // Aspal tiap ruas (persegi). `marks` = bagian yang diberi median, marka, lampu; persimpangan dibiarkan polos.
 export const HIGHWAY_SEGMENTS = Object.freeze([
-  segment('villa', 'Jalan Raya NIKORA · Arah Villa', 'z', 0, VILLA_BOUNDS.maxZ, FORECOURT_Z, [[VILLA_BOUNDS.maxZ, RING.minZ - H], [RING.minZ + H, FORECOURT_Z]]),
+  segment('villa', 'Jalan Raya NIKORA · Arah Villa', 'z', 0, RING.minZ - H, FORECOURT_Z, [[RING.minZ + H, FORECOURT_Z]]), // dari halaman drop-off sampai tepi Lingkar; selebihnya lengan berkelok
   segment('ring_n', 'Lingkar NIKORA', 'x', RING.minZ, RING.minX - H, RING.maxX + H, [[RING.minX + H, RING.maxX - H]]),
   segment('ring_s', 'Lingkar NIKORA', 'x', RING.maxZ, RING.minX - H, RING.maxX + H, [[RING.minX + H, RING.maxX - H]]),
   segment('ring_w', 'Lingkar NIKORA', 'z', RING.minX, RING.minZ - H, RING.maxZ + H, [[RING.minZ + H, RING.maxZ - H]]),
   segment('ring_e', 'Lingkar NIKORA', 'z', RING.maxX, RING.minZ - H, RING.maxZ + H, [[RING.minZ + H, RING.maxZ - H]]),
-  segment('aula', 'Jalan Raya NIKORA · Arah Aula', 'x', HUB.z, -540, RING.minX, [[-540, RING.minX - H]]),
-  segment('royal', 'Jalan Raya NIKORA · Arah Royal', 'x', HUB.z, RING.maxX, 540, [[RING.maxX + H, 540]]),
-  segment('masjid', 'Jalan Raya NIKORA · Arah Masjid', 'z', 0, RING.maxZ, 936, [[RING.maxZ + H, 936]]),
 ]);
+
+// ---------------------------------------------------------------- lengan berkelok
+const ARM_BASE = { taperIn: 800, taperOut: 500, flatEnd: 200, step: 8, half: HIGHWAY_HALF, reach: BARRIER_HALF + 40 };
+const arm = (id, venue, name, start, dir, waves) => {
+  const road = buildCurvedRoad({ start, dir, length: ARM_LENGTH, waves, ...ARM_BASE });
+  return Object.freeze({ id, venue, name, start, dir, road, end: Object.freeze({ x: start.x + dir.x * ARM_LENGTH, z: start.z + dir.z * ARM_LENGTH }) });
+};
+/** Empat lengan berkelok. Tiap lengan punya gelombang sendiri supaya tidak kembar; tanda amp menentukan belokan pertama ke kiri atau kanan. */
+export const HIGHWAY_ARMS = Object.freeze([
+  arm('arm_villa', 'villa', 'Jalan Raya NIKORA · Arah Villa', { x: 0, z: RING.minZ - H }, { x: 0, z: -1 }, [{ amp: 250, wl: 1300, phase: 0.4 }, { amp: 40, wl: 560, phase: 1.1 }]),
+  arm('arm_hall', 'hall', 'Jalan Raya NIKORA · Arah Aula', { x: RING.minX - H, z: HUB.z }, { x: -1, z: 0 }, [{ amp: -240, wl: 1180, phase: 0.2 }, { amp: 42, wl: 610, phase: 2.3 }]),
+  arm('arm_royal', 'royal', 'Jalan Raya NIKORA · Arah Royal', { x: RING.maxX + H, z: HUB.z }, { x: 1, z: 0 }, [{ amp: 260, wl: 1250, phase: 0.9 }, { amp: -38, wl: 520, phase: 0.3 }]),
+  arm('arm_masjid', 'masjid', 'Jalan Raya NIKORA · Arah Masjid', { x: 0, z: RING.maxZ + H }, { x: 0, z: 1 }, [{ amp: -235, wl: 1340, phase: 1.5 }, { amp: 36, wl: 590, phase: 0.8 }]),
+]);
+
+/** Lengan yang aspalnya memuat (x, z), atau null. */
+export function armAt(x, z, margin = 0) {
+  for (const a of HIGHWAY_ARMS) {
+    const n = a.road.nearest(x, z);
+    if (n && Math.abs(n.lateral) <= HIGHWAY_HALF + margin) return { arm: a, near: n };
+  }
+  return null;
+}
+
+/**
+ * Pagar pengaman di kedua sisi tiap lengan berkelok: mengembalikan titik terkoreksi bila (x, z) menembus pagar, selain itu null.
+ * Terbuka 30 m di pangkal dan 6 m di ujung (persimpangan Lingkar dan gerbang). { x, z, nx, nz (normal ke arah jalan), tx, tz (arah jalan), depth }.
+ */
+export function roadBarrier(x, z) {
+  for (const a of HIGHWAY_ARMS) {
+    const n = a.road.nearest(x, z);
+    if (!n || n.s < 30 || n.s > a.road.length - 6) continue;
+    if (Math.abs(n.lateral) <= BARRIER_HALF) return null;
+    const side = Math.sign(n.lateral);
+    const lx = n.tz; // kiri jalan = (tz, -tx)
+    const lz = -n.tx;
+    return { x: n.x + lx * side * BARRIER_HALF, z: n.z + lz * side * BARRIER_HALF, nx: -lx * side, nz: -lz * side, tx: n.tx, tz: n.tz, depth: Math.abs(n.lateral) - BARRIER_HALF };
+  }
+  return null;
+}
 
 const inRect = (r, x, z, margin = 0) => x >= r[0] - margin && x <= r[2] + margin && z >= r[1] - margin && z <= r[3] + margin;
 
 /** Segmen aspal yang memuat titik (x, z), atau null. */
 export const segmentAt = (x, z, margin = 0) => HIGHWAY_SEGMENTS.find((s) => inRect(s.rect, x, z, margin)) ?? null;
-export const onHighway = (x, z, margin = 0) => segmentAt(x, z, margin) !== null;
+export const onHighway = (x, z, margin = 0) => segmentAt(x, z, margin) !== null || armAt(x, z, margin) !== null;
 /** Nama jalan di titik itu (untuk keterangan lokasi), atau null bila di luar aspal. Lingkar didahulukan di persimpangan. */
 export function highwayName(x, z) {
   const hits = HIGHWAY_SEGMENTS.filter((s) => inRect(s.rect, x, z));
-  return (hits.find((s) => s.id.startsWith('ring')) ?? hits[0])?.name ?? null;
+  const rect = (hits.find((s) => s.id.startsWith('ring')) ?? hits[0])?.name;
+  return rect ?? armAt(x, z)?.arm.name ?? null;
 }
 
 // ---------------------------------------------------------------- gerbang
@@ -79,12 +122,8 @@ function gate(venue, x, z, dir) {
 }
 
 /** Empat gerbang, berurutan villa, aula, royal, masjid. `dir` = arah keluar dari hotel; `heading` = arah mobil yang datang dari tempat acara. */
-export const GATES = Object.freeze([
-  gate('villa', 0, 100, { x: 0, z: -1 }),
-  gate('hall', -520, HUB.z, { x: -1, z: 0 }),
-  gate('royal', 520, HUB.z, { x: 1, z: 0 }),
-  gate('masjid', 0, 916, { x: 0, z: 1 }),
-]);
+export const GATES = Object.freeze(HIGHWAY_ARMS.map((a) => gate(a.venue, a.end.x, a.end.z, a.dir)));
+
 
 export const gateById = (id) => GATES.find((g) => g.id === id) ?? null;
 /** Gerbang yang zonanya memuat titik (x, z), atau null. */

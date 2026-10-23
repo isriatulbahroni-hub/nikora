@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GATES, HIGHWAY_HALF, HIGHWAY_LIMIT, HUB, HIGHWAY_SEGMENTS, gateAt, gateArrival, gateCarSpecs, gateUrl, arrivalGate } from './highway.js';
+import { GATES, HIGHWAY_ARMS, HIGHWAY_HALF, HIGHWAY_LIMIT, HUB, HIGHWAY_SEGMENTS, roadBarrier, gateAt, gateArrival, gateCarSpecs, gateUrl, arrivalGate } from './highway.js';
 import { HOTEL_SPAWN, getHotelWorld, roomAt, surfaceAt } from './hotel-layout.js';
 import { CAR, createVehicle, boardVehicle, stepVehicle } from './vehicle.js';
+import { driveRoad } from './test-drive.js';
 
 const DT = 1 / 60;
 
@@ -38,22 +39,15 @@ test('pejalan kaki bisa mencapai keempat gerbang (batas dunia hotel lebih luas d
   assert.ok(pos.x > 650, `x=${pos.x}`);
 });
 
-test('mengemudi dari Lingkar ke timur sampai gerbang Royal memicu gerbang, tetap di aspal', () => {
-  const env = { colliders: [], surfaceAt, limit: HIGHWAY_LIMIT };
-  const v = createVehicle({ id: 't', x: 180, z: HUB.z - 5, heading: Math.PI / 2 }); // menghadap timur
+test('mengemudi dari Lingkar ke timur menyusuri lengan Royal yang berkelok: tetap di aspal dan menjauhi hotel (bukan tertahan batas dunia villa)', () => {
+  const arm = HIGHWAY_ARMS.find((a) => a.venue === 'royal');
+  const env = { colliders: [], surfaceAt, limit: HIGHWAY_LIMIT, barrier: roadBarrier };
+  const p0 = arm.road.points[1];
+  const v = createVehicle({ id: 't', x: p0.x, z: p0.z, heading: Math.PI / 2 }); // menghadap timur
   boardVehicle(v, 0, 'p');
-  let t = 0;
-  let hit = null;
-  let off = 0;
-  while (!hit && t < 60) {
-    stepVehicle(v, { throttle: 1, steer: 0 }, DT, env);
-    if (surfaceAt(v.x, v.z) !== 'road') off++;
-    hit = gateAt(v.x, v.z);
-    t += DT;
-  }
-  assert.equal(hit?.id, 'royal');
-  assert.equal(off, 0);
-  assert.ok(v.x < HIGHWAY_LIMIT.maxX - CAR.length / 2, 'tidak tertahan batas dunia villa');
+  const stat = driveRoad(v, arm.road, env, { speed: 22, done: (c) => c.x > 900 });
+  assert.ok(stat.finished && stat.offRoad === 0, `selesai=${stat.finished} luar aspal=${stat.offRoad}`);
+  assert.ok(v.x < HIGHWAY_LIMIT.maxX - CAR.length / 2, 'tidak tertahan batas dunia');
 });
 
 test('mobil tidak lagi tertahan batas ±600 villa di jaringan jalan hotel', () => {

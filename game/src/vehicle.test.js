@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { CAR, createVehicle, stepVehicle, seatWorld, exitPose, findBoardable, boardVehicle, leaveVehicle, forward, driverOf, occupants } from './vehicle.js';
 import { getVillaWorld } from './villa-layout.js';
 import { ROAD, HOTEL_FORECOURT, surfaceAt } from './hotel-layout.js';
+import { HIGHWAY_ARMS } from './highway.js';
 
 const DT = 1 / 30;
 const drive = (v, input, seconds, env = {}) => { for (let t = 0; t < seconds; t += DT) stepVehicle(v, input, DT, env); return v; };
@@ -88,11 +89,11 @@ test('kursi: empat kursi, pengemudi kanan depan, tidak boleh dobel, penumpang ik
   assert.equal(findBoardable([v], { x: v.x + 30, z: v.z }), null, 'terlalu jauh');
 });
 
-test('perjalanan villa -> hotel: dari gerbang villa menyusuri jalan raya ke halaman hotel, kurang dari 40 detik, tetap di jalan', () => {
+test('perjalanan dari tepi Lingkar utara ke halaman hotel: kurang dari 40 detik, tetap di jalan', () => {
   const villa = getVillaWorld();
   const env = { colliders: villa.colliders, surfaceAt };
-  // mulai di luar gerbang selatan (z=90) menghadap selatan di lajur kiri (x = -3)
-  const v = createVehicle({ id: 'tamu', x: -3, z: 90, heading: 0 });
+  // mulai di pangkal lengan Villa (tepi Lingkar utara) menghadap selatan di lajur kiri (x = -3)
+  const v = createVehicle({ id: 'tamu', x: -3, z: 300, heading: 0 });
   boardVehicle(v, 0, 'p');
   let t = 0;
   let offRoad = 0;
@@ -103,7 +104,7 @@ test('perjalanan villa -> hotel: dari gerbang villa menyusuri jalan raya ke hala
   }
   assert.ok(v.z >= HOTEL_FORECOURT[3] - 25, `sampai di hotel (z=${v.z.toFixed(1)})`);
   assert.ok(t < 40, `waktu tempuh ${t.toFixed(1)} dtk`);
-  assert.ok(t > 10, `tidak teleport: ${t.toFixed(1)} dtk`);
+  assert.ok(t > 5, `tidak teleport: ${t.toFixed(1)} dtk`);
   assert.equal(offRoad, 0);
   assert.ok(Math.abs(v.x + 3) < 0.5, 'tetap lurus di lajur');
 });
@@ -126,11 +127,15 @@ test('forward: heading 0 ke selatan, PI ke utara, PI/2 ke timur', () => {
   assert.ok(Math.abs(forward(Math.PI / 2).x - 1) < 1e-12);
 });
 
-test('jalan raya: 34,5 m, sambung dari gerbang villa ke halaman hotel', () => {
-  assert.equal(surfaceAt(0, 200), 'road');
-  assert.equal(surfaceAt(17, 200), 'road'); // dulu hanya 6 m dari garis tengah
-  assert.equal(surfaceAt(18, 200), 'ground');
+test('jalan raya: 34,5 m, lengan Villa berkelok menyambung ke halaman hotel', () => {
+  const road = HIGHWAY_ARMS.find((x) => x.venue === 'villa').road;
+  const p = road.points[12]; // ~100 m dari tepi Lingkar
+  const at = (t) => [p.x + p.tz * t, p.z - p.tx * t];
+  assert.equal(surfaceAt(p.x, p.z), 'road');
+  assert.equal(surfaceAt(...at(17)), 'road'); // dulu hanya 6 m dari garis tengah
+  assert.equal(surfaceAt(...at(18)), 'ground');
   assert.equal(surfaceAt(0, HOTEL_FORECOURT[1] + 5), 'road');
   assert.equal(surfaceAt(0, 40), 'compound');
   assert.ok(ROAD.toZ - ROAD.fromZ > 250, 'hotel cukup jauh dari villa');
 });
+

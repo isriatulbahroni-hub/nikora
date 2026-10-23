@@ -2,7 +2,7 @@
 // Semua digambar dengan InstancedMesh (beberapa draw call saja) supaya tetap ringan di HP.
 import * as THREE from 'three';
 import {
-  CARRIAGE_HALF, GATES, HIGHWAY_HALF, HIGHWAY_SEGMENTS, HUB, LANES_PER_DIRECTION, LANE_WIDTH, MEDIAN_WIDTH, RING, SHOULDER_WIDTH, leftOf,
+  BARRIER_HALF, CARRIAGE_HALF, GATES, HIGHWAY_ARMS, HIGHWAY_HALF, HIGHWAY_SEGMENTS, HUB, LANES_PER_DIRECTION, LANE_WIDTH, MEDIAN_WIDTH, RING, SHOULDER_WIDTH, leftOf,
 } from './highway.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
@@ -63,6 +63,43 @@ function boardTexture(title, sub, { bg, fg, edge, w = 768, h = 240 }) {
   return t;
 }
 
+/** Pita datar sepanjang titik garis tengah antara lateral t0..t1 pada tinggi y (menghadap ke atas). */
+export function ribbonGeometry(points, t0, t1, y) {
+  const n = points.length;
+  const pos = new Float32Array(n * 6);
+  const idx = [];
+  points.forEach((p, i) => {
+    const lx = p.tz; // kiri = (tz, -tx)
+    const lz = -p.tx;
+    pos.set([p.x + lx * t0, y, p.z + lz * t0, p.x + lx * t1, y, p.z + lz * t1], i * 6);
+    if (i < n - 1) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.BufferAttribute(Float32Array.from({ length: n * 6 }, (_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+  g.setIndex(idx);
+  g.computeBoundingSphere();
+  return g;
+}
+
+/** Titik terinterpolasi di jarak s sepanjang garis tengah. */
+export function pointAt(points, s) {
+  let lo = 0;
+  let hi = points.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (points[m].s <= s) lo = m; else hi = m; }
+  const a = points[lo];
+  const b = points[hi];
+  const t = b.s > a.s ? Math.min(1, Math.max(0, (s - a.s) / (b.s - a.s))) : 0;
+  const tx = a.tx + (b.tx - a.tx) * t;
+  const tz = a.tz + (b.tz - a.tz) * t;
+  const l = Math.hypot(tx, tz) || 1;
+  return { x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t, tx: tx / l, tz: tz / l, i: lo };
+}
+
+const ryAlong = (p) => Math.atan2(-p.tz, p.tx); // kotak dengan sumbu x searah jalan
+const ryAcross = (p) => Math.atan2(p.tx, p.tz); // kotak dengan sumbu x melintang jalan (ke kiri)
+const hash01 = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+
 const km = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m / 10) * 10} m`);
 
 export function buildHighway(parent) {
@@ -72,7 +109,8 @@ export function buildHighway(parent) {
   const M = {
     asphalt: std(0x2a2c31, { roughness: 0.95 }), shoulder: std(0x3b3d43, { roughness: 0.95 }), curb: std(0xcfcfc8), soil: std(0x4d7d3b),
     white: std(0xf2f0e4, { roughness: 0.7 }), yellow: std(0xe6b422, { roughness: 0.7 }), dark: std(0x1a1b1f), gold: std(GOLD, { roughness: 0.35, metalness: 0.75 }),
-    glow: new THREE.MeshBasicMaterial({ color: 0xfff0c8 }), eye: new THREE.MeshBasicMaterial({ color: 0xfff7d6 }), trunk: std(0x6b4a2f), leaf: std(0x2f6f3a),
+    rail: std(0xb9bec6, { roughness: 0.4, metalness: 0.6 }), glow: new THREE.MeshBasicMaterial({ color: 0xfff0c8 }), eye: new THREE.MeshBasicMaterial({ color: 0xfff7d6 }), trunk: std(0x6b4a2f), leaf: std(0xffffff), // putih: warna tajuk datang dari warna tiap instance (dulu 0x2f6f3a dikali warna instance = hampir hitam)
+   
   };
   const pavement = [];
   const shoulders = [];
@@ -124,6 +162,100 @@ export function buildHighway(parent) {
       }
     }
   }
+  // ---- empat lengan berkelok: aspal/bahu/marka sebagai pita, selebihnya instance searah jalan (rel pengaman, lampu, pohon, rambu tikungan)
+  const rails = [];
+  const railPosts = [];
+  const chevronPlates = [];
+  const chevronBars = [];
+  const wildTrunks = [];
+  const wildCrowns = [];
+  const ribbonMeshes = [];
+  const ribbon = (pts, t0, t1, y, mat, receive = true) => {
+    const mesh = new THREE.Mesh(ribbonGeometry(pts, t0, t1, y), mat);
+    mesh.receiveShadow = receive;
+    root.add(mesh);
+    ribbonMeshes.push(mesh);
+  };
+  for (const armDef of HIGHWAY_ARMS) {
+    const road = armDef.road;
+    const pts = road.points;
+    const L = road.length;
+    ribbon(pts, -CARRIAGE_HALF, CARRIAGE_HALF, 0.03, M.asphalt);
+    ribbon(pts, CARRIAGE_HALF, HIGHWAY_HALF, 0.028, M.shoulder);
+    ribbon(pts, -HIGHWAY_HALF, -CARRIAGE_HALF, 0.028, M.shoulder);
+    for (const side of [-1, 1]) {
+      const e = side * CARRIAGE_HALF;
+      ribbon(pts, Math.min(e - 0.1, e + 0.1), Math.max(e - 0.1, e + 0.1), 0.07, M.white, false);
+      const y0 = side * (MEDIAN_WIDTH / 2 + 0.3);
+      ribbon(pts, y0 - 0.075, y0 + 0.075, 0.07, M.yellow, false);
+    }
+    // median: batas trotoar + tanah, per 8 m
+    for (let s = 4; s < L; s += 8) {
+      const p = pointAt(pts, s);
+      curbs.push({ x: p.x, y: 0.15, z: p.z, sx: 8.6, sy: 0.3, sz: MEDIAN_WIDTH, ry: ryAlong(p) });
+      soil.push({ x: p.x, y: 0.1, z: p.z, sx: 8.6, sy: 0.2, sz: MEDIAN_WIDTH - 0.8, ry: ryAlong(p) });
+    }
+    // garis lajur putus-putus
+    for (let s = 6; s < L - 6; s += 12) {
+      const p = pointAt(pts, s);
+      for (const side of [-1, 1]) for (let k = 1; k < LANES_PER_DIRECTION; k++) {
+        const t = side * (MEDIAN_WIDTH / 2 + k * LANE_WIDTH);
+        dashes.push({ x: p.x + p.tz * t, y: 0.07, z: p.z - p.tx * t, sx: 4.5, sy: 0.02, sz: 0.15, ry: ryAlong(p) });
+      }
+    }
+    // lampu di median dan pohon median
+    for (let s = 45; s < L - 20; s += 30) {
+      const p = pointAt(pts, s);
+      const across = ryAcross(p);
+      posts.push({ x: p.x, y: 4.5, z: p.z, sx: 0.25, sy: 9, sz: 0.25 });
+      arms.push({ x: p.x, y: 8.9, z: p.z, sx: 12.6, sy: 0.18, sz: 0.18, ry: across });
+      for (const side of [-1, 1]) bulbs.push({ x: p.x + p.tz * side * 5.8, y: 8.7, z: p.z - p.tx * side * 5.8, sx: 0.8, sy: 0.2, sz: 0.5, ry: across });
+      const q = pointAt(pts, s + 15);
+      const h = 3.4 + hash01(s) * 1.0;
+      trunks.push({ x: q.x, y: h * 0.4, z: q.z, sx: 0.35, sy: h * 0.8, sz: 0.35 });
+      crowns.push({ x: q.x, y: h * 0.8 + 1.1, z: q.z, sx: 2.4, sy: 2.2, sz: 2.4, color: [0x2f6f3a, 0x3c8044, 0x27603a][Math.floor(hash01(s + 3) * 3)] });
+    }
+    // rel pengaman dua sisi
+    for (let s = 4; s < L - 4; s += 8) {
+      if (s < 30 || s > L - 6) continue;
+      const p = pointAt(pts, s);
+      for (const side of [-1, 1]) {
+        const t = side * BARRIER_HALF;
+        rails.push({ x: p.x + p.tz * t, y: 0.62, z: p.z - p.tx * t, sx: 8.8, sy: 0.32, sz: 0.12, ry: ryAlong(p) });
+      }
+    }
+    for (let s = 30; s < L - 6; s += 4) {
+      const p = pointAt(pts, s);
+      for (const side of [-1, 1]) {
+        const t = side * BARRIER_HALF;
+        railPosts.push({ x: p.x + p.tz * t, y: 0.35, z: p.z - p.tx * t, sx: 0.12, sy: 0.7, sz: 0.12 });
+      }
+    }
+    // rambu panah tikungan: di sisi luar tikungan yang cukup tajam, tiap 14 m
+    for (let i = 0; i < pts.length; i += 2) {
+      const r = road.signedRadius(i);
+      if (!Number.isFinite(r) || Math.abs(r) > 150 || pts[i].s < 60 || pts[i].s > L - 60 || Math.round(pts[i].s / 8) % 2) continue;
+      const p = pts[i];
+      const outer = r > 0 ? -1 : 1; // belok kiri -> sisi luar = kanan (lateral negatif)
+      const t = outer * (BARRIER_HALF + 0.5);
+      const x = p.x + p.tz * t;
+      const z = p.z - p.tx * t;
+      chevronPlates.push({ x, y: 1.7, z, sx: 0.08, sy: 1.1, sz: 1.3, ry: ryAcross(p) }, { x, y: 0.9, z, sx: 0.1, sy: 1.8, sz: 0.1 });
+      chevronBars.push({ x: x - outer * p.tz * 0.07, y: 1.7, z: z + outer * p.tx * 0.07, sx: 0.09, sy: 0.9, sz: 0.28, ry: ryAcross(p) });
+    }
+    // pohon dan semak di tepi jalan, tersebar acak tetapi tetap (hash)
+    for (let s = 20; s < L - 20; s += 22) {
+      const p = pointAt(pts, s + hash01(s) * 10);
+      for (const side of [-1, 1]) {
+        const t = side * (BARRIER_HALF + 7 + hash01(s * side + 5) * 60);
+        const h = 4 + hash01(s + side * 9) * 4;
+        const x = p.x + p.tz * t;
+        const z = p.z - p.tx * t;
+        wildTrunks.push({ x, y: h * 0.4, z, sx: 0.5, sy: h * 0.8, sz: 0.5 });
+        wildCrowns.push({ x, y: h * 0.8 + 1.4, z, sx: 3.4 + hash01(s + 2) * 1.6, sy: 3 + hash01(s + 4), sz: 3.4 + hash01(s + 6) * 1.6, color: [0x2f6f3a, 0x3c8044, 0x27603a, 0x4d7d3b][Math.floor(hash01(s + side) * 4)] });
+      }
+    }
+  }
   instanced(root, pavement, M.asphalt, { receive: true });
   instanced(root, shoulders, M.shoulder, { receive: true });
   instanced(root, curbs, M.curb, { receive: true });
@@ -137,6 +269,12 @@ export function buildHighway(parent) {
   instanced(root, bulbs, M.glow);
   instanced(root, trunks, M.trunk, { cast: true });
   instanced(root, crowns, M.leaf, { cast: true });
+  instanced(root, rails, M.rail);
+  instanced(root, railPosts, M.dark);
+  instanced(root, chevronPlates, M.yellow);
+  instanced(root, chevronBars, M.dark);
+  instanced(root, wildTrunks, M.trunk);
+  instanced(root, wildCrowns, M.leaf);
 
   // ---- tugu emas di empat sudut lingkar (di luar aspal)
   const pylons = [];
@@ -185,5 +323,5 @@ export function buildHighway(parent) {
   }
   instanced(root, frames, M.gold, { cast: true });
   root.add(boards);
-  return { root, dispose: () => { parent.remove(root); } };
+  return { root, dispose: () => { parent.remove(root); for (const m of ribbonMeshes) m.geometry.dispose(); } };
 }

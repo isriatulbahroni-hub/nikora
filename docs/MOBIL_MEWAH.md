@@ -64,7 +64,22 @@ Hambatan udara tidak dihitung sebagai selip. Belum: HUD suhu ban, asap/bekas ban
 - **Suara mesin v2** (`car-audio.js`, `engineLayers`): knalpot (harmonik pada frekuensi pembakaran + subharmonik setengah-orde, pengeras tanh
   yang bertambah dengan gas, resonansi pipa), desis intake, gerung gigi, turbo (W16 Noir; bunyi dan blow-off), angin, decit ban,
   letupan saat pindah gigi, rev limiter. Kamera kabin meredam bunyi luar (lowpass) dan menebalkan dentuman rendah.
-- Belum: suara mesin mobil lain dengan Doppler, HUD suhu ban, asap/bekas ban, jalan berkelok 15 menit.
+- Belum: suara mesin mobil lain dengan Doppler, HUD suhu ban, asap/bekas ban.
+
+## Jalan berkelok ke tempat acara (tahap 3)
+
+Empat lengan Jalan Raya NIKORA (Villa utara, Aula barat, Royal timur, Masjid selatan) kini **berkelok sepanjang sekitar 3,6-3,8 km** per lengan
+(`ARM_LENGTH` = 3000 m sumbu; garis tengah melenggok kiri-kanan, simpangan sampai ~300 m, radius terkecil > 60 m). Lurus di pangkal (menyambung
+ke Lingkar) dan 200 m terakhir menuju gerbang (portal rambu dan mobil tamu tetap di sumbu). Gerbang kini 3,1-3,2 km dari hotel.
+Pada 22 m/s tiap lengan butuh sekitar 2,5-3 menit satu arah; di atas ~25 m/s ban mulai menyelip di tikungan tersempit (model ban tahap 1).
+
+- `road-curve.js` (murni): garis tengah dari gelombang, pencarian titik terdekat berindeks sel 64 m, radius tikungan.
+- `highway.js`: `HIGHWAY_ARMS`, `armAt`, `roadBarrier` (pagar pengaman di 18,45 m dari garis tengah, terbuka 30 m di pangkal dan 6 m di ujung),
+  batas dunia hotel jadi -3500..3500 x -3500..3900. `stepVehicle` memakai `env.barrier`: mobil ditahan di pagar, melambat menurut sudut benturan,
+  dibelokkan sejajar pagar.
+- `highway-world.js`: aspal, bahu, marka sebagai pita mengikuti kurva; median + lampu + pohon, pagar pengaman, rambu panah kuning di sisi luar
+  tikungan tajam (radius < 150 m), pohon tepi jalan. Tajuk pohon sebelumnya hampir hitam (warna dikalikan dua kali) dan kini hijau.
+- Belum: lalu lintas, rambu batas kecepatan, panel surya/turbin angin, tanjakan (jalan masih datar).
 
 ## Yang belum
 - Tampilan di perangkat nyata belum diuji (CI hanya menguji logika, geometri, dan build). Cek tinggi kepala avatar di mobil rendah.

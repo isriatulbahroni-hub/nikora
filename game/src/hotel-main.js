@@ -14,7 +14,7 @@ import { Fleet, hotelCars } from './vehicle-fleet.js';
 import { createVehicleView } from './vehicle-view.js';
 import { createCarRide } from './car-ride.js';
 import { cockpitFov, eyeWorld, cockpitSpec } from './cockpit.js';
-import { HIGHWAY_LIMIT, arrivalGate, gateArrival, gateAt, gateUrl } from './highway.js';
+import { HIGHWAY_LIMIT, arrivalGate, gateArrival, gateAt, gateUrl, roadBarrier } from './highway.js';
 import { FLOOR_COLORS, GROUP_ORDER, cssColor, describePlace, hotelPlaces } from './hotel-places.js';
 import { hoursAt, zoneFromSearch } from './day-night.js';
 import { createStaffView } from './hotel-staff-view.js';
@@ -312,7 +312,7 @@ async function start() {
   const lights = buildEnvironment(scene);
   const built = buildHotelWorld(scene);
   // Mobil bersama di drop-off/parkir hotel (8 mobil). Logika naik/turun/setir/jaringan: car-ride.js (sama dengan vila).
-  const fleet = new Fleet({ specs: hotelCars(), selfId: 'lokal', env: { colliders: world.levels[0].colliders, surfaceAt, limit: HIGHWAY_LIMIT } });
+  const fleet = new Fleet({ specs: hotelCars(), selfId: 'lokal', env: { colliders: world.levels[0].colliders, surfaceAt, limit: HIGHWAY_LIMIT, barrier: roadBarrier } });
   const carAudio = createCarAudio();
   let doorHook = () => {};
   const carView = createVehicleView({ scene, fleet, mirrors: !lowQuality, envMap: buildCarEnvMap(renderer), onDoor: (car, opening) => { if (opening) doorHook(car); } });
