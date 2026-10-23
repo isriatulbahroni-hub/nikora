@@ -29,7 +29,9 @@ export function cockpitSpec(model) {
   const dashTop = d.y + d.h / 2;
   const wheel = { x, y: Math.min(eye.y - 0.1, Math.max(top + 0.36, dashTop + 0.12)), z: s.fwd + 0.62, r: WHEEL_RADIUS, tilt: -0.35 }; // setir di atas dasbor supaya terlihat dari kursi
 
-  const cluster = { x, y: Math.max(wheel.y + 0.2, dashTop + 0.11), z: Math.max(d.z, wheel.z) + 0.03, w: 0.34, h: 0.17 };
+  // Jam kecil tepat di balik lingkar setir (setinggi hub), seperti game acuan: terlihat dari sela setir dan tidak menutupi jalan.
+  // Dulu 0,34 x 0,17 m dan 0,2 m di atas setir: itu yang memenuhi tengah layar.
+  const cluster = { x, y: wheel.y + 0.03, z: Math.max(d.z, wheel.z) + 0.03, w: 0.2, h: 0.1 };
   const half = model.width / 2;
   const mirror = { x: eye.x * 0.4, y: eye.y + 0.12, z: s.fwd + 0.75, w: 0.3, h: 0.1 }; // spion tengah condong ke arah pengemudi supaya masuk bidang pandang
   const sides = [-1, 1].map((k) => ({ x: k * (half - 0.08), y: dashTop + 0.08, z: s.fwd + 0.5, w: 0.15, h: 0.1, side: k }));
