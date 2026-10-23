@@ -1,61 +1,115 @@
-// HUD mengemudi untuk mobil mewah (DOM murni, tanpa berkas CSS). Gaya mengikuti panel hotel di hotel-ui.js.
-// Sengaja minimal supaya tidak mengganggu pengemudi: lencana kecil kecepatan + gigi di kiri atas (tidak menutupi tombol),
-// dan satu tombol klakson di atas tombol Naik/Turun. Gas dan rem = joystick (atas gas, bawah rem lalu mundur): tidak ada pedal terpisah.
+// HUD mengemudi untuk mobil mewah (DOM murni, tanpa berkas CSS). Meniru kontrol game balap seluler: semua kecil, transparan, di tepi layar,
+// supaya jalan di depan tetap terlihat. Kiri bawah: penggeser setir mendatar (lepas = kembali ke tengah). Kanan bawah: pedal rem dan gas.
+// Kiri atas: lencana kecil gigi + km/j. Tombol klakson bulat di atas penggeser setir. Warna mengikuti panel hotel (emas #c9a24b).
 const BASE = 'position:fixed;z-index:30;font:600 13px system-ui,sans-serif;color:#fff;';
 const SAFE_TOP = 'max(12px,env(safe-area-inset-top))';
-const SAFE_BOTTOM = 'max(28px,env(safe-area-inset-bottom))';
+const SAFE_BOTTOM = 'max(24px,env(safe-area-inset-bottom))';
+const GLASS = 'rgba(20,17,13,.5)';
+const RIB = 'repeating-linear-gradient(0deg,rgba(255,255,255,.34) 0 3px,rgba(255,255,255,.08) 3px 8px)';
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 /**
- * HUD mengemudi: kecepatan (km/j) dan gigi dalam satu lencana kecil, plus tombol klakson (tahan untuk berbunyi).
- * set(kmh, info, compact) dipanggil tiap frame (kmh null = sembunyi). info = { gear } atau null.
- * compact = kamera kabin: spidometer sudah ada di dasbor 3D, jadi lencana disembunyikan dan hanya klakson yang tersisa.
+ * set(kmh, info, compact) dipanggil tiap frame (kmh null = sembunyi). info = { gear } atau null. compact tidak lagi mengubah tampilan
+ * (lencana kecil tetap ada di kamera kabin, seperti game acuan); parameter dipertahankan agar car-ride.js tidak berubah.
+ * pedals() = { gas, brake } (0/1); steer() = posisi penggeser setir -1..1 (kanan = +, sama dengan sumbu x joystick).
  */
 export function mountCarHud({ onHorn = () => {} } = {}) {
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
+  // lencana kecil: gigi + kecepatan
   const badge = document.createElement('div');
   badge.setAttribute('role', 'status');
   badge.setAttribute('aria-live', 'off');
-  badge.style.cssText = `${BASE}left:14px;top:calc(${SAFE_TOP} + 92px);display:none;align-items:baseline;gap:6px;padding:4px 10px;border-radius:999px;background:rgba(20,17,13,.55);pointer-events:none;text-shadow:0 1px 4px rgba(0,0,0,.6)`;
-  const speed = document.createElement('span');
-  speed.style.cssText = 'font:800 22px system-ui,sans-serif;color:#f1e9d6;min-width:34px;text-align:right';
-  const unit = document.createElement('span');
-  unit.textContent = 'km/j';
-  unit.style.cssText = 'font-size:11px;color:#c9b88a';
+  badge.style.cssText = `${BASE}left:14px;top:${SAFE_TOP};display:none;align-items:center;gap:6px;padding:3px 8px;border-radius:8px;background:${GLASS};pointer-events:none`;
   const gear = document.createElement('span');
-  gear.style.cssText = 'font:800 13px system-ui,sans-serif;color:#1a1306;background:#c9a24b;border-radius:6px;min-width:20px;padding:1px 5px;text-align:center';
-  badge.append(speed, unit, gear);
+  gear.style.cssText = 'font:800 13px system-ui,sans-serif;color:#1a1306;background:#c9a24b;border-radius:4px;min-width:22px;padding:1px 4px;text-align:center';
+  const speed = document.createElement('span');
+  speed.style.cssText = 'font:800 18px system-ui,sans-serif;color:#f1e9d6;min-width:32px;text-align:right;font-variant-numeric:tabular-nums';
+  const unit = document.createElement('span');
+  unit.textContent = 'KM/J';
+  unit.style.cssText = 'font-size:9px;color:#c9b88a;letter-spacing:.06em';
+  badge.append(gear, speed, unit);
   document.body.appendChild(badge);
 
+  // klakson: tombol bulat kecil (tahan untuk berbunyi)
   const horn = document.createElement('button');
   horn.type = 'button';
-  horn.textContent = 'Klakson';
+  horn.innerHTML = '&#128227;';
   horn.setAttribute('aria-label', 'Klakson (tahan, atau tombol H)');
-  horn.style.cssText = `${BASE}right:20px;bottom:calc(${SAFE_BOTTOM} + 126px);display:none;width:88px;height:44px;border-radius:12px;border:1px solid rgba(201,162,75,.8);background:rgba(42,35,24,.72);color:#f1e9d6;font:700 14px system-ui,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none`;
-  const down = (e) => { e.preventDefault(); horn.style.background = '#c9a24b'; horn.style.color = '#1a1306'; onHorn(true); };
-  const up = () => { horn.style.background = 'rgba(42,35,24,.72)'; horn.style.color = '#f1e9d6'; onHorn(false); };
-  horn.addEventListener('pointerdown', down);
-  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) horn.addEventListener(ev, up);
+  horn.style.cssText = `${BASE}left:14px;bottom:calc(${SAFE_BOTTOM} + 70px);display:none;width:46px;height:46px;border-radius:50%;border:1px solid rgba(255,255,255,.35);background:${GLASS};font-size:20px;line-height:1;padding:0;touch-action:none;user-select:none;-webkit-user-select:none`;
+  const hornOn = (on) => { horn.style.background = on ? '#c9a24b' : GLASS; };
+  horn.addEventListener('pointerdown', (e) => { e.preventDefault(); hornOn(true); onHorn(true); });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) horn.addEventListener(ev, () => { hornOn(false); onHorn(false); });
   document.body.appendChild(horn);
 
-  // Gas/rem hanya dari joystick atau W/S; nilai nol tetap dikembalikan supaya car-ride.js/mergeControls tidak berubah.
+  // penggeser setir mendatar: lepas = pegas kembali ke tengah
+  let steerValue = 0;
+  let steerTarget = 0;
+  let steerPointer = null;
+  const KNOB = 44;
+  const slider = document.createElement('div');
+  slider.setAttribute('aria-label', 'Setir (geser kiri atau kanan)');
+  slider.style.cssText = `${BASE}left:14px;bottom:${SAFE_BOTTOM};display:none;width:min(230px,46vw);height:${KNOB + 10}px;border-radius:${(KNOB + 10) / 2}px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);touch-action:none;user-select:none;-webkit-user-select:none`;
+  const knob = document.createElement('div');
+  knob.style.cssText = `position:absolute;top:4px;left:50%;width:${KNOB}px;height:${KNOB}px;margin-left:${-KNOB / 2}px;border-radius:50%;background:rgba(255,255,255,.82);box-shadow:0 2px 6px rgba(0,0,0,.35);pointer-events:none`;
+  slider.appendChild(knob);
+  const reach = () => Math.max(1, slider.clientWidth / 2 - KNOB / 2 - 5);
+  const track = (e) => {
+    const r = slider.getBoundingClientRect();
+    steerTarget = clamp((e.clientX - (r.left + r.width / 2)) / reach(), -1, 1);
+    if (Math.abs(steerTarget) < 0.04) steerTarget = 0;
+  };
+  slider.addEventListener('pointerdown', (e) => { e.preventDefault(); steerPointer = e.pointerId; slider.setPointerCapture?.(e.pointerId); track(e); });
+  slider.addEventListener('pointermove', (e) => { if (e.pointerId === steerPointer) track(e); });
+  const steerEnd = (e) => { if (e.pointerId !== steerPointer) return; steerPointer = null; steerTarget = 0; };
+  for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) slider.addEventListener(ev, steerEnd);
+  document.body.appendChild(slider);
+
+  // pedal rem (lebar, pendek) dan gas (sempit, tinggi), kanan bawah; ditahan = ditekan
   const pedals = { gas: 0, brake: 0 };
+  const pedalBox = document.createElement('div');
+  pedalBox.style.cssText = `${BASE}right:14px;bottom:${SAFE_BOTTOM};display:none;gap:12px;align-items:flex-end;touch-action:none`;
+  const pedal = (label, key, w, h) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('aria-label', `Pedal ${label}`);
+    b.style.cssText = `width:${w}px;height:${h}px;border-radius:10px;border:1px solid rgba(255,255,255,.35);background:${RIB},${GLASS};background-blend-mode:normal;padding:0;touch-action:none;user-select:none;-webkit-user-select:none`;
+    const set = (on) => { pedals[key] = on ? 1 : 0; b.style.opacity = on ? '1' : '.72'; b.style.borderColor = on ? '#c9a24b' : 'rgba(255,255,255,.35)'; };
+    set(false);
+    b.addEventListener('pointerdown', (e) => { e.preventDefault(); b.setPointerCapture?.(e.pointerId); set(true); });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, () => set(false));
+    return b;
+  };
+  pedalBox.append(pedal('rem', 'brake', 64, 84), pedal('gas', 'gas', 46, 118));
+  document.body.appendChild(pedalBox);
+
   let shown = false;
   return {
-    set(kmh, info = null, compact = false) {
+    set(kmh, info = null) {
       const visible = kmh !== null;
       if (visible !== shown) {
         shown = visible;
+        badge.style.display = visible ? 'flex' : 'none';
         horn.style.display = visible ? 'block' : 'none';
-        // saat mengemudi, judul dan nama tempat disembunyikan (lihat .driving di hotel.html) supaya layar bersih
+        slider.style.display = visible && coarse ? 'block' : 'none';
+        pedalBox.style.display = visible && coarse ? 'flex' : 'none';
+        // saat mengemudi: judul, nama tempat, dan joystick jalan disembunyikan (lihat body.driving di hotel.html)
         document.body.classList.toggle('driving', visible);
+        if (!visible) { pedals.gas = 0; pedals.brake = 0; steerValue = 0; steerTarget = 0; steerPointer = null; knob.style.transform = ''; }
       }
-      if (!visible) { badge.style.display = 'none'; return; }
-      badge.style.display = compact ? 'none' : 'flex';
-      speed.textContent = String(Math.round(Math.abs(kmh)));
+      if (!visible) return;
+      steerValue += (steerTarget - steerValue) * (steerPointer === null ? 0.35 : 0.6); // lepas: pegas lembut ke tengah
+      if (Math.abs(steerValue) < 0.005 && steerTarget === 0) steerValue = 0;
+      knob.style.transform = `translateX(${(steerValue * reach()).toFixed(1)}px)`;
+      speed.textContent = String(Math.round(Math.abs(kmh))).padStart(3, '0');
       gear.style.display = info ? '' : 'none';
       if (info) gear.textContent = String(info.gear);
     },
-    /** Keadaan pedal (selalu 0: tidak ada pedal layar). */
+    /** Keadaan pedal layar { gas, brake } (0/1). */
     pedals: () => pedals,
-    dispose: () => { badge.remove(); horn.remove(); document.body.classList.remove('driving'); },
+    /** Posisi penggeser setir -1..1 (kanan = +). 0 bila tidak disentuh. */
+    steer: () => steerValue,
+    dispose: () => { badge.remove(); horn.remove(); slider.remove(); pedalBox.remove(); document.body.classList.remove('driving'); },
   };
 }
