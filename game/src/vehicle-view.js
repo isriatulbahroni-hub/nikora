@@ -1,6 +1,7 @@
 // Tampilan mobil armada (THREE). Mobil bermodel mewah (car.model) memakai luxury-cars.js: roda berputar dan membelok mengikuti
 // kecepatan, suspensi menunduk/miring, pintu terbuka saat kursi berganti penghuni, lampu depan/rem/mundur menyala.
-// Mobil bermodel berkas 3D (car.spec.glb, mis. NIKORA W16) dimuat dari GLB (car-glb.js): badan menunduk/miring, roda berputar bila namanya dikenali.
+// Mobil bermodel berkas 3D (car.spec.glb, mis. NIKORA W16) dimuat dari GLB (car-glb.js): badan menunduk/miring, roda berputar bila namanya dikenali,
+// dan roda setir BULAT (lingkar torus penuh) yang ikut berputar; mode kabin (tangan, jam, spion) juga berlaku untuk mobil GLB.
 // Mobil tanpa model memakai sedan lama (villa-props.js). Kinematik mobil pemain lain diturunkan dari pose (tanpa protokol baru).
 import * as THREE from 'three';
 import { carGeometries } from './villa-props.js';
@@ -154,8 +155,12 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     group.position.set(car.x, 0, car.z);
     group.rotation.y = car.heading;
     root.add(group);
-    const entry = { car, group, tilt, glb: true, luxury: false, wheels: [], loaded: null, fallback: null, disposed: false, spinAngle: 0, accel: 0, yaw: 0, steer: 0, prev: null, seats: car.seats.slice(), doorTimer: car.seats.map(() => 0), pitch: 0, roll: 0 };
+    const entry = { car, group, tilt, glb: true, luxury: false, wheels: [], loaded: null, fallback: null, disposed: false, steering: null, spinAngle: 0, accel: 0, yaw: 0, steer: 0, prev: null, seats: car.seats.slice(), doorTimer: car.seats.map(() => 0), pitch: 0, roll: 0 };
     const C = car.spec;
+    // roda setir bulat (lingkar torus penuh) di kabin: selalu ada, tidak bergantung pada isi berkas GLB, dan ikut berputar saat membelok
+    entry.steering = buildSteeringWheel(cockpitSpec(C));
+    tilt.add(entry.steering.pivot);
+    steeringWheels.push(entry.steering);
     const stub = () => {
       if (entry.fallback || entry.loaded || entry.disposed) return;
       const mat = new THREE.MeshStandardMaterial({ color: car.color, roughness: 0.3, metalness: 0.5, ...env });
@@ -276,6 +281,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
   function animateGlb(e, delta, mine) {
     const { car } = e;
     const dt = followKinematics(e, delta, mine);
+    e.steering.spin.rotation.z = wheelAngle(e.steer, car.spec.maxSteer); // roda setir bulat ikut berputar
     for (const w of e.wheels) {
       w.pivot.rotation.x = e.spinAngle;
       if (w.front) w.pivot.rotation.y = e.steer;
@@ -304,7 +310,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
       cockpitCar = car;
       if (!car) return;
       const entry = entries.find((x) => x.car === car);
-      if (!entry?.luxury) { cockpitCar = null; return; }
+      if (!entry?.luxury && !entry?.glb) { cockpitCar = null; return; }
       if (!rigs.has(car)) rigs.set(car, createCockpitRig(entry, { mirrors }));
       rigs.get(car).setActive(true);
     },
@@ -325,6 +331,8 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
           if (rig?.active) rig.update({ wheelRot: wheelAngle(e.steer, car.spec.maxSteer), hud: hudInfo(car), time: clock });
         } else if (e.glb) {
           animateGlb(e, delta, mine);
+          const rig = rigs.get(car);
+          if (rig?.active) rig.update({ wheelRot: wheelAngle(e.steer, car.spec.maxSteer), hud: hudInfo(car), time: clock });
         } else {
           const targetRoll = -(car.steer ?? 0) * Math.min(1, Math.abs(car.speed) / 18) * 0.06;
           tilt.rotation.z += (targetRoll - tilt.rotation.z) * Math.min(1, delta * 6);
