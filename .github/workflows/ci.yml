@@ -28,7 +28,24 @@ jobs:
       - run: npm ci --prefix game
       - run: npm ci --prefix invitation
       - run: npm test --prefix server
-      - run: npm test --prefix game
+      # Tes game: bila ada yang gagal, nama tes dan pesan galatnya dimunculkan sebagai anotasi di halaman Summary
+      # (dan di ringkasan job), supaya tidak perlu mencari "not ok" di log ribuan baris.
+      - name: Tes game
+        run: |
+          npm test --prefix game 2>&1 | tee game-test.log
+          code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            awk '/^ *not ok /{p=1;n=0} p{print; n++} n>=18{p=0}' game-test.log | head -n 120 > game-fail.txt
+            {
+              echo '### Tes game yang gagal'
+              echo '```'
+              cat game-fail.txt
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            msg=$(head -c 3000 game-fail.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::error title=Tes game gagal::$msg"
+          fi
+          exit "$code"
       - run: npm test --prefix invitation
       - run: npm run build --prefix game
       - run: npm run build --prefix invitation
