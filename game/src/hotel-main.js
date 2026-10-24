@@ -30,8 +30,9 @@ import { alongOf } from './hotel-journey-math.js';
 // menambah rumput, kamera, lift, peta per lantai, dan menu Jelajah. Langit siang-senja-malam, awan, bintang, bulan, kabut,
 // dan semua lampu menyala otomatis berasal dari hotel-sky.js (?sky=, ?tz=, tombol N).
 // SATU DUNIA: tiap tempat acara punya lorong perjalanannya sendiri (hotel-journey.js) yang menyambung langsung dari ujung jalan raya hotel.
-// Mengemudi melewati gerbang = langsung masuk lorongnya (perjalanan 20+ menit, tanpa tombol, tanpa pindah halaman); villa dipasang di ujung
-// lorongnya (hotel-villa.js). Aula, Royal, dan Masjid: lorongnya sudah di dunia ini, bangunannya masih halaman sendiri (tombol "Masuk" di area
+// Mengemudi melewati gerbang = langsung masuk lorongnya (perjalanan 20+ menit, tanpa tombol, tanpa pindah halaman). Pemain tetap mengemudi
+// sendiri dengan setir dan gas; kecepatan dibatasi supaya perjalanan tidak kurang dari ±20 menit. Villa dipasang di ujung lorongnya
+// (hotel-villa.js). Aula, Royal, dan Masjid: lorongnya sudah di dunia ini, bangunannya masih halaman sendiri (tombol "Masuk" di area
 // penurunan) sampai dipasang di ujung lorongnya seperti villa.
 const SPEED = 5.2;
 const world = getHotelWorld();
@@ -338,7 +339,8 @@ async function start() {
   // Batas dunia mobil: jalan raya hotel; melebar selama perjalanan (journey.syncLimit) karena lorong puluhan menit panjangnya.
   const carLimit = { ...HIGHWAY_LIMIT };
   // Mobil bersama di drop-off/parkir hotel (8 mobil). Logika naik/turun/setir/jaringan: car-ride.js (sama dengan vila).
-  const fleet = new Fleet({ specs: hotelCars(), selfId: 'lokal', env: { colliders: [...world.levels[0].colliders, ...villa.carColliders], surfaceAt, limit: carLimit } });
+  // Permukaan: di lorong perjalanan aspalnya 'road' (journey.surfaceAt), selain itu surfaceAt hotel.
+  const fleet = new Fleet({ specs: hotelCars(), selfId: 'lokal', env: { colliders: [...world.levels[0].colliders, ...villa.carColliders], surfaceAt: (x, z) => journey.surfaceAt() ?? surfaceAt(x, z), limit: carLimit } });
   const carAudio = createCarAudio();
   let doorHook = () => {};
   const carView = createVehicleView({ scene, fleet, mirrors: !lowQuality, envMap: buildCarEnvMap(renderer), onDoor: (car, opening) => { if (opening) doorHook(car); } });
@@ -522,7 +524,7 @@ async function start() {
   const carHud = mountCarHud({ onHorn: (down) => carRide.horn(down) });
   const carRide = createCarRide({
     fleet, view: carView, hud: carHud, audio: carAudio, camState, toast,
-    // titik turun digeser bila mengenai penghalang: di zona villa memakai penghalang villa; di area penurunan perjalanan dipakai apa adanya;
+    // titik turun digeser bila mengenai penghalang: di zona villa memakai penghalang villa; di lorong perjalanan dipakai apa adanya;
     // selain itu penghalang hotel
     exit: (p) => {
       if (villa.active({ x: p.x, z: p.z, level: 0, villa: null })) return villa.constrain(p);
@@ -535,10 +537,6 @@ async function start() {
   doorHook = (car) => carAudio.door(Math.hypot(car.x - me.x, car.z - me.z));
   hooks.action = () => {
     if (riding) return; // sedang di dalam lift
-    if (journey.riding) {
-      toast('Perjalanan sedang berlangsung. Nikmati pemandangannya, atau tekan Lewati.', 3000);
-      return;
-    }
     if (fleet.mine) {
       const c = fleet.driving ?? me;
       if (journey.arrived && !villa.active({ x: c.x, z: c.z, level: 0, villa: null })) {
@@ -572,7 +570,7 @@ async function start() {
   let mutedGate = arrival?.id ?? null; // gerbang yang baru saja dikunjungi: tidak masuk lorongnya lagi sampai pemain menjauh sekali
   let enteredGate = null; // gerbang lorong yang sedang dijalani (pengujian)
 
-  // ---------- kembali ke hotel (dari area penurunan tempat acara) ----------
+  // ---------- kembali ke hotel (dari lorong atau area penurunan tempat acara) ----------
   function returnToHotel(gate) {
     journey.finish();
     enteredGate = null;
@@ -603,9 +601,9 @@ async function start() {
   }
 
   // ---------- gerbang jalan raya: tiap tempat acara punya lorong perjalanannya sendiri, tanpa tombol dan tanpa pindah halaman ----------
-  // Mengemudi melewati garis gerbang (searah keluar, di badan jalan) langsung masuk lorongnya: rute 20+ menit (hotel-journey.js) disambung
-  // dari ujung jalan raya, mobil dijalankan autopilot dan dihaluskan ke lajur rute (tidak melompat). Berjalan kaki tidak masuk lorong:
-  // naik mobil dulu. Tamu yang baru tiba dari sebuah gerbang tidak masuk lagi sampai ia menjauh sekali.
+  // Mengemudi melewati garis gerbang (searah keluar, di badan jalan) langsung masuk lorongnya, tanpa jeda: rute 20+ menit (hotel-journey.js)
+  // disambung dari ujung jalan raya dan pemain TETAP mengemudi sendiri dengan setir dan gas. Berjalan kaki tidak masuk lorong: naik mobil
+  // dulu. Tamu yang baru tiba dari sebuah gerbang tidak masuk lagi sampai ia menjauh sekali.
   const enterCorridor = () => {
     if (journey.state !== 'idle' || me.level !== 0) return;
     const mg = mutedGate ? GATES.find((g) => g.id === mutedGate) : null;
@@ -618,9 +616,7 @@ async function start() {
       if (a.s < -3 || a.s > 40 || Math.abs(a.lateral) > 20) continue; // belum sampai garis gerbang, sudah jauh melewatinya, atau di luar badan jalan
       if (!journey.start(g, car).ok) continue; // mobil tidak searah gerbang: tidak masuk
       enteredGate = g;
-      cockpitOn = false;
-      camState.dist = Math.max(camState.dist, 9);
-      toast(`Menuju ${g.label} · ± 20 menit`, 3500);
+      toast(`Lorong menuju ${g.label} · ± 20 menit. Kemudikan sendiri, kecepatan dibatasi.`, 4000);
       return;
     }
   };
@@ -630,7 +626,7 @@ async function start() {
     const delta = Math.min((time - last) / 1000, 0.05);
     last = time;
 
-    const rawInput = riding || journey.riding ? { x: 0, z: 0 } : readInput();
+    const rawInput = riding ? { x: 0, z: 0 } : readInput();
     let move = { x: 0, z: 0 };
     const inVilla = villa.active(me); // di kompleks villa (dunia yang sama): dinding, pintu, tangga memakai fisika villa
     if (!riding && !fleet.mine) { // di dalam mobil joystick = gas dan setir, bukan berjalan
@@ -644,7 +640,7 @@ async function start() {
       if (inVilla) {
         villa.walk(me, sx, sz); // mengubah me.x, me.z, me.y, me.villa
       } else if (journey.state !== 'idle') {
-        const q = journey.walkFree(me, sx, sz); // area penurunan tempat acara yang belum dipasang di dunia ini
+        const q = journey.walkFree(me, sx, sz); // di lorong perjalanan atau area penurunan tempat acara yang belum dipasang di dunia ini
         me.x = q.x;
         me.z = q.z;
         me.y = 0;
@@ -672,15 +668,15 @@ async function start() {
       }
     }
 
-    // mobil: pengemudi menjalankan fisika; pengemudi dan penumpang menempel di kursinya
+    // mobil: pengemudi menjalankan fisika (setir dan gas); pengemudi dan penumpang menempel di kursinya
     journey.syncLimit(carLimit); // batas dunia mobil melebar selama perjalanan
     const car = carRide.step(me, { delta, rawInput });
-    // lorong perjalanan 20+ menit: autopilot menggeser mobil di sepanjang rute (satu dunia, tidak pindah halaman)
+    // lorong perjalanan 20+ menit: membatasi kecepatan, menahan mobil di dalam lorong, dan menggeser dunia perjalanan mengikuti tinggi medan
     journey.update({ delta, camera, me, driving: fleet.driving });
     enterCorridor(); // melewati gerbang jalan raya = masuk lorongnya
     const seatPose = car.riding ? fleet.seatPose(car.sit) : null;
     if (seatPose && journey.state !== 'idle') {
-      me.x = seatPose.x; // pose kursi dihitung ulang sesudah autopilot menggeser mobil (tanpa tertinggal satu frame)
+      me.x = seatPose.x; // pose kursi dihitung ulang sesudah lorong menahan mobil (tanpa tertinggal satu frame)
       me.z = seatPose.z;
     }
     if (car.riding) facing = car.facing;
@@ -781,7 +777,7 @@ async function start() {
     // panel lift muncul saat berdiri di dalam kabin
     liftPanel.update(!riding && !fleet.mine && !inVilla && journey.state === 'idle' && !!world.liftAt(me.x, me.z), me.level);
     const carNear = !riding && !fleet.mine && me.level === 0 && !me.villa && fleet.nearest(me) !== null;
-    const actText = riding || journey.riding ? '' : fleet.mine ? 'Turun' : carNear ? 'Naik' : '';
+    const actText = riding ? '' : fleet.mine ? 'Turun' : carNear ? 'Naik' : '';
     if (actText) actBtn.textContent = actText;
     actBtn.hidden = !actText;
 
