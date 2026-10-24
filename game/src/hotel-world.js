@@ -18,6 +18,7 @@ import { buildHighway } from './highway-world.js';
 import { skinShape } from './hotel-tower-shape.js';
 import { buildTowerSkin } from './hotel-tower-skin.js';
 import { exteriorOccluders } from './hotel-occluders.js';
+import { addShowcaseCar } from './hotel-showcase-car.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const GOLD = 0xc9a24b;
@@ -198,6 +199,9 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     { x: TOWER_CENTER.x - 4, y: HOTEL_TOP_Y + 1.2, z: TOWER_CENTER.z, sx: 0.8, sy: 0.05, sz: 6 }, { x: TOWER_CENTER.x + 4, y: HOTEL_TOP_Y + 1.2, z: TOWER_CENTER.z, sx: 0.8, sy: 0.05, sz: 6 }, { x: TOWER_CENTER.x, y: HOTEL_TOP_Y + 1.2, z: TOWER_CENTER.z, sx: 8, sy: 0.05, sz: 0.8 },
   ], M.line);
 
+  // mobil Bugatti NIKORA di bawah kanopi drop-off, depan pintu lobi (hotel-showcase-car.js)
+  const showcaseCar = addShowcaseCar(root);
+
   // ---- interior per lantai (dibangun hanya untuk lantai yang dekat pemain)
   const bg = bedGeometries();
   const bedMaterials = [M.vertex, std(0xffffff, { roughness: 0.9 }), new THREE.MeshBasicMaterial({ color: 0xffe2a8 })];
@@ -343,6 +347,6 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     builtLevels: () => [...groups.keys()].sort((a, b) => a - b),
     highway,
     skin,
-    dispose: () => { skin.dispose(); highway.dispose(); scene.remove(root); },
+    dispose: () => { showcaseCar.dispose(); skin.dispose(); highway.dispose(); scene.remove(root); },
   };
 }
