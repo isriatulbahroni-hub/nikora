@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { ARENA, CITY_HEIGHTS, CITY_TINTS, FIELD, SATELLITES, TILE_HEIGHT, cityBuildings, forestTrees } from './hotel-surroundings-data.js';
+import { ARENA, CITY_HEIGHTS, CITY_TINTS, FIELD, SATELLITES, TILE_HEIGHT, visibleCityBuildings, forestTrees } from './hotel-surroundings-data.js';
 
-// Sekitar NIKORA Grand Hotel (THREE): lima menara satelit kaca, kota mid-rise, arena berkubah + lapangan, dan hutan kota.
+// Sekitar NIKORA Grand Hotel (THREE): lima menara satelit kaca, kota mid-rise (saat ini dimatikan lewat CITY_ENABLED), arena berkubah + lapangan, dan hutan kota.
 // Geometri dari hotel-surroundings-data.js. Semuanya InstancedMesh atau beberapa mesh besar (sekitar 40 draw call).
 // Fasad memakai satu tekstur bay bermipmap, bukan batang tipis, supaya tidak berkedip dari jauh (pelajaran hotel-facade.js).
 // Hanya tampilan: tidak ada penghalang bagi pemain dan mobil. Jendela menyala di malam hari lewat setNight(0..1).
@@ -162,7 +162,8 @@ export function buildHotelSurroundings(scene, { anisotropy = 8, low = false } = 
   };
 
   // ---- kota mid-rise: satu InstancedMesh per tinggi (UV tekstur mengikuti tinggi, jadi jendela tidak melar)
-  const city = cityBuildings();
+  // Saat ini kosong (CITY_ENABLED = false di hotel-surroundings-data.js), jadi tidak ada gedung kota yang digambar.
+  const city = visibleCityBuildings();
   const towerGeo = towerBoxGeometry();
   const roofMat = std(0x8d9299, { roughness: 0.9 });
   CITY_HEIGHTS.forEach((h, bucket) => {
