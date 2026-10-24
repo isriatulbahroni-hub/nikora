@@ -13,6 +13,9 @@ jobs:
   unit:
     name: Tes unit dan build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,9 +31,11 @@ jobs:
       - run: npm ci --prefix game
       - run: npm ci --prefix invitation
       - run: npm test --prefix server
-      # Tes game: bila ada yang gagal, nama tes dan pesan galatnya dimunculkan sebagai anotasi di halaman Summary
-      # (dan di ringkasan job), supaya tidak perlu mencari "not ok" di log ribuan baris.
+      # Tes game: bila ada yang gagal, nama tes dan pesan galatnya dimunculkan sebagai anotasi di halaman Summary,
+      # di ringkasan job, dan (hanya untuk push ke main) ditulis ke satu issue supaya mudah dibaca.
       - name: Tes game
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           npm test --prefix game 2>&1 | tee game-test.log
           code=${PIPESTATUS[0]}
@@ -44,6 +49,10 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             msg=$(head -c 3000 game-fail.txt | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
             echo "::error title=Tes game gagal::$msg"
+            if [ "${{ github.event_name }}" = "push" ]; then
+              { echo '```'; head -c 60000 game-fail.txt; echo '```'; } > game-issue.md
+              gh issue create --repo "${{ github.repository }}" --title "CI: tes game gagal di ${GITHUB_SHA::7}" --body-file game-issue.md || true
+            fi
           fi
           exit "$code"
       - run: npm test --prefix invitation
