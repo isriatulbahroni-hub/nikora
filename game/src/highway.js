@@ -92,13 +92,27 @@ export const gateAt = (x, z) => GATES.find((g) => inRect(g.rect, x, z)) ?? null;
 
 // Parameter yang ikut dibawa saat pindah halaman (nama tampilan dan mode ringan); token/peran sengaja tidak dibawa karena per ruang.
 const CARRY = Object.freeze(['name', 'q']);
-/** Alamat halaman tempat acara untuk gerbang itu; `from=hotel` memberi tahu halaman tujuan asal kedatangan. */
-export function gateUrl(g, search = '') {
+/** Alamat halaman tempat acara untuk gerbang itu (langsung, tanpa perjalanan); `from=hotel` memberi tahu halaman tujuan asal kedatangan. */
+export function venueUrl(g, search = '') {
   const src = new URLSearchParams(search);
   const out = new URLSearchParams();
   for (const k of CARRY) if (src.get(k)) out.set(k, src.get(k));
   out.set('from', 'hotel');
   return `${g.page}?${out.toString()}`;
+}
+
+/** Alamat perjalanan 20+ menit menuju tempat acara itu (journey.html, lihat docs/PERJALANAN_RENCANA.md). Tombol Masuk di akhir perjalanan membuka halaman tempat acara dengan from=hotel. */
+export function journeyUrl(g, search = '') {
+  const src = new URLSearchParams(search);
+  const out = new URLSearchParams();
+  out.set('venue', g.id);
+  for (const k of CARRY) if (src.get(k)) out.set(k, src.get(k));
+  return `journey.html?${out.toString()}`;
+}
+
+/** Tujuan saat berjalan atau mengemudi melewati gerbang: perjalanan menuju tempat acara; `?langsung=1` melompatinya ke halaman tempat acara. */
+export function gateUrl(g, search = '') {
+  return new URLSearchParams(search).get('langsung') ? venueUrl(g, search) : journeyUrl(g, search);
 }
 
 /** Gerbang asal tamu yang datang dari tempat acara (?from=villa|hall|royal|masjid), atau null. */
