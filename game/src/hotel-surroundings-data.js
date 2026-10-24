@@ -106,6 +106,14 @@ export function cityBuildings() {
   return cityCache;
 }
 
+/**
+ * Saklar gedung kota mid-rise. Dimatikan (false) atas permintaan pemilik: gedung-gedung itu dinilai jelek dan merusak pandangan ke menara.
+ * Generator `cityBuildings()` di atas sengaja dibiarkan utuh; ubah ke true untuk memunculkan kota itu lagi (gambar dan penghalang tabrakan ikut kembali).
+ */
+export const CITY_ENABLED = false;
+/** Gedung kota yang benar-benar dipakai (digambar dan jadi penghalang): kosong selama CITY_ENABLED = false. */
+export const visibleCityBuildings = () => (CITY_ENABLED ? cityBuildings() : Object.freeze([]));
+
 const NEAR_BOX = Object.freeze({ minX: -360, maxX: 360, minZ: 190, maxZ: 760 }); // pita pohon rapat di sekitar Lingkar
 const FAR_BOX = Object.freeze({ minX: -540, maxX: 540, minZ: 150, maxZ: 900 });
 let forestCache = null;

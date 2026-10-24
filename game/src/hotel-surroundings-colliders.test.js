@@ -1,15 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GATES, HIGHWAY_SEGMENTS } from './highway.js';
-import { ARENA, SATELLITES, cityBuildings, RING_OUTER } from './hotel-surroundings-data.js';
+import { ARENA, SATELLITES, visibleCityBuildings, RING_OUTER } from './hotel-surroundings-data.js';
 import { surroundColliders } from './hotel-surroundings-colliders.js';
 
 const overlaps = (a, b) => a.minX < b[2] && a.maxX > b[0] && a.minZ < b[3] && a.maxZ > b[1];
 const roads = [...HIGHWAY_SEGMENTS.map((s) => s.rect), ...GATES.map((g) => g.rect), RING_OUTER];
 
-test('penghalang: satu per gedung kota, satu per satelit, satu untuk arena, dan di-cache', () => {
+test('penghalang: satu per gedung kota yang tampil, satu per satelit, satu untuk arena, dan di-cache', () => {
   const c = surroundColliders();
-  assert.equal(c.length, cityBuildings().length + SATELLITES.length + 1);
+  assert.equal(c.length, visibleCityBuildings().length + SATELLITES.length + 1);
   assert.equal(surroundColliders(), c);
   for (const b of c) assert.ok(b.minX < b.maxX && b.minZ < b.maxZ);
 });
