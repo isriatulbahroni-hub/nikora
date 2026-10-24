@@ -4,7 +4,7 @@ import { Fleet, carSitId, defaultCars } from './vehicle-fleet.js';
 
 test('armada hotel: mobil mewah bermodel, kursi sesuai model, cat salinan kedua berbeda', () => {
   const cars = defaultCars().filter((c) => c.id.startsWith('hotel_'));
-  assert.ok(cars.every((c) => ['royale', 'noir', 'argent', 'rubis'].includes(c.model)));
+  assert.ok(cars.every((c) => ['royale', 'noir', 'argent', 'rubis', 'nikora'].includes(c.model)));
   assert.notEqual(cars[0].color, cars[4].color, 'model sama, cat berbeda');
   const f = new Fleet({ specs: cars, selfId: 'ani' });
   const rubis = f.cars.find((c) => c.model === 'rubis');
@@ -46,4 +46,13 @@ test('sub-langkah: mobil cepat tidak menembus dinding tipis saat frame lambat', 
   let maxZ = 0;
   for (let i = 0; i < 200; i++) { f.drive({ throttle: 1, steer: 0 }, 0.1); maxZ = Math.max(maxZ, f.cars[0].z); }
   assert.ok(maxZ < 20.3 + 1.2, `tidak menembus: z maks ${maxZ}`);
+});
+
+test('sub-langkah: NIKORA W16 pada 420 km/j (116 m/s) tidak menembus dinding tipis walau frame lambat', () => {
+  const f = new Fleet({ specs: [{ id: 'n', x: 0, z: 0, heading: 0, model: 'nikora' }], selfId: 'ani', env: { surfaceAt: () => 'road', colliders: [{ minX: -8, maxX: 8, minZ: 700, maxZ: 700.3 }] } });
+  f.board({ x: 0, z: 0 });
+  let maxZ = 0;
+  for (let i = 0; i < 1200; i++) { f.drive({ throttle: 1, steer: 0 }, 0.05); maxZ = Math.max(maxZ, f.cars[0].z); }
+  assert.ok(f.cars[0].speed > 0, 'masih melaju atau sudah berhenti di dinding');
+  assert.ok(maxZ < 700.3 + 1.5, `tidak menembus: z maks ${maxZ}`);
 });
