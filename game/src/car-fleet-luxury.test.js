@@ -49,10 +49,16 @@ test('sub-langkah: mobil cepat tidak menembus dinding tipis saat frame lambat', 
 });
 
 test('sub-langkah: NIKORA W16 pada 420 km/j (116 m/s) tidak menembus dinding tipis walau frame lambat', () => {
-  const f = new Fleet({ specs: [{ id: 'n', x: 0, z: 0, heading: 0, model: 'nikora' }], selfId: 'ani', env: { surfaceAt: () => 'road', colliders: [{ minX: -8, maxX: 8, minZ: 700, maxZ: 700.3 }] } });
+  const limit = { minX: -2000, maxX: 2000, minZ: -2000, maxZ: 2000 }; // lebih luas dari batas dunia villa supaya dinding yang diuji, bukan batas dunia
+  const f = new Fleet({ specs: [{ id: 'n', x: 0, z: 0, heading: 0, model: 'nikora' }], selfId: 'ani', env: { surfaceAt: () => 'road', limit, colliders: [{ minX: -8, maxX: 8, minZ: 700, maxZ: 700.3 }] } });
   f.board({ x: 0, z: 0 });
   let maxZ = 0;
-  for (let i = 0; i < 1200; i++) { f.drive({ throttle: 1, steer: 0 }, 0.05); maxZ = Math.max(maxZ, f.cars[0].z); }
-  assert.ok(f.cars[0].speed > 0, 'masih melaju atau sudah berhenti di dinding');
+  let maxSpeed = 0;
+  for (let i = 0; i < 1200; i++) {
+    f.drive({ throttle: 1, steer: 0 }, 0.05);
+    maxZ = Math.max(maxZ, f.cars[0].z);
+    maxSpeed = Math.max(maxSpeed, f.cars[0].speed);
+  }
+  assert.ok(maxSpeed > 100, `mobil benar-benar melaju cepat sebelum menabrak (${maxSpeed.toFixed(1)} m/s)`);
   assert.ok(maxZ < 700.3 + 1.5, `tidak menembus: z maks ${maxZ}`);
 });
