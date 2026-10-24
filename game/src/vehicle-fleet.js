@@ -7,7 +7,7 @@
 import { CAR, BOARD_RANGE, SEAT_OFFSETS, boardVehicle, createVehicle, exitPose, findBoardable, forward, leaveVehicle, seatWorld, stepVehicle, wrapAngle } from './vehicle.js';
 import { HOTEL_CAR_SPOTS } from './hotel-layout.js';
 import { SEATED_DROP } from './villa-layout.js';
-import { CAR_MODELS, hotelModelFor } from './car-models.js';
+import { CAR_MODELS, GLB_MODELS, hotelModelFor } from './car-models.js';
 
 export const CAR_SIT_BASE = 1000; // id duduk (`sit`) di jaringan: BASE + indeks mobil * 8 + kursi
 export const carSitId = (index, seat) => CAR_SIT_BASE + index * 8 + seat;
@@ -21,11 +21,14 @@ const PALETTE = [0x1f2a36, 0xf2f2f0, 0x8e1b1b, 0x3a3f46, 0x274a7c, 0xb9bcc0, 0x1
 const SEND_MS = 100;
 const HEARTBEAT_MS = 1000;
 const PREDICT_MAX_S = 0.25;
+const MAX_STEP_M = 0.8; // jarak maksimum per langkah fisika: mobil 420 km/j tidak melompati dinding tipis
 
 // Cat varian untuk salinan kedua tiap model hotel (salinan pertama memakai cat asli model).
 const ALT_PAINT = Object.freeze({ royale: 0xe9e4d6, noir: 0x1a2d4a, argent: 0xe8e8ea, rubis: 0x0d0d10 });
+// Mobil NIKORA W16 (model GLB) dipajang di bawah kanopi drop-off, di depan pintu lobi utama; moncong menghadap ke jalan (utara).
+export const NIKORA_SPOT = Object.freeze({ x: 0, z: 446, heading: Math.PI });
 
-/** Daftar mobil awal: 6 di parkir depan gerbang villa (sedan lama) dan 8 mobil mewah di drop-off/parkir hotel. */
+/** Daftar mobil awal: 6 di parkir depan gerbang villa (sedan lama), 8 mobil mewah di drop-off/parkir hotel, dan NIKORA W16 di depan lobi. */
 export function defaultCars() {
   const out = [];
   let i = 0;
@@ -36,6 +39,7 @@ export function defaultCars() {
     const color = k < Object.keys(CAR_MODELS).length ? CAR_MODELS[model].paint : ALT_PAINT[model];
     out.push({ id: `hotel_${k}`, x: s.x, z: s.z, heading: s.heading, model, color });
   });
+  out.push({ id: `hotel_${hotel.length}`, ...NIKORA_SPOT, model: 'nikora', color: GLB_MODELS.nikora.paint }); // terakhir: indeks mobil lain tidak bergeser
   return out.map((c, k) => ({ ...c, color: c.color ?? PALETTE[k % PALETTE.length] }));
 }
 
@@ -106,8 +110,8 @@ export class Fleet {
   drive(input, dt) {
     const car = this.driving;
     if (!car) return null;
-    // Langkah kecil (<= 1/60 dtk) supaya mobil cepat tidak menembus tembok tipis saat frame rate rendah.
-    const steps = Math.max(1, Math.ceil(dt * 60));
+    // Langkah kecil (<= 1/60 dtk dan <= 0,8 m) supaya mobil cepat tidak menembus tembok tipis saat frame rate rendah atau laju sangat tinggi.
+    const steps = Math.max(1, Math.ceil(dt * 60), Math.ceil((Math.abs(car.speed) * dt) / MAX_STEP_M));
     let hit = 0;
     for (let i = 0; i < steps; i++) {
       stepVehicle(car, input, dt / steps, this.env);

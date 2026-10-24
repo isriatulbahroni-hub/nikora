@@ -50,8 +50,29 @@ export const CAR_MODELS = freeze({
   }),
 });
 
+// Model yang tubuhnya berasal dari berkas 3D (GLB) buatan sendiri, bukan dari kode (luxury-cars.js). Sengaja dipisah dari CAR_MODELS:
+// armada hotel yang berselang-seling (HOTEL_MODEL_ORDER) dan semua tes katalog prosedural tetap berlaku untuk empat model di atas.
+// NIKORA W16: performa mengikuti kelas hypercar 16 silinder empat-turbo: kecepatan puncak 420 km/j (dibatasi), 0-100 km/j sekitar 2,4 detik,
+// pengereman 100-0 km/j sekitar 31 m (12,5 m/s^2), mesin 16 silinder 700-6700 rpm, tujuh gigi.
+// accelFade = berapa bagian percepatan hilang di kecepatan puncak (tenaga makin sulit menambah laju), dragK = hambatan udara saat gas
+// dilepas (m/s^2 per (m/s)^2), grip = pengali cengkeraman ban.
+export const GLB_MODELS = freeze({
+  nikora: freeze({
+    id: 'nikora', name: 'NIKORA W16', kind: 'hypercar',
+    length: 4.55, width: 2.04, height: 1.21, wheelBase: 2.71, wheelRadius: 0.37, tireWidth: 0.32,
+    maxSpeed: 116.7, reverseMax: 6, accel: 11.6, accelFade: 0.9, dragK: 0.0003, brake: 12.5, maxSteer: 0.5, steerRate: 3.8, grip: 1.25,
+    circleRadius: 1.0, circleOffset: 1.3,
+    seats: freeze([{ fwd: 0.1, side: 0.5 }, { fwd: 0.1, side: -0.5 }]), seatLift: -0.36,
+    paint: 0x0a1a3a, accent: 0x0b0c10, interior: 0x15151a,
+    engine: freeze({ cylinders: 16, idleRpm: 700, maxRpm: 6700, gears: gears(21.7, 36.1, 50, 66.7, 83.3, 100, 116.7), timbre: 'deep', turbo: true }),
+    doors: freeze({ style: 'swing', open: 1.0 }),
+    // file = relatif terhadap folder publik; yaw = putaran tambahan (0 atau Math.PI) bila moncong model di berkas menghadap ke belakang
+    glb: freeze({ file: 'models/mobil-hotel.glb', yaw: 0 }),
+  }),
+});
+
 export const MODEL_IDS = freeze(Object.keys(CAR_MODELS));
-export const modelOf = (id) => CAR_MODELS[id] ?? null;
+export const modelOf = (id) => CAR_MODELS[id] ?? GLB_MODELS[id] ?? null;
 
 /** Urutan model armada hotel: 8 mobil = tiap model dua kali, berselang-seling supaya parkir terlihat beragam. */
 export const HOTEL_MODEL_ORDER = freeze(['royale', 'noir', 'argent', 'rubis']);

@@ -23,6 +23,7 @@ export const SEAT_OFFSETS = Object.freeze([
 ]);
 export const SEAT_HEIGHT = 0.35; // avatar duduk sedikit di atas tanah
 export const BOARD_RANGE = 3.2;
+export const DRAG_K = 0.012; // hambatan udara bawaan (m/s^2 per (m/s)^2); model cepat boleh memakai dragK sendiri
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 export const forward = (h) => ({ x: Math.sin(h), z: Math.cos(h) });
@@ -45,6 +46,7 @@ export function createVehicle({ id, x = 0, z = 0, heading = 0, color = 0xf2f2f0,
 /**
  * Satu langkah fisika. input = { throttle: -1..1, steer: -1..1 (kanan positif), brake?: bool }.
  * env = { colliders, surfaceAt, limit? } (limit = batas dunia; bawaan WORLD_LIMIT villa, hotel memakai HIGHWAY_LIMIT). Mengubah dan mengembalikan `v`. v.hit = kekuatan benturan langkah ini (0 = tidak ada).
+ * Opsi spesifikasi model: accelFade (0..1, percepatan menyusut mendekati kecepatan puncak) dan dragK (hambatan udara); tanpa keduanya fisika sama seperti semula.
  */
 export function stepVehicle(v, input, dt, env = {}) {
   const C = v.spec ?? CAR;
@@ -60,13 +62,14 @@ export function stepVehicle(v, input, dt, env = {}) {
   if (brake) {
     v.speed = Math.abs(v.speed) <= C.brake * dt ? 0 : v.speed - Math.sign(v.speed) * C.brake * dt;
   } else if (throttle > 0) {
-    v.speed += (v.speed < 0 ? C.brake : C.accel) * throttle * dt;
+    const fade = C.accelFade ? 1 - C.accelFade * Math.min(1, (Math.max(0, v.speed) / C.maxSpeed) ** 2) : 1; // tenaga makin sulit menambah laju di kecepatan tinggi
+    v.speed += (v.speed < 0 ? C.brake : C.accel * fade) * throttle * dt;
   } else if (throttle < 0) {
     v.speed -= (v.speed > 0.3 ? C.brake : C.accel * 0.6) * -throttle * dt;
   }
   // hambatan: gesekan + udara
   if (throttle === 0 && !brake) {
-    const drag = (0.9 + 0.012 * v.speed * v.speed) * dt;
+    const drag = (0.9 + (C.dragK ?? DRAG_K) * v.speed * v.speed) * dt;
     v.speed = Math.abs(v.speed) <= drag ? 0 : v.speed - Math.sign(v.speed) * drag;
   }
   v.speed = clamp(v.speed, -C.reverseMax, C.maxSpeed);

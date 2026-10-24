@@ -2,7 +2,10 @@
 // Mesin pemain lain tidak disuarakan (hemat CPU HP); klakson dan pintu mobil mereka terdengar menurut jarak.
 import { firingHz, gearFor, rpmFor } from './car-models.js';
 
-const TIMBRE = { smooth: { cutoff: 700, grit: 0.25 }, deep: { cutoff: 900, grit: 0.45 }, scream: { cutoff: 1800, grit: 0.7 } };
+// w16 = watak mesin 16 silinder empat-turbo (NIKORA W16): geraman rendah tebal, harmonik atas lebih terbuka daripada "deep",
+// desis dua turbo yang berbeda nada, letupan knalpot saat gas dilepas di putaran tinggi, dan blow-off panjang.
+const TIMBRE = { smooth: { cutoff: 700, grit: 0.25 }, deep: { cutoff: 900, grit: 0.45 }, scream: { cutoff: 1800, grit: 0.7 }, w16: { cutoff: 1300, grit: 0.55 } };
+const SUB_BOOST = { deep: 1.4, w16: 1.6 };
 export const hearGain = (distance, range = 45) => Math.max(0, 1 - distance / range) ** 2;
 
 /** Frekuensi dasar suara mesin (Hz) dan bukaan filter untuk sebuah mobil bermodel pada keadaan tertentu. Murni, diuji. */
@@ -23,7 +26,7 @@ export function tyreSound(slip, speed) {
 
 /** Bobot harmonik (1..n) bunyi knalpot menurut watak mesin: halus = rendah dominan, dalam = rendah tebal, menjerit = harmonik tinggi kuat. */
 export function harmonicWeights(timbre, cylinders, n = 12) {
-  const slope = { smooth: 1.7, deep: 1.25, scream: 0.8 }[timbre] ?? 1.5;
+  const slope = { smooth: 1.7, deep: 1.25, scream: 0.8, w16: 1.1 }[timbre] ?? 1.5;
   const w = [];
   for (let k = 1; k <= n; k++) {
     const evenBoost = cylinders % 4 === 0 && k % 2 === 0 ? 1.25 : 1; // mesin 4/8/12/16 silinder: harmonik genap lebih kuat
@@ -36,7 +39,8 @@ export function harmonicWeights(timbre, cylinders, n = 12) {
 /**
  * Semua lapisan suara mobil dari keadaan mobil (murni, diuji; bunyi sungguhan dirakit di createCarAudio).
  * state = { speed (m/s), throttle (-1..1), engineOn, boost (0..1, diratakan pemanggil), cabin (kamera di dalam kabin) }.
- * Lapisan: knalpot (frekuensi pembakaran + subharmonik setengah-orde), gerung gigi, desis intake, turbo, angin, pemotong putaran (rev limiter).
+ * Lapisan: knalpot (frekuensi pembakaran + subharmonik setengah-orde), gerung gigi, desis intake, turbo (dua nada), angin, pemotong putaran (rev limiter),
+ * dan letupan knalpot (crackle) saat gas dilepas di putaran tinggi pada mesin watak w16.
  */
 export function engineLayers(model, state) {
   const e = model.engine;
@@ -48,6 +52,7 @@ export function engineLayers(model, state) {
   const t = TIMBRE[e.timbre] ?? TIMBRE.smooth;
   const on = engineOn ? 1 : 0;
   const v = Math.min(1, Math.abs(speed) / Math.max(1, model.maxSpeed));
+  const turboFreq = 1400 + 5200 * boost;
   return {
     rpm,
     rpmFrac,
@@ -55,17 +60,20 @@ export function engineLayers(model, state) {
     subHz: Math.min(450, Math.max(12, fire / 2)),
     drive: 1 + 5 * load * (0.4 + 0.6 * rpmFrac), // pengeras tanh: gas dalam = geram
     exhaustGain: on * (0.05 + 0.1 * (0.35 + 0.65 * load)),
-    subGain: on * (0.025 + 0.04 * (1 - rpmFrac)) * (e.timbre === 'deep' ? 1.4 : 1),
+    subGain: on * (0.025 + 0.04 * (1 - rpmFrac)) * (SUB_BOOST[e.timbre] ?? 1),
     cutoff: (cabin ? 0.55 : 1) * t.cutoff * (0.5 + rpmFrac) * (0.6 + 0.4 * (0.35 + 0.65 * load)),
     intakeFreq: 450 + 1300 * rpmFrac,
     intakeGain: on * load * rpmFrac * rpmFrac * (cabin ? 0.05 : 0.035),
     whineFreq: Math.min(2400, (rpm / 60) * 3.7),
     whineGain: on * (0.004 + 0.008 * v) * (Math.abs(speed) > 0.5 ? 1 : 0),
-    turboFreq: 1400 + 5200 * boost,
+    turboFreq,
     turboGain: e.turbo ? on * boost * 0.018 : 0,
+    turboFreq2: turboFreq * 1.5, // turbo kedua berputar di nada berbeda: desis empat turbo W16 lebih tebal daripada satu turbo
+    turboGain2: e.turbo && e.timbre === 'w16' ? on * boost * 0.011 : 0,
     windGain: Math.min(0.12, 0.12 * v ** 2.2) * (cabin ? 0.55 : 1),
     windCut: 500 + 2600 * v,
     limiter: engineOn && rpmFrac > 0.97 && load > 0.5,
+    crackle: engineOn && e.timbre === 'w16' && load < 0.1 && rpmFrac > 0.55 && Math.abs(speed) > 15,
     cabinLow: cabin ? 1.35 : 1, // di dalam kabin dentuman rendah lebih terasa
   };
 }
@@ -189,7 +197,7 @@ export function createCarAudio() {
     pipe.connect(exGain);
     exGain.connect(out);
 
-    // intake (desis udara), gerung gigi, turbo, angin
+    // intake (desis udara), gerung gigi, turbo (dua nada), angin
     const intake = noise();
     const intakeBp = ctx.createBiquadFilter();
     intakeBp.type = 'bandpass';
@@ -207,6 +215,10 @@ export function createCarAudio() {
     turboGain.gain.value = 0;
     const turbo = tone('sine', 1500, turboGain);
     turboGain.connect(out);
+    const turboGain2 = ctx.createGain();
+    turboGain2.gain.value = 0;
+    const turbo2 = tone('sine', 2200, turboGain2);
+    turboGain2.connect(out);
     const wind = noise();
     const windHp = ctx.createBiquadFilter();
     windHp.type = 'highpass';
@@ -221,7 +233,7 @@ export function createCarAudio() {
     windLp.connect(windGain);
     windGain.connect(out);
 
-    eng = { out, exhaust, sub, jitter, shaper, lowpass, pipe, exGain, subGain, intake, intakeBp, intakeGain, whine, whineGain, turbo, turboGain, wind, windLp, windGain, drive: 0, nodes: [exhaust, sub, jitter, intake, whine, turbo, wind] };
+    eng = { out, exhaust, sub, jitter, shaper, lowpass, pipe, exGain, subGain, intake, intakeBp, intakeGain, whine, whineGain, turbo, turboGain, turbo2, turboGain2, wind, windLp, windGain, drive: 0, nodes: [exhaust, sub, jitter, intake, whine, turbo, turbo2, wind] };
   }
 
   function stopEngine() {
@@ -288,11 +300,15 @@ export function createCarAudio() {
       const prevBoost = boost;
       boost = nextBoost(boost, throttle, pre.rpmFrac, dt);
       const L = engineLayers(car.spec, { speed: car.speed, throttle, engineOn: car.engine, boost, cabin });
+      const w16 = car.spec.engine.timbre === 'w16';
       // pindah gigi: gas terputus sebentar + letupan; gas dilepas dengan boost tinggi: blow-off
       const gear = gearFor(car.spec, car.speed);
       if (gear !== lastGear && lastGear !== 0 && gear !== 0 && throttle > 0.4) { duckUntil = t + 0.08; pop(260, 0.05 + 0.03 * L.rpmFrac, 0.05); }
       lastGear = gear;
-      if (car.spec.engine.turbo && prevBoost > 0.55 && boost < prevBoost - 0.03 && throttle < 0.2) pop(2400, 0.06, 0.12);
+      if (car.spec.engine.turbo && prevBoost > 0.55 && boost < prevBoost - 0.03 && throttle < 0.2) {
+        if (w16) { pop(1500, 0.1, 0.22); pop(650, 0.05, 0.3); } else pop(2400, 0.06, 0.12); // blow-off W16: lebih panjang dan lebih dalam
+      }
+      if (L.crackle && Math.random() < dt * 7) pop(180 + Math.random() * 260, 0.035 + Math.random() * 0.03, 0.03); // letupan knalpot saat gas dilepas
       const cut = t < duckUntil || L.limiter && Math.sin(t * 60) > 0 ? 0.3 : 1; // potong gas saat pindah gigi / rev limiter
       eng.exhaust.frequency.setTargetAtTime(L.fireHz, t, 0.03);
       eng.sub.frequency.setTargetAtTime(L.subHz, t, 0.03);
@@ -307,6 +323,8 @@ export function createCarAudio() {
       eng.whineGain.gain.setTargetAtTime(L.whineGain, t, 0.08);
       eng.turbo.frequency.setTargetAtTime(L.turboFreq, t, 0.05);
       eng.turboGain.gain.setTargetAtTime(L.turboGain, t, 0.05);
+      eng.turbo2.frequency.setTargetAtTime(L.turboFreq2, t, 0.05);
+      eng.turboGain2.gain.setTargetAtTime(L.turboGain2, t, 0.05);
       eng.windLp.frequency.setTargetAtTime(L.windCut, t, 0.1);
       eng.windGain.gain.setTargetAtTime(L.windGain, t, 0.1);
       const q = tyreSound(car.slip ?? 0, car.speed);

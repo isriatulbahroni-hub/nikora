@@ -1,5 +1,6 @@
 // Tampilan mobil armada (THREE). Mobil bermodel mewah (car.model) memakai luxury-cars.js: roda berputar dan membelok mengikuti
 // kecepatan, suspensi menunduk/miring, pintu terbuka saat kursi berganti penghuni, lampu depan/rem/mundur menyala.
+// Mobil bermodel berkas 3D (car.spec.glb, mis. NIKORA W16) dimuat dari GLB (car-glb.js): badan menunduk/miring, roda berputar bila namanya dikenali.
 // Mobil tanpa model memakai sedan lama (villa-props.js). Kinematik mobil pemain lain diturunkan dari pose (tanpa protokol baru).
 import * as THREE from 'three';
 import { carGeometries } from './villa-props.js';
@@ -8,8 +9,10 @@ import { wrapAngle } from './vehicle.js';
 import { buildSteeringWheel, createCockpitRig } from './cockpit-view.js';
 import { cockpitSpec, wheelAngle } from './cockpit.js';
 import { hudInfo } from './car-ride.js';
+import { disposeObject, loadCarGlb } from './car-glb.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const BASE = import.meta.env?.BASE_URL ?? '/';
 export const DOOR_OPEN_S = 1.6; // lama pintu terbuka setelah kursi berganti penghuni
 
 /** Sudut roda depan (rad, + = belok kiri) dari laju yaw: dipakai untuk mobil yang dikemudikan pemain lain. */
@@ -143,6 +146,48 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     return { car, group, tilt, luxury: true, steering, wheels, doors, headMat, tailMat, revMat, paintMat, doorGeos, spinAngle: 0, accel: 0, yaw: 0, steer: 0, brake: false, prev: null, seats: car.seats.slice(), doorTimer: car.seats.map(() => 0), pitch: 0, roll: 0 };
   }
 
+  /** Mobil dari berkas GLB: badan dimuat belakangan; selama belum selesai (atau bila gagal) tampil kotak sederhana supaya tetap kelihatan dan bisa dinaiki. */
+  function buildGlbEntry(car) {
+    const group = new THREE.Group();
+    const tilt = new THREE.Group();
+    group.add(tilt);
+    group.position.set(car.x, 0, car.z);
+    group.rotation.y = car.heading;
+    root.add(group);
+    const entry = { car, group, tilt, glb: true, luxury: false, wheels: [], loaded: null, fallback: null, disposed: false, spinAngle: 0, accel: 0, yaw: 0, steer: 0, prev: null, seats: car.seats.slice(), doorTimer: car.seats.map(() => 0), pitch: 0, roll: 0 };
+    const C = car.spec;
+    const stub = () => {
+      if (entry.fallback || entry.loaded || entry.disposed) return;
+      const mat = new THREE.MeshStandardMaterial({ color: car.color, roughness: 0.3, metalness: 0.5, ...env });
+      const m = new THREE.Mesh(new THREE.BoxGeometry(C.width * 0.95, C.height * 0.6, C.length * 0.97), mat);
+      m.position.y = C.wheelRadius + C.height * 0.3;
+      m.castShadow = true;
+      tilt.add(m);
+      entry.fallback = m;
+    };
+    loadCarGlb({ url: `${BASE}${C.glb.file}`, length: C.length, yaw: C.glb.yaw ?? 0, envMap })
+      .then((res) => {
+        if (entry.disposed) {
+          disposeObject(res.root);
+          return;
+        }
+        if (entry.fallback) {
+          tilt.remove(entry.fallback);
+          entry.fallback.geometry.dispose();
+          entry.fallback.material.dispose();
+          entry.fallback = null;
+        }
+        tilt.add(res.root);
+        entry.loaded = res.root;
+        entry.wheels = res.wheels;
+      })
+      .catch((error) => {
+        console.warn('[armada] model mobil gagal dimuat:', C.glb.file, error);
+        stub();
+      });
+    return entry;
+  }
+
   function buildLegacyEntry(car) {
     const group = new THREE.Group();
     const bodyMat = new THREE.MeshPhysicalMaterial({ color: car.color, roughness: 0.32, metalness: 0.35, clearcoat: 1, clearcoatRoughness: 0.08 });
@@ -160,7 +205,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     return { car, group, tilt, luxury: false, bodyMat };
   }
 
-  const entries = fleet.cars.map((car) => (car.model ? buildLuxuryEntry(car) : buildLegacyEntry(car)));
+  const entries = fleet.cars.map((car) => (car.spec.glb ? buildGlbEntry(car) : car.model ? buildLuxuryEntry(car) : buildLegacyEntry(car)));
 
   const head = new THREE.SpotLight(0xfff1cf, 0, 70, 0.6, 0.55, 1.1);
   head.castShadow = false;
@@ -168,7 +213,8 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
   scene.add(head, headTarget);
   head.target = headTarget;
 
-  function animateLuxury(e, delta, mine) {
+  /** Kinematik bersama: percepatan, laju yaw, setir, dan kemiringan badan dihaluskan dari pose mobil. */
+  function followKinematics(e, delta, mine) {
     const { car } = e;
     const C = car.spec;
     const dt = Math.max(1e-4, delta);
@@ -187,9 +233,14 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     e.roll += (t.roll - e.roll) * Math.min(1, dt * 6);
     e.tilt.rotation.x = e.pitch;
     e.tilt.rotation.z = e.roll;
-
     e.spinAngle += (car.speed * dt) / C.wheelRadius;
-    e.steering.spin.rotation.z = wheelAngle(e.steer, C.maxSteer); // roda setir ikut berputar (juga terlihat dari luar)
+    return dt;
+  }
+
+  function animateLuxury(e, delta, mine) {
+    const { car } = e;
+    const dt = followKinematics(e, delta, mine);
+    e.steering.spin.rotation.z = wheelAngle(e.steer, car.spec.maxSteer); // roda setir ikut berputar (juga terlihat dari luar)
     for (const w of e.wheels) {
       w.spin.rotation.x = e.spinAngle * w.side;
       if (w.front) w.pivot.rotation.y = e.steer;
@@ -222,6 +273,28 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     e.revMat.color.setHex(on && car.speed < -0.2 ? 0xffffff : 0x555555);
   }
 
+  function animateGlb(e, delta, mine) {
+    const { car } = e;
+    const dt = followKinematics(e, delta, mine);
+    for (const w of e.wheels) {
+      w.pivot.rotation.x = e.spinAngle;
+      if (w.front) w.pivot.rotation.y = e.steer;
+    }
+    // suara pintu saat kursi berganti penghuni (model GLB tidak punya pintu yang bisa digerakkan)
+    car.seats.forEach((s, i) => {
+      if (s !== e.seats[i]) {
+        e.doorTimer[i] = DOOR_OPEN_S;
+        e.seats[i] = s;
+        onDoor(car, true);
+      }
+    });
+    for (let i = 0; i < e.doorTimer.length; i++) {
+      const before = e.doorTimer[i];
+      e.doorTimer[i] = Math.max(0, before - dt);
+      if (before > 0 && e.doorTimer[i] === 0) onDoor(car, false);
+    }
+  }
+
   return {
     entries,
     /** Mode kabin: car = mobil yang kamera-nya di dalam (atau null). Rig (tangan, jam, spion) dibuat sekali per mobil. */
@@ -250,8 +323,9 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
           animateLuxury(e, delta, mine);
           const rig = rigs.get(car);
           if (rig?.active) rig.update({ wheelRot: wheelAngle(e.steer, car.spec.maxSteer), hud: hudInfo(car), time: clock });
-        }
-        else {
+        } else if (e.glb) {
+          animateGlb(e, delta, mine);
+        } else {
           const targetRoll = -(car.steer ?? 0) * Math.min(1, Math.abs(car.speed) / 18) * 0.06;
           tilt.rotation.z += (targetRoll - tilt.rotation.z) * Math.min(1, delta * 6);
         }
@@ -272,6 +346,11 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
       for (const e of entries) {
         if (e.bodyMat) e.bodyMat.dispose();
         if (e.doorGeos) for (const d of e.doorGeos) d.geometry.dispose();
+        if (e.glb) {
+          e.disposed = true; // muatan yang belum selesai dibuang begitu tiba
+          if (e.loaded) disposeObject(e.loaded);
+          if (e.fallback) { e.fallback.geometry.dispose(); e.fallback.material.dispose(); }
+        }
       }
       for (const s of models.values()) for (const k of ['paint', 'trim', 'glass', 'head', 'tail', 'rev', 'wheel']) s[k].dispose();
       for (const m of [...ownMats, trimMat, glassMat, doorMat, wheelMat, legacyDetail, legacyLight]) m.dispose();
