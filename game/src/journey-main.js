@@ -97,6 +97,7 @@ hud.skip.addEventListener('click', () => {
 });
 const carry = new URLSearchParams();
 for (const k of ['name', 'q']) if (params.get(k)) carry.set(k, params.get(k));
+carry.set('from', 'hotel'); // tiba seperti tamu yang datang dari hotel: muncul di gerbang tempat acara
 hud.enter.href = `${VENUES[venue].page}${carry.toString() ? `?${carry}` : ''}`;
 hud.enter.textContent = `Masuk ke ${VENUES[venue].label}`;
 
@@ -144,7 +145,7 @@ function frame(now) {
   world.ensure(camPos, st.s, 2);
   const seg = segmentAt(j, st.s);
   hud.seg.textContent = seg.name;
-  hud.part.textContent = `Bagian ${SEGMENTS.indexOf(seg) + 1}/${SEGMENTS.length}`;
+  hud.part.textContent = `Bagian ${j.bounds.indexOf(seg) + 1}/${SEGMENTS.length}`;
   hud.eta.textContent = st.arrived ? 'Tiba' : `Sisa ± ${fmt(Math.max(0, j.duration - timeAt(j, st.s)))}`;
   hud.bar.style.width = `${(st.s / j.length) * 100}%`;
   hud.enter.hidden = !st.arrived;
