@@ -14,7 +14,7 @@ import { Fleet, hotelCars } from './vehicle-fleet.js';
 import { createVehicleView } from './vehicle-view.js';
 import { createCarRide } from './car-ride.js';
 import { cockpitFov, eyeWorld, cockpitSpec } from './cockpit.js';
-import { HIGHWAY_LIMIT, arrivalGate, gateArrival, gateAt, gateUrl } from './highway.js';
+import { GATES, HIGHWAY_LIMIT, arrivalGate, gateArrival, venueUrl } from './highway.js';
 import { FLOOR_COLORS, GROUP_ORDER, cssColor, describePlace, hotelPlaces } from './hotel-places.js';
 import { hoursAt, zoneFromSearch } from './day-night.js';
 import { createStaffView } from './hotel-staff-view.js';
@@ -32,6 +32,8 @@ const places = hotelPlaces(world);
 const $ = (id) => document.getElementById(id);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
+// Gerbang tempat acara: mengemudi atau berjalan melewatinya TIDAK lagi memindahkan halaman. Dalam radius ini muncul tombol "Masuk" (pemain yang memilih).
+const GATE_PROMPT_RADIUS = 90;
 
 function showError(message, detail = '') {
   $('hotel-error').style.display = 'grid';
@@ -527,7 +529,44 @@ async function start() {
       netStatus = 'Offline';
     });
   let placeKey = '';
-  let leavingTo = null; // gerbang yang sedang dimasuki (cegah pindah halaman dua kali)
+  let leavingTo = null; // gerbang yang dipilih pemain untuk dimasuki (cegah pindah halaman dua kali)
+
+  // ---------- gerbang tempat acara: jalan tetap menyambung, pindah halaman hanya bila pemain memilih ----------
+  // Mengemudi/berjalan melewati gerbang tidak lagi membuka halaman lain. Selama masih dalam radius GATE_PROMPT_RADIUS dari sebuah gerbang,
+  // muncul tombol "Masuk ke ...". Tamu yang baru tiba dari gerbang itu tidak ditawari lagi sampai ia menjauh sekali.
+  const enterBtn = document.createElement('button');
+  enterBtn.type = 'button';
+  enterBtn.id = 'gate-enter';
+  Object.assign(enterBtn.style, {
+    position: 'fixed', left: '50%', top: 'calc(env(safe-area-inset-top, 0px) + 120px)', transform: 'translateX(-50%)', zIndex: '30',
+    padding: '12px 22px', borderRadius: '14px', border: '1px solid rgba(212,175,55,0.85)', background: 'rgba(20,18,12,0.88)',
+    color: '#f5e6b0', font: '600 15px system-ui, sans-serif', display: 'none', cursor: 'pointer',
+  });
+  document.body.appendChild(enterBtn);
+  let promptGate = null;
+  let mutedGate = arrival?.id ?? null;
+  enterBtn.addEventListener('click', () => {
+    if (!promptGate || leavingTo) return;
+    leavingTo = promptGate;
+    enterBtn.style.display = 'none';
+    toast(`Memasuki ${leavingTo.label}…`, 3000);
+    const target = leavingTo;
+    setTimeout(() => { window.location.href = venueUrl(target, window.location.search); }, 500);
+  });
+  const updateGatePrompt = () => {
+    if (leavingTo) return;
+    let next = null;
+    if (me.level === 0) {
+      const dist = (g) => Math.hypot(me.x - g.x, me.z - g.z);
+      if (mutedGate && dist(GATES.find((g) => g.id === mutedGate)) > GATE_PROMPT_RADIUS + 25) mutedGate = null;
+      if (promptGate && dist(promptGate) < GATE_PROMPT_RADIUS + 25) next = promptGate;
+      else next = GATES.find((g) => g.id !== mutedGate && dist(g) < GATE_PROMPT_RADIUS) ?? null;
+    }
+    if (next === promptGate) return;
+    promptGate = next;
+    if (next) enterBtn.textContent = `Masuk ke ${next.label}`;
+    enterBtn.style.display = next ? 'block' : 'none';
+  };
 
   function frame(time) {
     requestAnimationFrame(frame);
@@ -566,13 +605,8 @@ async function start() {
 
     // mobil: pengemudi menjalankan fisika; pengemudi dan penumpang menempel di kursinya
     const car = carRide.step(me, { delta, rawInput });
-    // Gerbang tempat acara di ujung jalan raya: berjalan atau mengemudi melewatinya = pindah ke halaman tempat acara itu
-    const gate = leavingTo || me.level !== 0 ? null : gateAt(me.x, me.z);
-    if (gate) {
-      leavingTo = gate;
-      toast(`Memasuki ${gate.label}…`, 3000);
-      setTimeout(() => { window.location.href = gateUrl(gate, window.location.search); }, 700);
-    }
+    // Gerbang tempat acara di ujung jalan raya: tombol "Masuk" muncul saat dekat; tidak ada perpindahan halaman otomatis
+    updateGatePrompt();
     const seatPose = car.riding ? fleet.seatPose(car.sit) : null;
     if (car.riding) facing = car.facing;
     shownFacing = seatPose ? seatPose.rotY : turnToward(shownFacing, facing, delta);
@@ -694,6 +728,7 @@ async function start() {
     cycleCamera: () => hooks.camera(), // sama dengan tombol kamera (pengujian)
     driving: () => (fleet.driving ? { model: fleet.driving.model, speed: fleet.driving.speed, engine: fleet.driving.engine, steer: fleet.driving.steer, slip: fleet.driving.slip, tyreTemp: fleet.driving.tyreTemp } : null),
     teleport, // hanya untuk pengujian dan menu Jelajah
+    gatePrompt: () => promptGate?.id ?? null, // gerbang yang sedang ditawarkan tombol Masuk (pengujian)
     leavingTo: () => leavingTo?.id ?? null,
     ride,
   };
