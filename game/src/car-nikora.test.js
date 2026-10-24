@@ -111,11 +111,13 @@ test('suara mesin NIKORA W16: 16 silinder, nada naik dengan RPM, turbo bersuara 
 });
 
 test('hotel: NIKORA W16 mobil ke-9 di bawah kanopi depan lobi, tidak menabrak apa pun, bisa dinaiki dari depannya', () => {
-  const car = hotelCars().find((c) => c.model === 'nikora');
+  const cars = hotelCars();
+  const car = cars.find((c) => c.model === 'nikora');
   assert.ok(car, 'ada di armada hotel');
-  assert.equal(hotelCars().at(-1), car, 'terakhir: indeks mobil lain tidak bergeser');
+  assert.equal(cars.at(-1).id, car.id, 'terakhir: indeks mobil lain tidak bergeser');
+  assert.equal(cars.length, 9);
   assert.deepEqual({ x: car.x, z: car.z, heading: car.heading }, { ...NIKORA_SPOT });
-  const f = new Fleet({ specs: hotelCars(), selfId: 'ani' });
+  const f = new Fleet({ specs: cars, selfId: 'ani' });
   const n = f.cars.find((c) => c.model === 'nikora');
   assert.equal(n.seats.length, 2);
   assert.ok(f.seatPose(carSitId(n.index, 0)) && f.seatPose(carSitId(n.index, 1)));
@@ -168,7 +170,7 @@ test('fitCar: diskalakan ke panjang spesifikasi, panjang searah z, pusat di nol,
   assert.ok(Math.abs(b.min.y) < 0.01, `dasar y=${b.min.y}`);
 });
 
-test('fitCar: yaw membalik moncong (bawaan moncong di -z karena model kita contohkan menghadap +x; yaw PI membaliknya ke +z)', () => {
+test('fitCar: yaw membalik moncong (contoh menghadap +x berarti moncong di -z; yaw PI memindahkannya ke +z)', () => {
   const noseZ = (yaw) => {
     const scene = fakeCarScene();
     const { root } = fitCar(scene, { length: 4.55, yaw });
