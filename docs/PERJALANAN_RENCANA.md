@@ -27,7 +27,7 @@ adalah jalan khusus yang tertutup.
 - `game/src/journey-world.js` (THREE): medan per potongan, pohon, jalan dengan marka, pagar pengaman, rambu chevron, lampu,
   jembatan dan air, danau, rambu persimpangan, **gerbang utama sebagai kompleks** (fondasi, sayap tebal, tiang, kanopi, pos jaga,
   palang, air mancur, paving) dan area kedatangan.
-- `game/src/journey-drive.js`: mobil otomatis (melambat di tikungan, berhenti di area penurunan). 20,6 menit per rute.
+- `game/src/journey-drive.js`: mobil otomatis (melambat di tikungan, berhenti di area penurunan tamu). 20,6 menit per rute.
 - `game/journey.html` + `journey-main.js`: halaman demo. `?venue=villa|hall|royal|masjid&waktu=siang|senja|malam&mobil=royale|noir|argent|rubis`;
   `&kecepatan=10` hanya untuk menguji; `&q=ringan` mematikan bayangan.
 
@@ -39,7 +39,7 @@ adalah jalan khusus yang tertutup.
 - Persimpangan baru berupa papan petunjuk; cabang jalan (jalan khusus tertutup) belum digambar. Rambu belum memakai ikon per tempat acara.
 - Belum: mobil dikendarai pemain (hanya autopilot), suara (angin, burung, ban), siang-malam otomatis (`day-night.js`), tampilan
   khas tiap tempat acara (`JOURNEYS.*.theme` baru benih), vegetasi bervariasi (semak, bunga), NPC, multiplayer di rute.
-- Belum dihubungkan ke `highway.js` dan `hotel-main.js` (jalan raya lama 4 gerbang masih ada); keputusan penggantian ada pada pemilik.
+- Gerbang jalan raya hotel (`highway.js`, `gateUrl`) sekarang membuka perjalanan (`journey.html?venue=...`); `?langsung=1` melompatinya ke halaman tempat acara. Jalan raya lama 4 lengan di hotel masih ada sebagai penghubung ke gerbang; penggantiannya (jalan hotel -> gerbang utama NIKORA) belum.
 - Server villa dan `SNAP_DISTANCE` belum mengenal geometri ini.
 
 ## Tes
