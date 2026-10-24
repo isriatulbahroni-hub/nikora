@@ -3,7 +3,7 @@
 // potongan di sekitar kamera supaya ringan di HP. Bangunan tempat acara di area kedatangan masih berupa bentuk SEMENTARA
 // (placeholder); halaman tempat acara yang sebenarnya dibuka dari tombol masuk (lihat journey-main.js).
 import * as THREE from 'three';
-import { GATE_S, ROAD, SEGMENTS, bridgeAt, eventsOf, frameAt, nearestOnRoute, noise2, rng, segmentAt, smooth, terrainHeight, waterLevelOf } from './journey.js';
+import { GATE_S, ROAD, SEGMENTS, bridgeAt, clamp, eventsOf, frameAt, nearestOnRoute, noise2, rng, segmentAt, smooth, terrainHeight, waterLevelOf } from './journey.js';
 import { VENUES } from './venues.js';
 
 export const CHUNK = 96; // sisi potongan medan (m)
@@ -12,6 +12,15 @@ export const RADIUS = 3; // potongan di sekeliling kamera (±3 => 7 x 7)
 export const FOG_FAR = 340;
 const ROAD_CHUNK = 160;
 const ROAD_RANGE = 640;
+
+// Pelebaran jalan di awal rute: jalan raya hotel selebar 34,5 m (setengah lebar 17,25 m) menyempit mulus menjadi jalan perjalanan
+// (ROAD.half) sepanjang FLARE.s1 meter, seperti jalan sungguhan (bukan lompatan lebar yang menempel). Tanah dan aspal ikut rata.
+export const FLARE = Object.freeze({ s1: 90, half: 17.25, shoulder: 3.5 });
+/** Setengah lebar aspal (termasuk bahu) pada jarak s dari awal rute. */
+export const flareHalf = (s) => {
+  const t = clamp(s / FLARE.s1, 0, 1);
+  return FLARE.half + (ROAD.half - FLARE.half) * t * t * (3 - 2 * t);
+};
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const TRUNK = new THREE.CylinderGeometry(0.5, 0.7, 1, 5).translate(0, 0.5, 0);
@@ -124,6 +133,16 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
     return false;
   };
 
+  /** Tinggi tanah di (x, z); di awal rute diratakan selebar aspal pelebaran supaya aspal tidak terkubur atau melayang di atas tanah. */
+  function groundHeight(x, z, r) {
+    const y = terrainHeight(j, x, z, r);
+    if (r.s > FLARE.s1 + 24) return y;
+    const f = frameAt(j, r.s);
+    const fh = flareHalf(r.s);
+    const w = 1 - smooth(fh + 0.5, fh + ROAD.embank, Math.abs(r.d));
+    return y + (f.y - y) * w;
+  }
+
   function buildTerrain(cx, cz) {
     const n = RES + 1;
     const pos = new Float32Array(n * n * 3);
@@ -137,7 +156,7 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
       const r = nearestOnRoute(j, x, z);
       const k = a * n + b;
       pos[k * 3] = x;
-      pos[k * 3 + 1] = terrainHeight(j, x, z, r);
+      pos[k * 3 + 1] = groundHeight(x, z, r);
       pos[k * 3 + 2] = z;
       info[k] = r;
     }
@@ -158,7 +177,8 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
       const v = noise2(pos[k * 3] / 9, pos[k * 3 + 2] / 9, j.spec.seed);
       let c = mix(zoneTint(seg), j.spec.tint, 0.35).lerp(new THREE.Color(0x2f5a2a), v * 0.5);
       c = c.lerp(new THREE.Color(0x8b6b4a), smooth(0.18, 0.45, steep) * 0.9); // tebing potongan: tanah dan batu
-      c = c.lerp(new THREE.Color(0x77756c), 1 - smooth(ROAD.half + 0.4, ROAD.half + 2.2, Math.abs(r.d))); // bahu kerikil
+      const half = r.s <= FLARE.s1 + 24 ? flareHalf(r.s) : ROAD.half;
+      c = c.lerp(new THREE.Color(0x77756c), 1 - smooth(half + 0.4, half + 2.2, Math.abs(r.d))); // bahu kerikil
       col[k * 3] = c.r;
       col[k * 3 + 1] = c.g;
       col[k * 3 + 2] = c.b;
@@ -187,8 +207,9 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
       const dens = { utama: 0.35, berkelok: 0.8, bukit: 0.65, premium: 0.4, kedatangan: 0.3 }[seg.id];
       if (rand() > dens * (0.5 + noise2(x / 60, z / 60, j.spec.seed + 7))) continue;
       if (Math.abs(r.d) < ROAD.half + 4) continue;
+      if (r.s <= FLARE.s1 + 24 && Math.abs(r.d) < flareHalf(r.s) + 4) continue; // jangan menanam pohon di atas aspal pelebaran
       if (r.s > j.length - 40 || r.s < GATE_S + 5) { if (Math.abs(r.d) < 40) continue; }
-      const y = terrainHeight(j, x, z, r);
+      const y = groundHeight(x, z, r);
       const slope = Math.max(Math.abs(terrainHeight(j, x + 2, z) - y), Math.abs(terrainHeight(j, x, z + 2) - y)) / 2;
       if (slope > 0.75 || waterAt(r.s, y)) continue;
       const size = 0.8 + rand() * 0.9 + (seg.id === 'premium' ? 0.3 : 0);
@@ -284,6 +305,57 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
     return g;
   }
 
+  // ------------------------------------------------------------ pelebaran jalan di awal rute (menyambung jalan raya hotel)
+  // Dua sayap aspal di kiri dan kanan jalan perjalanan: dari selebar jalan raya hotel di gerbang jalan raya (s = 0) menyempit mulus
+  // sampai selebar jalan perjalanan. Warna aspal dan bahu sama dengan jalan raya hotel, garis tepi putih mengikuti tepi lajur.
+  function buildFlare() {
+    const STEP = 5;
+    const n = Math.round(FLARE.s1 / STEP) + 1;
+    const pos = [];
+    const col = [];
+    const idx = [];
+    let v = 0;
+    const shoulderW = (s) => ROAD.shoulder + (FLARE.shoulder - ROAD.shoulder) * ((flareHalf(s) - ROAD.half) / (FLARE.half - ROAD.half));
+    const laneEdge = (s) => Math.max(ROAD.half, flareHalf(s) - shoulderW(s)); // tepi lajur (awal bahu)
+    const ribbon = (sd, lo, hi, color, dy) => {
+      const base = v;
+      const cc = new THREE.Color(color);
+      for (let i = 0; i < n; i++) {
+        const s = Math.min(FLARE.s1, i * STEP);
+        const f = frameAt(j, s);
+        const L = lat(f.heading);
+        const a = lo(s);
+        const b = hi(s);
+        const l0 = sd > 0 ? a : -b; // selalu l0 < l1 supaya sisi atas menghadap ke atas (sama dengan buildRoad)
+        const l1 = sd > 0 ? b : -a;
+        for (const l of [l0, l1]) {
+          pos.push(f.x + L.x * l, f.y + dy, f.z + L.z * l);
+          col.push(cc.r, cc.g, cc.b);
+          v++;
+        }
+      }
+      for (let i = 0; i < n - 1; i++) {
+        const a = base + i * 2;
+        idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+      }
+    };
+    for (const sd of [-1, 1]) {
+      ribbon(sd, () => ROAD.half, laneEdge, 0x2a2c31, 0.03); // aspal lajur tambahan
+      ribbon(sd, laneEdge, flareHalf, 0x3b3d43, 0.028); // bahu
+      ribbon(sd, (s) => Math.max(ROAD.half, laneEdge(s) - 0.2), laneEdge, 0xe8e8e0, 0.045); // garis tepi putih
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+    const mesh = new THREE.Mesh(geo, mats.road);
+    mesh.name = 'pelebaran-jalan';
+    mesh.receiveShadow = shadows;
+    group.add(mesh);
+  }
+
   // ------------------------------------------------------------ jembatan, air, danau, rambu persimpangan (sekali jadi)
   function buildFixed() {
     for (const e of eventsOf(j, 'bridge')) {
@@ -340,10 +412,13 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
       sign(g, labelTexture(venue, 'lurus · jalan khusus tertutup'), 0x1d6a3a, 4.2, 1.1, 0, 2.7, -0.05, Math.PI);
       group.add(g);
     }
+    buildFlare();
     group.add(buildGate(), buildArrival());
   }
 
   // ------------------------------------------------------------ gerbang utama (kompleks: fondasi, sayap tebal, tiang, kanopi, pos jaga, air mancur)
+  // Tidak ada lagi hamparan paving pasir di atas jalan: dulu paving 120 m menutupi aspal sehingga jalan tampak "mundur" dan menempel.
+  // Sekarang aspal jalan (dan pelebarannya) terus menerus lewat bawah gerbang.
   function buildGate() {
     const f = frameAt(j, GATE_S);
     const g = new THREE.Group();
@@ -371,16 +446,14 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
     items.push({ x: 8.2, y: 1.7, z: 1, sx: 2.6, sy: 3.4, sz: 5, color: 0x6b5a3c }); // pos jaga
     items.push({ x: 8.2, y: 3.5, z: 1, sx: 3.4, sy: 0.3, sz: 5.8, color: wood });
     items.push({ x: 8.2, y: 1.9, z: -1.55, sx: 2.2, sy: 1.6, sz: 0.1, color: 0x1b2a33 }); // kaca
-    items.push({ x: 0, y: 0.09, z: 32, sx: 2 * (H + 6), sy: 0.12, sz: 120, color: 0xcdb892 }); // paving: aspal bertransisi ke paving
-    for (const sd of [-1, 1]) items.push({ x: sd * (H + 6), y: 0.2, z: 32, sx: 0.35, sy: 0.34, sz: 120, color: 0x9d8e72 });
     boxes(g, items, std(0xffffff), { cast: shadows, receive: shadows });
     boxes(g, slats, std(0xffffff));
     boxes(g, [{ x: 0, y: 10.3, z: -3.6, sx: 40, sy: 0.12, sz: 0.3, color: 0xffd98a }], basic(0xffffff)); // lampu hangat di bawah kanopi
-    // palem
+    // palem (di luar tepi aspal pelebaran)
     const tr = [];
     const cr = [];
     for (const sd of [-1, 1]) for (const z of [-14, -21, -28]) {
-      const x = sd * (H + 6.5);
+      const x = sd * (H + 8.5);
       const h = 6.5 + ((z * 7) % 3);
       tr.push({ x, y: 0, z, sx: 0.4, sy: h, sz: 0.4, color: 0x8a6a3a });
       cr.push({ x, y: h + 0.4, z, sx: 2.8, sy: 0.9, sz: 2.8, ry: z, color: 0x2f7a35 });
@@ -432,33 +505,41 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
   buildFixed();
 
   // ------------------------------------------------------------ pemuatan per potongan
+  // Jalan dimuat LEBIH DULU dan yang terdekat dengan pemain lebih dulu (dulu dari yang paling belakang, dan menunggu anggaran tanah habis,
+  // sehingga jalan tepat di depan pemain muncul paling akhir dan tampak menjauh saat pemain maju).
   function ensure(cam, s, budget = 2) {
+    let built = 0;
+    const c0 = Math.max(0, Math.floor((s - ROAD_RANGE) / ROAD_CHUNK));
+    const c1 = Math.floor(Math.min(j.length, s + ROAD_RANGE) / ROAD_CHUNK);
+    const mid = (c) => (c + 0.5) * ROAD_CHUNK;
+    const need = [];
+    for (let c = c0; c <= c1; c++) if (!roads.has(c)) need.push(c);
+    need.sort((p, q) => Math.abs(mid(p) - s) - Math.abs(mid(q) - s));
+    const roadBudget = budget >= 999 ? 999 : 2;
+    for (const c of need) {
+      if (built >= roadBudget) break;
+      roads.set(c, buildRoad(c));
+      built++;
+    }
+    for (const [c, g] of roads) if (c < c0 || c > c1) { dispose(g); roads.delete(c); }
+
     const ccx = Math.floor(cam.x / CHUNK);
     const ccz = Math.floor(cam.z / CHUNK);
     const want = [];
     for (let a = -RADIUS; a <= RADIUS; a++) for (let b = -RADIUS; b <= RADIUS; b++) want.push([ccx + b, ccz + a, a * a + b * b]);
     want.sort((p, q) => p[2] - q[2]);
-    let built = 0;
+    let terrainBuilt = 0;
     const keep = new Set();
     for (const [cx, cz] of want) {
       const key = `${cx},${cz}`;
       keep.add(key);
-      if (!terrain.has(key) && built < budget) {
+      if (!terrain.has(key) && terrainBuilt < budget) {
         terrain.set(key, buildTerrain(cx, cz));
+        terrainBuilt++;
         built++;
       }
     }
     for (const [key, g] of terrain) if (!keep.has(key)) { dispose(g); terrain.delete(key); }
-
-    const c0 = Math.max(0, Math.floor((s - ROAD_RANGE) / ROAD_CHUNK));
-    const c1 = Math.floor(Math.min(j.length, s + ROAD_RANGE) / ROAD_CHUNK);
-    for (let c = c0; c <= c1; c++) {
-      if (!roads.has(c) && built < budget + 1) {
-        roads.set(c, buildRoad(c));
-        built++;
-      }
-    }
-    for (const [c, g] of roads) if (c < c0 || c > c1) { dispose(g); roads.delete(c); }
     return built;
   }
 
