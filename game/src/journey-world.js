@@ -13,13 +13,19 @@ export const FOG_FAR = 340;
 const ROAD_CHUNK = 160;
 const ROAD_RANGE = 640;
 
+// Lebar jalan perjalanan yang digambar: 4 lajur (2 per arah) + bahu = 19 m (setengah lebar HALF = 9,5 m). Dulu 11 m (2 lajur).
+// journey.js (data rute dan medan) tetap memakai ROAD.half lama; di sini medan diratakan selebar HALF lewat groundHeight().
+export const HALF = 9.5;
+const LANE_EDGE = 7.5; // tepi lajur (garis tepi putih); sisanya (HALF - LANE_EDGE) = bahu jalan
+const LANE_MID = 3.75; // garis pemisah lajur searah (putus-putus)
+
 // Pelebaran jalan di awal rute: jalan raya hotel selebar 34,5 m (setengah lebar 17,25 m) menyempit mulus menjadi jalan perjalanan
-// (ROAD.half) sepanjang FLARE.s1 meter, seperti jalan sungguhan (bukan lompatan lebar yang menempel). Tanah dan aspal ikut rata.
+// (HALF) sepanjang FLARE.s1 meter, seperti jalan sungguhan (bukan lompatan lebar yang menempel).
 export const FLARE = Object.freeze({ s1: 90, half: 17.25, shoulder: 3.5 });
-/** Setengah lebar aspal (termasuk bahu) pada jarak s dari awal rute. */
+/** Setengah lebar aspal (termasuk bahu) pada jarak s dari awal rute; tidak pernah lebih sempit dari HALF. */
 export const flareHalf = (s) => {
   const t = clamp(s / FLARE.s1, 0, 1);
-  return FLARE.half + (ROAD.half - FLARE.half) * t * t * (3 - 2 * t);
+  return FLARE.half + (HALF - FLARE.half) * t * t * (3 - 2 * t);
 };
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
@@ -95,13 +101,13 @@ function sign(parent, tex, fallback, w, h, x, y, z, ry) {
 }
 
 const STRIPS = [ // [lateral kiri-, lateral kiri+, warna, tinggi]
-  [-ROAD.half, -3.75, 0x4a4b4d, 0.03],
-  [-3.75, 3.75, 0x2b2c2f, 0.03],
-  [3.75, ROAD.half, 0x4a4b4d, 0.03],
+  [-HALF, -LANE_EDGE, 0x4a4b4d, 0.03],
+  [-LANE_EDGE, LANE_EDGE, 0x2b2c2f, 0.03],
+  [LANE_EDGE, HALF, 0x4a4b4d, 0.03],
   [-0.2, -0.06, 0xe0b020, 0.045],
   [0.06, 0.2, 0xe0b020, 0.045],
-  [-3.8, -3.65, 0xe8e8e0, 0.045],
-  [3.65, 3.8, 0xe8e8e0, 0.045],
+  [-LANE_EDGE - 0.08, -LANE_EDGE + 0.08, 0xe8e8e0, 0.045],
+  [LANE_EDGE - 0.08, LANE_EDGE + 0.08, 0xe8e8e0, 0.045],
 ];
 
 /** Pembangun dunia perjalanan untuk satu rute. */
@@ -133,10 +139,9 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
     return false;
   };
 
-  /** Tinggi tanah di (x, z); di awal rute diratakan selebar aspal pelebaran supaya aspal tidak terkubur atau melayang di atas tanah. */
+  /** Tinggi tanah di (x, z), diratakan selebar aspal (HALF, dan pelebaran di awal rute) supaya aspal tidak terkubur atau melayang di atas tanah. */
   function groundHeight(x, z, r) {
     const y = terrainHeight(j, x, z, r);
-    if (r.s > FLARE.s1 + 24) return y;
     const f = frameAt(j, r.s);
     const fh = flareHalf(r.s);
     const w = 1 - smooth(fh + 0.5, fh + ROAD.embank, Math.abs(r.d));
@@ -177,7 +182,7 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
       const v = noise2(pos[k * 3] / 9, pos[k * 3 + 2] / 9, j.spec.seed);
       let c = mix(zoneTint(seg), j.spec.tint, 0.35).lerp(new THREE.Color(0x2f5a2a), v * 0.5);
       c = c.lerp(new THREE.Color(0x8b6b4a), smooth(0.18, 0.45, steep) * 0.9); // tebing potongan: tanah dan batu
-      const half = r.s <= FLARE.s1 + 24 ? flareHalf(r.s) : ROAD.half;
+      const half = flareHalf(r.s);
       c = c.lerp(new THREE.Color(0x77756c), 1 - smooth(half + 0.4, half + 2.2, Math.abs(r.d))); // bahu kerikil
       col[k * 3] = c.r;
       col[k * 3 + 1] = c.g;
@@ -206,8 +211,7 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
       const seg = segmentAt(j, r.s);
       const dens = { utama: 0.35, berkelok: 0.8, bukit: 0.65, premium: 0.4, kedatangan: 0.3 }[seg.id];
       if (rand() > dens * (0.5 + noise2(x / 60, z / 60, j.spec.seed + 7))) continue;
-      if (Math.abs(r.d) < ROAD.half + 4) continue;
-      if (r.s <= FLARE.s1 + 24 && Math.abs(r.d) < flareHalf(r.s) + 4) continue; // jangan menanam pohon di atas aspal pelebaran
+      if (Math.abs(r.d) < flareHalf(r.s) + 4) continue; // jangan menanam pohon di atas aspal (termasuk pelebaran)
       if (r.s > j.length - 40 || r.s < GATE_S + 5) { if (Math.abs(r.d) < 40) continue; }
       const y = groundHeight(x, z, r);
       const slope = Math.max(Math.abs(terrainHeight(j, x + 2, z) - y), Math.abs(terrainHeight(j, x, z + 2) - y)) / 2;
@@ -263,38 +267,43 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
     road.receiveShadow = shadows;
     g.add(road);
 
-    // pagar pengaman di sisi luar tikungan, rambu chevron, lampu jalan
+    // pagar pengaman di sisi luar tikungan, rambu chevron, lampu jalan, garis pemisah lajur putus-putus
     const rails = [];
     const posts = [];
     const chev = [];
     const poles = [];
     const lampP = [];
     const lampH = [];
+    const dashes = [];
     for (let s = s0; s < s1; s += 4) {
       const f = frameAt(j, s);
       const seg = segmentAt(j, s);
       const L = lat(f.heading);
       const k = f.curvature;
       const inBridge = bridgeAt(j, s);
+      if (Math.round(s / 4) % 3 === 0) {
+        for (const sd of [-1, 1]) dashes.push({ x: f.x + L.x * sd * LANE_MID, y: f.y + 0.06, z: f.z + L.z * sd * LANE_MID, sx: 0.15, sy: 0.02, sz: 4.5, ry: f.heading });
+      }
       const sides = inBridge ? [-1, 1] : Math.abs(k) > 1 / 170 ? [-Math.sign(k)] : [];
       for (const sd of sides) {
-        const d = sd * (ROAD.half + 0.7);
+        const d = sd * (HALF + 0.7);
         rails.push({ x: f.x + L.x * d, y: f.y + 0.75, z: f.z + L.z * d, sx: 0.12, sy: 0.32, sz: 4.1, ry: f.heading, color: 0xd9dcdf });
         posts.push({ x: f.x + L.x * d, y: f.y + 0.4, z: f.z + L.z * d, sx: 0.14, sy: 0.9, sz: 0.14, ry: f.heading });
       }
       if (!inBridge && Math.abs(k) > 1 / 85 && Math.round(s / 4) % 6 === 0) {
-        const d = -Math.sign(k) * (ROAD.half + 1.9);
+        const d = -Math.sign(k) * (HALF + 1.9);
         poles.push({ x: f.x + L.x * d, y: f.y + 0.9, z: f.z + L.z * d, sx: 0.08, sy: 1.8, sz: 0.08 });
         chev.push({ x: f.x + L.x * d, y: f.y + 1.9, z: f.z + L.z * d, sx: 0.95, sy: 0.85, sz: 0.06, ry: f.heading, color: 0xf2c200 });
       }
       if (['utama', 'premium', 'kedatangan'].includes(seg.id) && Math.round(s / 4) % 10 === 0 && !inBridge) {
         for (const sd of [-1, 1]) {
-          const d = sd * (ROAD.half + 2.4);
+          const d = sd * (HALF + 2.4);
           lampP.push({ x: f.x + L.x * d, y: f.y + 3.4, z: f.z + L.z * d, sx: 0.14, sy: 6.8, sz: 0.14 });
           lampH.push({ x: f.x + L.x * (d - sd * 0.9), y: f.y + 6.75, z: f.z + L.z * (d - sd * 0.9), sx: 0.5, sy: 0.18, sz: 0.5, ry: f.heading });
         }
       }
     }
+    boxes(g, dashes, mats.white);
     boxes(g, rails, mats.steel);
     boxes(g, posts, mats.post);
     boxes(g, poles, mats.post);
@@ -315,8 +324,8 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
     const col = [];
     const idx = [];
     let v = 0;
-    const shoulderW = (s) => ROAD.shoulder + (FLARE.shoulder - ROAD.shoulder) * ((flareHalf(s) - ROAD.half) / (FLARE.half - ROAD.half));
-    const laneEdge = (s) => Math.max(ROAD.half, flareHalf(s) - shoulderW(s)); // tepi lajur (awal bahu)
+    const shoulderW = (s) => (HALF - LANE_EDGE) + (FLARE.shoulder - (HALF - LANE_EDGE)) * ((flareHalf(s) - HALF) / (FLARE.half - HALF));
+    const laneEdge = (s) => Math.max(HALF, flareHalf(s) - shoulderW(s)); // tepi lajur pelebaran (awal bahu)
     const ribbon = (sd, lo, hi, color, dy) => {
       const base = v;
       const cc = new THREE.Color(color);
@@ -340,9 +349,9 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
       }
     };
     for (const sd of [-1, 1]) {
-      ribbon(sd, () => ROAD.half, laneEdge, 0x2a2c31, 0.03); // aspal lajur tambahan
+      ribbon(sd, () => HALF, laneEdge, 0x2a2c31, 0.03); // aspal lajur tambahan
       ribbon(sd, laneEdge, flareHalf, 0x3b3d43, 0.028); // bahu
-      ribbon(sd, (s) => Math.max(ROAD.half, laneEdge(s) - 0.2), laneEdge, 0xe8e8e0, 0.045); // garis tepi putih
+      ribbon(sd, (s) => Math.max(HALF, laneEdge(s) - 0.2), laneEdge, 0xe8e8e0, 0.045); // garis tepi putih
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -367,11 +376,11 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
       g.position.set(f.x, f.y, f.z);
       g.rotation.y = f.heading;
       const items = [
-        { x: 0, y: -0.35, z: 0, sx: ROAD.half * 2 + 1.6, sy: 0.7, sz: len, color: 0x9a948a },
-        { x: ROAD.half + 0.5, y: 0.55, z: 0, sx: 0.4, sy: 1.1, sz: len, color: 0xcfc6b0 },
-        { x: -ROAD.half - 0.5, y: 0.55, z: 0, sx: 0.4, sy: 1.1, sz: len, color: 0xcfc6b0 },
+        { x: 0, y: -0.35, z: 0, sx: HALF * 2 + 1.6, sy: 0.7, sz: len, color: 0x9a948a },
+        { x: HALF + 0.5, y: 0.55, z: 0, sx: 0.4, sy: 1.1, sz: len, color: 0xcfc6b0 },
+        { x: -HALF - 0.5, y: 0.55, z: 0, sx: 0.4, sy: 1.1, sz: len, color: 0xcfc6b0 },
       ];
-      for (const sx of [-1, 1]) for (const sz of [-1, 1]) items.push({ x: sx * 3.4, y: (wl - f.y) / 2 - 0.7, z: sz * (len / 2 - 6), sx: 1.5, sy: f.y - wl - 0.7, sz: 1.5, color: 0x8d877c });
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) items.push({ x: sx * 6.5, y: (wl - f.y) / 2 - 0.7, z: sz * (len / 2 - 6), sx: 1.8, sy: f.y - wl - 0.7, sz: 1.8, color: 0x8d877c });
       boxes(g, items, std(0xffffff), { cast: false });
       const w = new THREE.Mesh(new THREE.PlaneGeometry(240, 120), mats.water);
       w.rotation.x = -Math.PI / 2;
@@ -387,7 +396,7 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
       for (let s = e.s0 - 60; s <= e.s1 + 60; s += 20) {
         const f = frameAt(j, s);
         const L = lat(f.heading);
-        for (const d of [e.side * (ROAD.half + 4), e.side * (ROAD.half + 175)]) pos.push(f.x + L.x * d, wl, f.z + L.z * d);
+        for (const d of [e.side * (HALF + 4), e.side * (HALF + 175)]) pos.push(f.x + L.x * d, wl, f.z + L.z * d);
         if (v) idx.push(v - 2, v, v - 1, v - 1, v, v + 1);
         v += 2;
       }
@@ -403,7 +412,7 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
     for (const e of eventsOf(j, 'junction')) {
       const f = frameAt(j, e.s - 26);
       const L = lat(f.heading);
-      const d = (ROAD.half + 3.2) * e.side * -1;
+      const d = (HALF + 3.2) * e.side * -1;
       const g = new THREE.Group();
       g.position.set(f.x + L.x * d, f.y, f.z + L.z * d);
       g.rotation.y = f.heading;
@@ -418,37 +427,39 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
 
   // ------------------------------------------------------------ gerbang utama (kompleks: fondasi, sayap tebal, tiang, kanopi, pos jaga, air mancur)
   // Tidak ada lagi hamparan paving pasir di atas jalan: dulu paving 120 m menutupi aspal sehingga jalan tampak "mundur" dan menempel.
-  // Sekarang aspal jalan (dan pelebarannya) terus menerus lewat bawah gerbang.
+  // Sekarang aspal jalan (dan pelebarannya) terus menerus lewat bawah gerbang. Gerbang dilebarkan mengikuti jalan 19 m.
   function buildGate() {
     const f = frameAt(j, GATE_S);
     const g = new THREE.Group();
     g.position.set(f.x, f.y, f.z);
     g.rotation.y = f.heading;
-    const H = ROAD.half;
+    const H = HALF;
     const wood = 0x5a3e28;
     const sand = 0xe3d5b3;
+    const PIL = 14.8; // setengah jarak antar tiang gerbang
+    const WING = 24.5; // pusat sayap
     const items = [];
     const slats = [];
     for (const sd of [-1, 1]) {
-      items.push({ x: sd * 19.5, y: 2.9, z: 0, sx: 15, sy: 6.4, sz: 6, color: sand });
-      items.push({ x: sd * 19.5, y: -1.5, z: 0, sx: 16.2, sy: 4.2, sz: 7.2, color: 0x7d6e55 }); // fondasi: menenggelamkan sayap ke tanah
-      items.push({ x: sd * 19.5, y: 6.25, z: 0, sx: 15.8, sy: 0.4, sz: 6.8, color: wood });
-      items.push({ x: sd * 10.3, y: 5.2, z: 0, sx: 1.9, sy: 10.4, sz: 1.9, color: 0xeadfc2 }); // tiang
-      items.push({ x: sd * 10.3, y: -0.4, z: 0, sx: 2.8, sy: 1.6, sz: 2.8, color: 0x8d7e63 });
-      for (let q = -6; q <= 6; q++) slats.push({ x: sd * 19.5 + q * 1.05, y: 2.9, z: -3.1, sx: 0.5, sy: 4.4, sz: 0.25, color: 0x4a3a28 });
-      items.push({ x: sd * 17.5, y: 0.5, z: -9, sx: 9.5, sy: 1, sz: 5.4, color: sand }); // kolam air mancur
-      items.push({ x: sd * 17.5, y: 1.05, z: -9, sx: 8.6, sy: 0.12, sz: 4.5, color: 0x3aa6c4 });
-      items.push({ x: sd * 17.5, y: 2.3, z: -9, sx: 0.28, sy: 2.6, sz: 0.28, color: 0xdff6ff });
+      items.push({ x: sd * WING, y: 2.9, z: 0, sx: 15, sy: 6.4, sz: 6, color: sand });
+      items.push({ x: sd * WING, y: -1.5, z: 0, sx: 16.2, sy: 4.2, sz: 7.2, color: 0x7d6e55 }); // fondasi: menenggelamkan sayap ke tanah
+      items.push({ x: sd * WING, y: 6.25, z: 0, sx: 15.8, sy: 0.4, sz: 6.8, color: wood });
+      items.push({ x: sd * PIL, y: 5.2, z: 0, sx: 1.9, sy: 10.4, sz: 1.9, color: 0xeadfc2 }); // tiang
+      items.push({ x: sd * PIL, y: -0.4, z: 0, sx: 2.8, sy: 1.6, sz: 2.8, color: 0x8d7e63 });
+      for (let q = -6; q <= 6; q++) slats.push({ x: sd * WING + q * 1.05, y: 2.9, z: -3.1, sx: 0.5, sy: 4.4, sz: 0.25, color: 0x4a3a28 });
+      items.push({ x: sd * (WING - 2), y: 0.5, z: -9, sx: 9.5, sy: 1, sz: 5.4, color: sand }); // kolam air mancur
+      items.push({ x: sd * (WING - 2), y: 1.05, z: -9, sx: 8.6, sy: 0.12, sz: 4.5, color: 0x3aa6c4 });
+      items.push({ x: sd * (WING - 2), y: 2.3, z: -9, sx: 0.28, sy: 2.6, sz: 0.28, color: 0xdff6ff });
     }
-    items.push({ x: 0, y: 10.9, z: 0, sx: 56, sy: 0.9, sz: 10, color: wood }); // kanopi
-    items.push({ x: 0, y: 11.5, z: 0, sx: 58, sy: 0.35, sz: 12, color: 0xcdbf9d });
+    items.push({ x: 0, y: 10.9, z: 0, sx: 66, sy: 0.9, sz: 10, color: wood }); // kanopi
+    items.push({ x: 0, y: 11.5, z: 0, sx: 68, sy: 0.35, sz: 12, color: 0xcdbf9d });
     items.push({ x: 0, y: 9.5, z: -4.9, sx: 15.2, sy: 3.4, sz: 0.4, color: 0xc9a24b }); // bingkai papan nama
-    items.push({ x: 8.2, y: 1.7, z: 1, sx: 2.6, sy: 3.4, sz: 5, color: 0x6b5a3c }); // pos jaga
-    items.push({ x: 8.2, y: 3.5, z: 1, sx: 3.4, sy: 0.3, sz: 5.8, color: wood });
-    items.push({ x: 8.2, y: 1.9, z: -1.55, sx: 2.2, sy: 1.6, sz: 0.1, color: 0x1b2a33 }); // kaca
+    items.push({ x: H + 2.7, y: 1.7, z: 1, sx: 2.6, sy: 3.4, sz: 5, color: 0x6b5a3c }); // pos jaga
+    items.push({ x: H + 2.7, y: 3.5, z: 1, sx: 3.4, sy: 0.3, sz: 5.8, color: wood });
+    items.push({ x: H + 2.7, y: 1.9, z: -1.55, sx: 2.2, sy: 1.6, sz: 0.1, color: 0x1b2a33 }); // kaca
     boxes(g, items, std(0xffffff), { cast: shadows, receive: shadows });
     boxes(g, slats, std(0xffffff));
-    boxes(g, [{ x: 0, y: 10.3, z: -3.6, sx: 40, sy: 0.12, sz: 0.3, color: 0xffd98a }], basic(0xffffff)); // lampu hangat di bawah kanopi
+    boxes(g, [{ x: 0, y: 10.3, z: -3.6, sx: 50, sy: 0.12, sz: 0.3, color: 0xffd98a }], basic(0xffffff)); // lampu hangat di bawah kanopi
     // palem (di luar tepi aspal pelebaran)
     const tr = [];
     const cr = [];
@@ -462,13 +473,14 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
     boxes(g, cr, mats.crown, { geometry: CROWN });
     // palang (terbuka), papan nama
     for (const sd of [-1, 1]) {
+      const px = sd * (H + 1.1);
       const post = new THREE.Mesh(BOX, std(0x2b2f33));
       post.scale.set(0.4, 1.1, 0.4);
-      post.position.set(sd * 6.6, 0.6, 0);
+      post.position.set(px, 0.6, 0);
       g.add(post);
       const arm = new THREE.Mesh(BOX, std(0xd33b2c));
       arm.scale.set(3.6, 0.14, 0.14);
-      arm.position.set(sd * 6.6 - sd * Math.cos(1.2) * 1.8, 1.15 + Math.sin(1.2) * 1.8, 0);
+      arm.position.set(px - sd * Math.cos(1.2) * 1.8, 1.15 + Math.sin(1.2) * 1.8, 0);
       arm.rotation.z = sd * 1.2;
       g.add(arm);
     }
