@@ -1,14 +1,14 @@
 // Tampilan 3D kokpit (THREE): roda setir yang berputar, tangan di setir, jam spidometer/RPM, tiga spion hidup (spion tengah dan dua samping).
 // Roda setir dipasang di semua mobil mewah (terlihat berputar dari luar juga); tangan, jam, dan spion hanya dibuat untuk mobil yang dikemudikan
 // dalam mode kabin. Spion = render ulang adegan ke tekstur kecil, satu spion per frame bergiliran (hemat HP); mati di kualitas rendah.
+// Tekstur tiap spion berrasio sama dengan kacanya dan kamera spion memakai rasio itu juga (dulu semua 2:1 sehingga gambar melar/gepeng dan buram).
 import * as THREE from 'three';
 import { clusterState, cockpitSpec, dialAngle, handPositions, localToWorld, wheelAngle } from './cockpit.js';
 
 const AX_X = new THREE.Vector3(1, 0, 0);
 const AX_Z = new THREE.Vector3(0, 0, 1);
 const AX_Y = new THREE.Vector3(0, 1, 0);
-const MIRROR_W = 192;
-const MIRROR_H = 96;
+const MIRROR_RT_H = 160; // tinggi tekstur spion (px); lebarnya mengikuti rasio kaca spion
 const SKIN = 0xc68a63;
 
 /** Roda setir: lingkar kulit + tiga jari-jari + hub; `spin.rotation.z` = putaran setir (wheelAngle). Dipasang miring seperti kolom setir. */
@@ -160,14 +160,15 @@ export function createCockpitRig(entry, { mirrors = true } = {}) {
   clusterMesh.quaternion.copy(facing(cl, spec.eye));
   group.add(clusterMesh);
 
-  // spion: tengah dan dua samping
+  // spion: tengah dan dua samping. fov = sudut pandang VERTIKAL; spion tengah lebar (3:1) jadi sudut vertikalnya kecil agar gambar tidak melar.
   const mirrorDefs = [
-    { cfg: spec.mirror, cam: { x: 0, y: 1.25, z: -car.spec.length / 2 + 0.3, yaw: 0, fov: 50 } },
-    ...spec.sides.map((s) => ({ cfg: s, cam: { x: s.side * (car.spec.width / 2 + 0.05), y: 1.0, z: spec.eye.z + 0.3, yaw: -s.side * 0.22, fov: 58 } })),
+    { cfg: spec.mirror, cam: { x: 0, y: 1.25, z: -car.spec.length / 2 + 0.3, yaw: 0, fov: 26 } },
+    ...spec.sides.map((s) => ({ cfg: s, cam: { x: s.side * (car.spec.width / 2 + 0.05), y: 1.0, z: spec.eye.z + 0.3, yaw: -s.side * 0.22, fov: 40 } })),
   ];
   const glassDark = keep(new THREE.MeshBasicMaterial({ color: 0x10141a }));
   const mirrorList = mirrorDefs.map(({ cfg, cam }) => {
-    const rt = mirrors ? keep(new THREE.WebGLRenderTarget(MIRROR_W, MIRROR_H)) : null;
+    const rtW = Math.max(64, Math.round((MIRROR_RT_H * cfg.w) / cfg.h)); // rasio tekstur = rasio kaca spion
+    const rt = mirrors ? keep(new THREE.WebGLRenderTarget(rtW, MIRROR_RT_H)) : null;
     const geo = keep(new THREE.PlaneGeometry(cfg.w, cfg.h));
     geo.scale(-1, 1, 1); // bayangan cermin: kiri-kanan terbalik
     const mat = rt ? keep(new THREE.MeshBasicMaterial({ map: rt.texture, side: THREE.DoubleSide })) : glassDark;
@@ -179,7 +180,7 @@ export function createCockpitRig(entry, { mirrors = true } = {}) {
     frame.quaternion.copy(mesh.quaternion);
     frame.translateZ(-0.004);
     group.add(frame, mesh);
-    return { mesh, rt, cam, camera: new THREE.PerspectiveCamera(cam.fov, MIRROR_W / MIRROR_H, 0.4, 900) };
+    return { mesh, rt, cam, camera: new THREE.PerspectiveCamera(cam.fov, cfg.w / cfg.h, 0.4, 900) };
   });
 
   let frameNo = 0;
