@@ -1,8 +1,15 @@
 // Perekat naik/turun/mengemudi mobil bersama (Fleet) untuk halaman mana pun (vila, hotel): satu kode, bukan salinan per halaman.
 // Tanpa THREE: tampilan mobil (vehicle-view.js) dan speedometer (hotel-ui.js) diterima dari pemanggil.
+//
+// Dua mode kontrol, ditentukan HUD yang diberikan:
+//  - HUD bertahap (punya hud.bind, yaitu car-hud.js): mesin harus dinyalakan, gigi dipilih (P/R/N/D), rem tangan, keluar hanya saat berhenti (car-state.js).
+//  - HUD lama (tanpa hud.bind): perilaku semula, pengemudi naik = langsung bisa jalan.
 
 import { gearFor, rpmFor } from './car-models.js';
 import { mergeControls } from './cockpit.js';
+import {
+  blockedReason, canLeave, createCarState, driveInput, hudModel, setIndicator, shift, startEngine, stopEngine, tickEngine, toggle, toggleHandbrake,
+} from './car-state.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -22,15 +29,28 @@ export function carControls(input) {
   return { throttle: clamp(-(input.z ?? 0), -1, 1), steer: clamp(-(input.x ?? 0), -1, 1) };
 }
 
+/** Pemain sedang meminta gas (pedal gas atau dorong ke atas/W). */
+export function wantsGas(rawInput, hud) {
+  return Math.max(hud?.pedals?.()?.gas ?? 0, carControls(rawInput).throttle) > 0;
+}
+
 /**
  * Kontrol final satu frame: joystick/keyboard (rawInput) digabung dengan HUD layar sentuh.
- * hud.pedals() = { gas, brake, reverse }, hud.steer() = penggeser setir -1..1 (kanan = +).
- * Tombol R ditahan = mundur; rem ditahan saat hampir berhenti juga = mundur.
+ * hud.pedals() = { gas, brake, reverse }, hud.steer() = setir -1..1 (kanan = +).
+ * Tanpa `state`: perilaku lama (tombol R ditahan = mundur; rem ditahan saat hampir berhenti juga = mundur).
+ * Dengan `state` (car-state.js): gigi menentukan arah gas; mesin mati, P, atau rem tangan = mobil tidak bergerak.
  */
-export function driveControls(rawInput, hud, speed = 0) {
+export function driveControls(rawInput, hud, speed = 0, state = null) {
   const pedals = hud?.pedals?.();
-  let ctl = mergeControls(carControls(rawInput), pedals);
   const slide = hud?.steer?.() ?? 0;
+  if (state) {
+    const base = carControls(rawInput);
+    const steer = slide ? carControls({ x: slide, z: 0 }).steer : base.steer;
+    const gas = Math.max(pedals?.gas ?? 0, base.throttle > 0 ? base.throttle : 0);
+    const brake = Boolean(pedals?.brake) || base.throttle < 0;
+    return driveInput(state, { gas, brake, steer, speed });
+  }
+  let ctl = mergeControls(carControls(rawInput), pedals);
   if (slide) ctl = { ...ctl, steer: carControls({ x: slide, z: 0 }).steer };
   if (pedals?.reverse) ctl = { ...ctl, throttle: -1, brake: false };
   else if (pedals?.brake && !pedals.gas && speed < 0.5) ctl = { ...ctl, throttle: -1, brake: false };
@@ -38,27 +58,68 @@ export function driveControls(rawInput, hud, speed = 0) {
 }
 
 /**
- * fleet: Fleet; view: createVehicleView(); hud: mountSpeedHud(); exit({x,z}) -> {x,z} titik turun yang sah (bukan di dalam tembok);
+ * fleet: Fleet; view: createVehicleView(); hud: mountCarHud() (atau HUD lama); exit({x,z}) -> {x,z} titik turun yang sah (bukan di dalam tembok);
  * camState: { yaw, dist, pitch } kamera orbit; isDragging(): pemain sedang/baru saja memutar kamera sendiri; toast(text).
  */
 export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p, camState = null, isDragging = () => false, isCabin = () => false, toast = () => {} }) {
+  const geared = typeof hud?.bind === 'function';
+  const states = new WeakMap(); // mobil -> keadaan pengemudi (car-state.js); hanya dipakai pada mode bertahap
+  const stateOf = (car) => {
+    let s = states.get(car);
+    if (!s) {
+      s = createCarState();
+      states.set(car, s);
+    }
+    return s;
+  };
+  const resetState = (car) => states.set(car, createCarState());
+  let lastCar = null; // mobil yang dikemudikan pada frame sebelumnya (keadaan dibersihkan saat tidak lagi mengemudi)
+  let clock = 0;
+  let lastWarn = -1e9;
+
+  /** Perintah dari HUD: { type: 'engine'|'gear'|'handbrake'|'lights'|'hazard'|'ac'|'belt'|'indicator', value }. Hanya pengemudi. */
+  function act({ type, value } = {}) {
+    const car = fleet.driving;
+    if (!car || !geared) return;
+    const st = stateOf(car);
+    let r;
+    if (type === 'engine') r = st.eng === 'off' ? startEngine(st, car.speed) : stopEngine(st, car.speed);
+    else if (type === 'gear') r = shift(st, value, car.speed);
+    else if (type === 'handbrake') r = toggleHandbrake(st);
+    else if (type === 'indicator') r = setIndicator(st, value);
+    else r = toggle(st, type);
+    if (r?.msg) toast(r.msg);
+  }
+  hud?.bind?.(act);
+
   /** Naik ke kursi kosong terdekat. Mengembalikan true bila berhasil. */
   function board(me) {
     const r = fleet.board(me);
     if (!r) return false;
+    if (r.seat === 0) resetState(r.car);
     if (camState) {
       camState.dist = Math.max(camState.dist, 9); // kamera menjauh supaya mobil terlihat
       camState.pitch = Math.min(camState.pitch, 0.5);
     }
-    toast(r.seat === 0 ? 'Kamu mengemudi: geser setir di kiri, pedal gas dan rem di kanan, tombol R untuk mundur (atau W/S/A/D). E = turun.' : 'Kamu penumpang. E = turun.');
+    if (r.seat !== 0) toast('Kamu penumpang. E = turun.');
+    else if (geared) toast('Kamu di kursi pengemudi (mengemudi): tekan Nyalakan untuk menghidupkan mesin, lalu pilih gigi D. E = turun.');
+    else toast('Kamu mengemudi: geser setir di kiri, pedal gas dan rem di kanan, tombol R untuk mundur (atau W/S/A/D). E = turun.');
     return true;
   }
 
-  /** Turun di sisi pintu; titik turun digeser bila mengenai penghalang. */
-  function leave(me) {
+  /** Turun di sisi pintu; titik turun digeser bila mengenai penghalang. Mode bertahap: hanya saat mobil sudah berhenti (force = lewati pemeriksaan). */
+  function leave(me, { force = false } = {}) {
+    const mine = fleet.mine;
+    if (!mine) return false;
+    const car = fleet.cars[mine.index];
+    if (!force && geared && !canLeave(car.speed)) {
+      toast('Hentikan mobil dulu sebelum keluar.');
+      return false;
+    }
     audio?.horn(false);
     const out = fleet.leave();
     if (!out) return false;
+    if (mine.seat === 0) resetState(car);
     const p = exit({ x: out.x, z: out.z });
     me.x = p.x;
     me.z = p.z;
@@ -70,7 +131,7 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
 
   /** Sambungkan armada ke transport jaringan (LiveKit: sendCar/'car'). Tanpa transport itu mobil tetap bisa dipakai sendiri. */
   function wire(net, me) {
-    if (fleet.mine) leave(me); // naik sebelum tersambung: turun dulu karena id pemain berganti
+    if (fleet.mine) leave(me, { force: true }); // naik sebelum tersambung: turun dulu karena id pemain berganti
     fleet.selfId = net.id;
     fleet.onEvicted = () => toast('Kursi itu sudah dipakai orang lain.');
     fleet.onHorn = (car, local) => { if (!local) audio?.honkAt(Math.hypot(car.x - me.x, car.z - me.z)); };
@@ -87,8 +148,22 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
    */
   function step(me, { delta, rawInput }) {
     const driving = fleet.driving;
+    if (lastCar && lastCar !== driving) resetState(lastCar); // turun, tergusur, atau pemain keluar: keadaan pengemudi dibersihkan
+    lastCar = driving;
+    clock += delta;
+    const st = geared && driving ? stateOf(driving) : null;
     if (driving) {
-      fleet.drive(driveControls(rawInput, hud, driving.speed), delta);
+      if (st) {
+        if (tickEngine(st, delta)) toast('Mesin menyala. Pilih gigi D untuk maju atau R untuk mundur.');
+        const why = wantsGas(rawInput, hud) ? blockedReason(st) : '';
+        if (why && clock - lastWarn > 2.5) {
+          lastWarn = clock;
+          toast(why);
+        }
+        fleet.drive(driveControls(rawInput, hud, driving.speed, st), delta);
+      } else {
+        fleet.drive(driveControls(rawInput, hud, driving.speed), delta);
+      }
       if (driving.hit > 6) toast('Tabrakan!');
       if (camState && !isDragging()) {
         // kamera pelan-pelan berputar ke belakang mobil (konvensi kamera: yaw = heading + PI berarti kamera di belakang)
@@ -98,8 +173,10 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     }
     fleet.update(delta);
     view.update(delta);
-    hud.set(driving ? driving.speed * 3.6 : null, driving ? hudInfo(driving) : null, Boolean(driving && isCabin()));
-    audio?.engine(driving);
+    const info = driving ? hudInfo(driving) : null;
+    hud.set(driving ? driving.speed * 3.6 : null, info, Boolean(driving && isCabin()));
+    hud.view?.(driving && st ? hudModel(st, driving.speed, info?.gear) : null);
+    audio?.engine(driving && (!st || st.eng !== 'off') ? driving : null); // mesin mati = tanpa suara mesin
     const sit = fleet.sitId;
     const seatPose = sit !== null ? fleet.seatPose(sit) : null;
     if (!seatPose) return { riding: false, sit: null, facing: null };
@@ -118,5 +195,5 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     return true;
   }
 
-  return { board, leave, wire, step, horn };
+  return { board, leave, wire, step, horn, act, state: () => (fleet.driving && geared ? stateOf(fleet.driving) : null) };
 }
