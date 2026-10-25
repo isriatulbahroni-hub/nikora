@@ -3,6 +3,9 @@
 // dan dipasang pada poros putar supaya bisa berputar dan membelok; bila namanya tidak dikenali, mobil tetap tampil tanpa roda berputar.
 // Roda setir asli model dikenali dari nama node (steer/setir/kemudi), dipasang pada poros putar, dan posisinya dilaporkan supaya kursi pengemudi,
 // tangan, dan kamera kabin berada tepat di setir itu (vehicle-view.js); setir buatan kode hanya dipasang bila model tidak punya setir sendiri.
+// Poros putar setir dihitung dari bentuk lingkarnya (bidang rata terbaik), bukan dari perkiraan kotak, dan bagian kecil tak bernama setir yang menempel
+// di bidang itu (hub, lambang, tombol) ikut berputar: dulu setir terlihat "patah" saat dibelokkan karena porosnya miring dan hub tertinggal.
+// Material kaca (nama mengandung glass/kaca/window/windshield) dibuat bening sederhana (tanpa transmission) supaya pandangan dari kabin jernih.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
@@ -12,6 +15,11 @@ const WHEEL_NAME = /wheel|roda|tyre|tire|velg|(?<!t)rim/i;
 const NOT_WHEEL = /steer|setir|kemudi|arch|well|fender|caliper|kaliper|cover|light|lamp/i;
 const STEER_NAME = /steer|setir|kemudi/i;
 const NOT_STEER = /column|kolom|stalk|tuas|paddle|shaft|lock|ctrl|control|wiper/i; // bagian yang tidak ikut berputar bersama setir
+const NOT_SPIN_PART = /column|kolom|stalk|tuas|paddle|shaft|lock|ctrl|control|wiper|dash|gauge|cluster|screen|display|speedo|needle|dial|ipad|vent|panel/i; // bukan bagian setir walau dekat
+const SPIN_SLAB = 0.06; // m: bagian tak bernama ikut berputar bila jaraknya dari bidang setir tidak lebih dari ini
+const GLASS_NAME = /glass|kaca|window|windshield|windscreen|jendela/i;
+const NOT_GLASS = /frame|trim|seal|rubber|karet|wiper|mirror|cermin|spion|cover/i;
+const GLASS_OPACITY = 0.28;
 const asArray = (m) => (Array.isArray(m) ? m : [m]);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -82,9 +90,87 @@ function rigWheels(root, model) {
   return wheels;
 }
 
+/** Titik-titik simpul (kerangka root) dari semua mesh di bawah `nodes`, dijarangkan hingga paling banyak ~cap titik. */
+function worldPoints(nodes, cap = 4000) {
+  const meshes = [];
+  let total = 0;
+  for (const n of nodes) {
+    n.traverse((m) => {
+      const pos = m.isMesh ? m.geometry?.attributes?.position : null;
+      if (!pos) return;
+      meshes.push(m);
+      total += pos.count;
+    });
+  }
+  const step = Math.max(1, Math.ceil(total / cap));
+  const pts = [];
+  for (const m of meshes) {
+    const pos = m.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i += step) pts.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld));
+  }
+  return pts;
+}
+
+/**
+ * Bidang rata terbaik dari sekumpulan titik (analisis komponen utama, eigen Jacobi 3x3): sumbu = arah paling "tipis" (normal lingkar setir,
+ * dibuat menghadap +z), pusat dan jari-jari = lingkaran terkecil yang membungkus titik pada bidang itu. null bila titik terlalu sedikit atau tidak cukup rata.
+ */
+function ringFrame(points) {
+  const n = points.length;
+  if (n < 12) return null;
+  const mean = new THREE.Vector3();
+  for (const p of points) mean.add(p);
+  mean.divideScalar(n);
+  const a = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  for (const p of points) {
+    const d = [p.x - mean.x, p.y - mean.y, p.z - mean.z];
+    for (let i = 0; i < 3; i++) for (let j = i; j < 3; j++) a[i][j] += d[i] * d[j];
+  }
+  for (let i = 0; i < 3; i++) for (let j = 0; j < i; j++) a[i][j] = a[j][i];
+  const v = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  for (let sweep = 0; sweep < 30; sweep++) {
+    if (Math.abs(a[0][1]) + Math.abs(a[0][2]) + Math.abs(a[1][2]) < 1e-12) break;
+    for (const [p, q] of [[0, 1], [0, 2], [1, 2]]) {
+      if (Math.abs(a[p][q]) < 1e-15) continue;
+      const theta = (a[q][q] - a[p][p]) / (2 * a[p][q]);
+      const t = (theta >= 0 ? 1 : -1) / (Math.abs(theta) + Math.sqrt(theta * theta + 1));
+      const c = 1 / Math.sqrt(t * t + 1);
+      const s = t * c;
+      for (let k = 0; k < 3; k++) { const x = a[k][p]; const y = a[k][q]; a[k][p] = c * x - s * y; a[k][q] = s * x + c * y; }
+      for (let k = 0; k < 3; k++) { const x = a[p][k]; const y = a[q][k]; a[p][k] = c * x - s * y; a[q][k] = s * x + c * y; }
+      for (let k = 0; k < 3; k++) { const x = v[k][p]; const y = v[k][q]; v[k][p] = c * x - s * y; v[k][q] = s * x + c * y; }
+    }
+  }
+  const ev = [a[0][0], a[1][1], a[2][2]];
+  const order = [0, 1, 2].sort((i, j) => ev[i] - ev[j]);
+  if (!(ev[order[0]] <= 0.3 * ev[order[1]])) return null; // tidak cukup rata untuk disebut lingkar
+  const col = (m) => new THREE.Vector3(v[0][m], v[1][m], v[2][m]).normalize();
+  const axis = col(order[0]);
+  if (axis.z < 0) axis.negate();
+  const u = col(order[2]);
+  const w = new THREE.Vector3().crossVectors(axis, u).normalize();
+  let minU = Infinity;
+  let maxU = -Infinity;
+  let minV = Infinity;
+  let maxV = -Infinity;
+  const d = new THREE.Vector3();
+  for (const p of points) {
+    d.copy(p).sub(mean);
+    const pu = d.dot(u);
+    const pv = d.dot(w);
+    if (pu < minU) minU = pu;
+    if (pu > maxU) maxU = pu;
+    if (pv < minV) minV = pv;
+    if (pv > maxV) maxV = pv;
+  }
+  const center = mean.clone().addScaledVector(u, (minU + maxU) / 2).addScaledVector(w, (minV + maxV) / 2);
+  return { axis, center, radius: Math.max(maxU - minU, maxV - minV) / 2 };
+}
+
 /**
  * Cari roda setir asli di model: node (paling atas) bernama steer/setir/kemudi yang pusatnya di dalam kabin dan lebarnya sebesar roda setir (0,2-0,7 m).
- * Semua bagiannya dipasang pada satu poros yang miring seperti setirnya, supaya `spin.rotation.z` memutar setir pada porosnya.
+ * Semua bagiannya dipasang pada satu poros yang tegak lurus bidang lingkar setir, supaya `spin.rotation.z` memutar setir tepat pada porosnya
+ * (tanpa goyang/patah), dan bagian kecil tak bernama setir yang menempel di bidang itu (hub, lambang, tombol) ikut berputar.
  * Mengembalikan { spin, center (kerangka mobil, x + = kiri), radius, tilt (rad, sama tanda dengan cockpitSpec.wheel.tilt), names } atau null bila tidak ada.
  */
 function rigSteering(root, model) {
@@ -100,6 +186,7 @@ function rigSteering(root, model) {
   const box = new THREE.Box3();
   const part = new THREE.Box3();
   const c = new THREE.Vector3();
+  const sz = new THREE.Vector3();
   const nodes = [];
   for (const o of found) {
     part.setFromObject(o);
@@ -112,17 +199,60 @@ function rigSteering(root, model) {
   if (!nodes.length) return null;
   const size = box.getSize(new THREE.Vector3());
   if (size.x < 0.2 || size.x > 0.7) return null; // bukan seukuran roda setir
-  const center = box.getCenter(new THREE.Vector3());
-  const tilt = -clamp(Math.atan2(Math.max(0, size.z - 0.03), size.y), 0, 0.8); // bagian atas setir condong ke arah pengemudi
+  let center = box.getCenter(new THREE.Vector3());
+  let radius = size.x / 2;
+  let tilt = -clamp(Math.atan2(Math.max(0, size.z - 0.03), size.y), 0, 0.8); // perkiraan kasar dari kotak (cadangan)
+  let axis = null;
+  const frame = ringFrame(worldPoints(nodes));
+  if (frame && frame.radius >= 0.1 && frame.radius <= 0.35 && frame.center.distanceTo(center) < 0.15) {
+    axis = frame.axis;
+    center = frame.center;
+    radius = frame.radius;
+    tilt = clamp(Math.atan2(-axis.y, axis.z), -0.8, 0); // putaran di sumbu x yang setara dengan miring setir (dipakai kokpit untuk tangan)
+  }
+
+  // bagian kecil tak bernama setir yang menempel di bidang setir (hub, lambang, tombol) ikut berputar
+  const extras = [];
+  if (axis) {
+    const taken = new Set(nodes);
+    const under = (o, test) => { for (let p = o.parent; p; p = p.parent) if (test(p)) return true; return false; };
+    const d = new THREE.Vector3();
+    model.traverse((o) => {
+      if (!o.isMesh || taken.has(o) || under(o, (p) => taken.has(p)) || NOT_SPIN_PART.test(o.name || '') || under(o, (p) => NOT_SPIN_PART.test(p.name || ''))) return;
+      part.setFromObject(o);
+      if (part.isEmpty()) return;
+      part.getCenter(c);
+      part.getSize(sz);
+      d.copy(c).sub(center);
+      const along = d.dot(axis);
+      const inPlane = Math.sqrt(Math.max(0, d.lengthSq() - along * along));
+      if (Math.abs(along) <= SPIN_SLAB && inPlane <= radius * 1.05 && Math.max(sz.x, sz.y, sz.z) <= radius * 2.2) extras.push(o);
+    });
+  }
+
   const outer = new THREE.Group();
   outer.position.copy(center);
-  outer.rotation.x = tilt;
+  if (axis) outer.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), axis);
+  else outer.rotation.x = tilt;
   const spin = new THREE.Group();
   outer.add(spin);
   root.add(outer);
   root.updateMatrixWorld(true);
-  for (const o of nodes) spin.attach(o);
-  return { spin, center, radius: size.x / 2, tilt, names: nodes.map((o) => o.name) };
+  for (const o of [...nodes, ...extras]) spin.attach(o);
+  return { spin, center, radius, tilt, names: nodes.map((o) => o.name), extras: extras.map((o) => o.name) };
+}
+
+/** Bahan kaca dibuat bening sederhana: tanpa transmission (buram dan hijau di HP), agak transparan, tidak menulis kedalaman, pantulan lingkungan lemah. */
+function tameGlass(m) {
+  if ('transmission' in m && m.transmission > 0) {
+    m.transmission = 0;
+    if ('thickness' in m) m.thickness = 0;
+  }
+  m.transparent = true;
+  m.opacity = Math.min(m.opacity ?? 1, GLASS_OPACITY);
+  m.depthWrite = false;
+  if ('envMapIntensity' in m) m.envMapIntensity = 0.4;
+  m.needsUpdate = true;
 }
 
 /**
@@ -154,12 +284,17 @@ export function fitCar(scene, { length, yaw = 0, envMap = null }) {
     if (!o.isMesh) return;
     o.castShadow = true;
     o.receiveShadow = true;
-    if (!envMap) return;
     for (const m of asArray(o.material)) {
-      if (m && 'envMap' in m && !m.envMap) {
+      if (!m) continue;
+      if (envMap && 'envMap' in m && !m.envMap) {
         m.envMap = envMap;
         m.envMapIntensity = 1;
         m.needsUpdate = true;
+      }
+      const label = m.name || o.name || '';
+      if (GLASS_NAME.test(label) && !NOT_GLASS.test(label) && !NOT_GLASS.test(o.name || '')) {
+        tameGlass(m);
+        o.castShadow = false; // kaca tidak menggelapkan bagian dalam kabin
       }
     }
   });
