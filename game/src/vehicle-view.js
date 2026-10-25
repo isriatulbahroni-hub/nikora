@@ -4,6 +4,7 @@
 // dan roda setir ASLI model itu (dikenali dari namanya) ikut berputar. Setir buatan kode (lingkar torus penuh) hanya dipasang bila model tidak punya setir sendiri
 // (dulu selalu dipasang, jadi setir tampil dobel). Posisi setir asli juga menentukan kursi pengemudi, tangan, dan kamera kabin (alignSpecToWheel);
 // mode kabin (tangan, jam, spion) juga berlaku untuk mobil GLB.
+// Belok roda depan mobil GLB dibatasi secara visual (GLB_STEER_VISUAL) supaya ban lebar tidak menembus lengkung roda/bodi saat setir diputar penuh.
 // Mobil tanpa model memakai sedan lama (villa-props.js). Kinematik mobil pemain lain diturunkan dari pose (tanpa protokol baru).
 import * as THREE from 'three';
 import { carGeometries } from './villa-props.js';
@@ -17,6 +18,7 @@ import { disposeObject, loadCarGlb } from './car-glb.js';
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const BASE = import.meta.env?.BASE_URL ?? '/';
 export const DOOR_OPEN_S = 1.6; // lama pintu terbuka setelah kursi berganti penghuni
+export const GLB_STEER_VISUAL = 0.3; // rad (~17 derajat): batas belok VISUAL roda depan mobil GLB; fisika/setir tetap memakai maxSteer penuh
 
 /** Sudut roda depan (rad, + = belok kiri) dari laju yaw: dipakai untuk mobil yang dikemudikan pemain lain. */
 export function steerFromYaw(yawRate, speed, wheelBase, max = 0.5) {
@@ -296,9 +298,10 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     const { car } = e;
     const dt = followKinematics(e, delta, mine);
     if (e.steering) e.steering.spin.rotation.z = wheelAngle(e.steer, car.spec.maxSteer); // roda setir (asli model atau buatan kode) ikut berputar
+    const turn = clamp(e.steer, -GLB_STEER_VISUAL, GLB_STEER_VISUAL); // ban lebar tidak menembus lengkung roda saat setir penuh
     for (const w of e.wheels) {
       w.pivot.rotation.x = e.spinAngle;
-      if (w.front) w.pivot.rotation.y = e.steer;
+      if (w.front) w.pivot.rotation.y = turn;
     }
     // suara pintu saat kursi berganti penghuni (model GLB tidak punya pintu yang bisa digerakkan)
     car.seats.forEach((s, i) => {
