@@ -27,8 +27,10 @@ const MAX_STEP_M = 0.8; // jarak maksimum per langkah fisika: mobil 420 km/j tid
 const ALT_PAINT = Object.freeze({ royale: 0xe9e4d6, noir: 0x1a2d4a, argent: 0xe8e8ea, rubis: 0x0d0d10 });
 // Mobil NIKORA W16 (model GLB) dipajang di bawah kanopi drop-off, di depan pintu lobi utama; moncong menghadap ke jalan (utara).
 export const NIKORA_SPOT = Object.freeze({ x: 0, z: 446, heading: Math.PI });
+// Bugatti Chiron (model GLB buatan sendiri) di bawah kanopi yang sama, 8 m di barat NIKORA W16 (tiang kanopi di x = -15); moncong juga menghadap ke jalan.
+export const BUGATTI_SPOT = Object.freeze({ x: -8, z: 446, heading: Math.PI });
 
-/** Daftar mobil awal: 6 di parkir depan gerbang villa (sedan lama), 8 mobil mewah di drop-off/parkir hotel, dan NIKORA W16 di depan lobi. */
+/** Daftar mobil awal: 6 di parkir depan gerbang villa (sedan lama), 8 mobil mewah di drop-off/parkir hotel, NIKORA W16 dan Bugatti Chiron di bawah kanopi lobi. */
 export function defaultCars() {
   const out = [];
   let i = 0;
@@ -39,7 +41,8 @@ export function defaultCars() {
     const color = k < Object.keys(CAR_MODELS).length ? CAR_MODELS[model].paint : ALT_PAINT[model];
     out.push({ id: `hotel_${k}`, x: s.x, z: s.z, heading: s.heading, model, color });
   });
-  out.push({ id: `hotel_${hotel.length}`, ...NIKORA_SPOT, model: 'nikora', color: GLB_MODELS.nikora.paint }); // terakhir: indeks mobil lain tidak bergeser
+  out.push({ id: `hotel_${hotel.length}`, ...NIKORA_SPOT, model: 'nikora', color: GLB_MODELS.nikora.paint }); // setelah mobil mewah: indeks mobil lain tidak bergeser
+  out.push({ id: `hotel_${hotel.length + 1}`, ...BUGATTI_SPOT, model: 'bugatti', color: GLB_MODELS.bugatti.paint }); // terakhir: indeks mobil lain tidak bergeser
   return out.map((c, k) => ({ ...c, color: c.color ?? PALETTE[k % PALETTE.length] }));
 }
 

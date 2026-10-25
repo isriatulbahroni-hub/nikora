@@ -4,7 +4,7 @@ import { Fleet, carSitId, defaultCars } from './vehicle-fleet.js';
 
 test('armada hotel: mobil mewah bermodel, kursi sesuai model, cat salinan kedua berbeda', () => {
   const cars = defaultCars().filter((c) => c.id.startsWith('hotel_'));
-  assert.ok(cars.every((c) => ['royale', 'noir', 'argent', 'rubis', 'nikora'].includes(c.model)));
+  assert.ok(cars.every((c) => ['royale', 'noir', 'argent', 'rubis', 'nikora', 'bugatti'].includes(c.model)));
   assert.notEqual(cars[0].color, cars[4].color, 'model sama, cat berbeda');
   const f = new Fleet({ specs: cars, selfId: 'ani' });
   const rubis = f.cars.find((c) => c.model === 'rubis');

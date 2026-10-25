@@ -15,9 +15,9 @@ const mk = (extra = {}) => {
   return { fleet, ride, toasts, h };
 };
 
-test('daftar mobil per halaman: vila 6, hotel 9 (8 mobil mewah + NIKORA W16), tanpa tumpang tindih', () => {
+test('daftar mobil per halaman: vila 6, hotel 10 (8 mobil mewah + NIKORA W16 + Bugatti Chiron), tanpa tumpang tindih', () => {
   assert.equal(villaCars().length, 6);
-  assert.equal(hotelCars().length, 9);
+  assert.equal(hotelCars().length, 10);
   assert.ok(villaCars().every((c) => c.id.startsWith('villa_')));
   assert.ok(hotelCars().every((c) => c.id.startsWith('hotel_')));
 });

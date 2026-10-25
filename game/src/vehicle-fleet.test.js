@@ -15,12 +15,13 @@ function pair() {
 }
 const DT = 1 / 30;
 
-test('armada awal: 6 mobil di parkir depan villa + 9 di hotel (8 mobil mewah + NIKORA W16), id unik, indeks = urutan', () => {
+test('armada awal: 6 mobil di parkir depan villa + 10 di hotel (8 mobil mewah + NIKORA W16 + Bugatti Chiron), id unik, indeks = urutan', () => {
   const cars = defaultCars();
-  assert.equal(cars.length, 15);
+  assert.equal(cars.length, 16);
   assert.equal(cars.filter((c) => c.id.startsWith('villa_')).length, 6);
-  assert.equal(cars.filter((c) => c.id.startsWith('hotel_')).length, 9);
-  assert.equal(cars.at(-1).model, 'nikora', 'NIKORA W16 terakhir: indeks mobil lain tidak bergeser');
+  assert.equal(cars.filter((c) => c.id.startsWith('hotel_')).length, 10);
+  assert.equal(cars.at(-2).model, 'nikora', 'NIKORA W16 sesudah mobil mewah: indeks mobil lain tidak bergeser');
+  assert.equal(cars.at(-1).model, 'bugatti', 'Bugatti Chiron terakhir: indeks mobil lain tidak bergeser');
   assert.equal(new Set(cars.map((c) => c.id)).size, cars.length);
   assert.ok(cars.length <= 125, 'indeks mobil muat di id duduk');
 });
