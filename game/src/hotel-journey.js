@@ -11,9 +11,10 @@ import { alongOf, endPoint, gatePsi, localToWorld, planeBeyond, planeBehind, pos
 // (tikungan, bukit, jembatan, danau, durasi >= 20 menit) tidak diubah sedikit pun; yang berubah hanya tempatnya: tidak ada pindah halaman.
 //
 // Mobil dikemudikan PEMAIN SENDIRI (autopilot dimatikan): joystick/pedal bekerja seperti di jalan raya hotel. Modul ini hanya melacak posisi
-// mobil (atau pejalan kaki) di sepanjang rute untuk HUD, tinggi dunia, pemuatan potongan, dan pemasangan villa. Mobil dijaga tetap di dalam
-// badan jalan (dinding lunak di tepi aspal), karena tanah di luar jalan tidak punya tabrakan. Autopilot lama masih ada untuk pengujian:
-// tambahkan ?otomatis=1 pada alamat halaman.
+// mobil (atau pejalan kaki) di sepanjang rute untuk HUD, tinggi dunia, pemuatan potongan, dan pemasangan villa. Supaya perjalanan tetap
+// >= 20 menit, kecepatan mobil dibatasi sebesar kecepatan jelajah tiap bagian rute (batas kecepatan jalan: 50, 45, 36, 32, 25 km/jam).
+// Mobil dijaga tetap di dalam badan jalan (dinding lunak di tepi aspal), karena tanah di luar jalan tidak punya tabrakan. Autopilot lama
+// masih ada untuk pengujian: tambahkan ?otomatis=1 pada alamat halaman.
 // Mobil tetap di y = 0 dan seluruh dunia perjalanan digeser vertikal mengikuti tinggi jalan di bawah pemain (hanya dunia perjalanan; hotel tetap),
 // jadi fisika mobil, kursi, dan kamera hotel dipakai apa adanya.
 // Di ujung rute villa dipasang (hotel-villa.js) dan bisa dimasuki langsung; tempat acara lain masih memakai halaman sendiri lewat tombol "Masuk"
@@ -173,7 +174,8 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
     if (state === 'riding') {
       const seg = segmentAt(j, clamp(st.s, 0, j.length));
       setText(ui.title, seg.name);
-      setText(ui.part, `${gate.label} · Bagian ${j.bounds.indexOf(seg) + 1}/${SEGMENTS.length}`);
+      const limit = autopilot ? '' : ` · Batas ${Math.round(seg.cruise * 3.6)} km/jam`;
+      setText(ui.part, `${gate.label} · Bagian ${j.bounds.indexOf(seg) + 1}/${SEGMENTS.length}${limit}`);
       setText(ui.eta, `Sisa ± ${fmt(Math.max(0, j.duration - timeAt(j, clamp(st.s, 0, j.length))))}`);
       ui.bar.style.width = `${(clamp(st.s, 0, j.length) / j.length) * 100}%`;
       ui.pause.style.display = autopilot ? 'block' : 'none';
@@ -218,7 +220,7 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
   /**
    * Mengemudi sendiri: hanya MELACAK posisi (mobil, atau pejalan kaki bila pemain turun) pada rute. Mobil didorong kembali ke badan jalan
    * bila keluar dari tepi aspal (tanah di luar jalan tidak punya tabrakan dan tingginya tidak sama dengan jalan) dan melambat seperti
-   * menggesek pembatas.
+   * menggesek pembatas. Kecepatan dibatasi kecepatan jelajah bagian rute itu, jadi perjalanan penuh tidak pernah kurang dari durasi rute (20+ menit).
    */
   function trackManual(delta, driving, me) {
     const { j, gate, st } = ride;
@@ -229,15 +231,19 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
       const cl = worldToLocal(gate, who.x, who.z);
       const r = nearestOnRoute(j, cl.x, cl.z);
       s = r.s;
-      if (driving && r.s < j.length - 5) {
-        const over = Math.abs(r.d) - (flareHalf(r.s) - EDGE_MARGIN);
-        if (over > 0) {
-          const h = j.hs[r.i];
-          const sg = Math.sign(r.d); // + = sisi kiri jalan; vektor kiri = (cos h, -sin h)
-          const p = localToWorld(gate, cl.x - sg * over * Math.cos(h), cl.z + sg * over * Math.sin(h));
-          driving.x = p.x;
-          driving.z = p.z;
-          driving.speed *= Math.max(0, 1 - 3 * delta);
+      if (driving) {
+        const cap = segmentAt(j, clamp(s, 0, j.length)).cruise; // m/s
+        if (Math.abs(driving.speed) > cap) driving.speed = Math.sign(driving.speed) * cap;
+        if (r.s < j.length - 5) {
+          const over = Math.abs(r.d) - (flareHalf(r.s) - EDGE_MARGIN);
+          if (over > 0) {
+            const h = j.hs[r.i];
+            const sg = Math.sign(r.d); // + = sisi kiri jalan; vektor kiri = (cos h, -sin h)
+            const p = localToWorld(gate, cl.x - sg * over * Math.cos(h), cl.z + sg * over * Math.sin(h));
+            driving.x = p.x;
+            driving.z = p.z;
+            driving.speed *= Math.max(0, 1 - 3 * delta);
+          }
         }
       }
     }
