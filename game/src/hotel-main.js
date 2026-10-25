@@ -112,7 +112,7 @@ function setupInput(canvas, camState) {
     else if (!e.repeat && k === 'n') hooks.sky(); // ganti mode langit: otomatis, siang, senja, malam, demo
     else if (!e.repeat && k === 'h') hooks.horn(true);
     else if (!e.repeat && (k === 'e' || k === ' ')) {
-      hooks.action(); // naik/turun mobil
+      hooks.action(); // buka pintu/bagasi, naik, atau turun mobil
       e.preventDefault();
     }
     else if (k === '[') camState.yaw += 0.12;
@@ -522,6 +522,7 @@ async function start() {
   const carHud = mountCarHud({ onHorn: (down) => carRide.horn(down) });
   const carRide = createCarRide({
     fleet, view: carView, hud: carHud, audio: carAudio, camState, toast,
+    access: true, // mendekati mobil tidak langsung naik: buka pintu (atau bagasi) di bagian yang didekati dulu (car-access.js)
     // titik turun digeser bila mengenai penghalang: di zona villa memakai penghalang villa; di area penurunan perjalanan dipakai apa adanya;
     // selain itu penghalang hotel
     exit: (p) => {
@@ -546,7 +547,7 @@ async function start() {
         return;
       }
       carRide.leave(me);
-    } else if (me.level === 0 && !me.villa) carRide.board(me);
+    } else if (me.level === 0 && !me.villa) carRide.interact(me); // buka/tutup pintu atau bagasi, atau naik lewat pintu yang sudah terbuka
   };
   hooks.horn = (down) => carRide.horn(down);
   actBtn.addEventListener('click', () => hooks.action());
@@ -780,9 +781,16 @@ async function start() {
 
     // panel lift muncul saat berdiri di dalam kabin
     liftPanel.update(!riding && !fleet.mine && !inVilla && journey.state === 'idle' && !!world.liftAt(me.x, me.z), me.level);
-    const carNear = !riding && !fleet.mine && me.level === 0 && !me.villa && fleet.nearest(me) !== null;
-    const actText = riding || journey.riding ? '' : fleet.mine ? 'Turun' : carNear ? 'Naik' : '';
-    if (actText) actBtn.textContent = actText;
+    // tombol aksi: Turun saat di mobil; berjalan kaki di dekat mobil = aksi bagian yang didekati (Buka pintu kanan, Naik, Buka bagasi, ...)
+    const carPrompt = !riding && !fleet.mine && me.level === 0 && !me.villa ? carRide.prompt(me) : '';
+    const actText = riding || journey.riding ? '' : fleet.mine ? 'Turun' : carPrompt;
+    if (actText && actBtn.textContent !== actText) {
+      actBtn.textContent = actText;
+      const long = actText.length > 6; // tulisan panjang ("Buka pintu kanan") dikecilkan dan dibungkus supaya muat di tombol bulat
+      actBtn.style.fontSize = long ? '12px' : '';
+      actBtn.style.lineHeight = long ? '1.15' : '';
+      actBtn.style.padding = long ? '4px' : '';
+    }
     actBtn.hidden = !actText;
 
     villa.update({ me, delta, cameraPosition: camera.position, others }); // villa dibangun saat dekat; pintu dan air dianimasikan
@@ -816,7 +824,9 @@ async function start() {
     journey: () => journey.info(), // lorong perjalanan di dalam dunia hotel (pengujian)
     setSky: (mode) => sky.setMode(mode), // auto | day | sunset | night | cycle (pengujian)
     cars: () => fleet.cars.map((c) => ({ id: c.id, model: c.model, x: c.x, z: c.z, heading: c.heading, speed: c.speed, seats: c.seats.slice() })), // pengujian
-    board: () => carRide.board(me),
+    board: () => carRide.board(me), // naik langsung tanpa membuka pintu (pengujian)
+    interact: () => carRide.interact(me), // sama dengan tombol aksi saat berjalan kaki (pengujian)
+    prompt: () => carRide.prompt(me), // tulisan tombol aksi saat ini (pengujian)
     cockpit: () => cockpitOn, // kamera kabin aktif (pengujian)
     cycleCamera: () => hooks.camera(), // sama dengan tombol kamera (pengujian)
     driving: () => (fleet.driving ? { model: fleet.driving.model, speed: fleet.driving.speed, engine: fleet.driving.engine, steer: fleet.driving.steer, slip: fleet.driving.slip, tyreTemp: fleet.driving.tyreTemp } : null),
