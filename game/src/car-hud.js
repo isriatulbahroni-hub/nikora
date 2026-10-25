@@ -4,9 +4,9 @@
 //   berhenti (mesin siap)   : setir bulat (kiri bawah), pedal rem dan gas tekan-tahan (kanan bawah), pemilih gigi P R N D, tombol Matikan.
 //   melaju                  : sama, tanpa tombol mesin; tombol aksi halaman (#act-button, Turun) disembunyikan sampai berhenti.
 // Lencana kecil kiri atas (gigi, km/j, sein/hazard berkedip, REM saat rem tangan), klakson bulat, dan tombol ⋯ untuk panel fitur
-// (lampu, hazard, rem tangan, AC, sabuk, sein kiri/kanan) plus pengaturan (mode setir bulat/geser, sensitivitas) yang disimpan di perangkat.
+// (lampu, hazard, rem tangan, AC, sabuk, sein kiri/kanan, pintu kiri/kanan, atap) plus pengaturan (mode setir bulat/geser, sensitivitas) yang disimpan di perangkat.
 // Setir bulat: putar dengan satu jempol, kembali halus ke tengah saat dilepas. Warna mengikuti panel hotel (emas #c9a24b).
-// Papan ketik: I = mesin, B = rem tangan, L = lampu, X = hazard, 1-4 = gigi P R N D, koma/titik = sein kiri/kanan.
+// Papan ketik: I = mesin, B = rem tangan, L = lampu, X = hazard, 1-4 = gigi P R N D, koma/titik = sein kiri/kanan, K = pintu kiri, ; = pintu kanan, T = atap.
 const BASE = 'position:fixed;z-index:30;font:600 13px system-ui,sans-serif;color:#fff;';
 const SAFE_TOP = 'max(12px,env(safe-area-inset-top))';
 const SAFE_BOTTOM = 'max(24px,env(safe-area-inset-bottom))';
@@ -208,7 +208,7 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
   engineBtn.addEventListener('click', () => emit('engine'));
   document.body.appendChild(engineBtn);
 
-  // panel fitur (⋯): lampu, hazard, rem tangan, AC, sabuk, sein, dan pengaturan
+  // panel fitur (⋯): lampu, hazard, rem tangan, AC, sabuk, sein, pintu, atap, dan pengaturan
   const panelBtn = make('button', `${BASE}left:14px;top:calc(${SAFE_TOP} + 40px);display:none;width:40px;height:40px;border-radius:50%;border:1px solid ${LINE};background:${GLASS};color:${CREAM};font:800 20px/1 system-ui,sans-serif;padding:0;touch-action:manipulation`, '\u22ef');
   panelBtn.type = 'button';
   panelBtn.setAttribute('aria-label', 'Fitur kendaraan');
@@ -231,13 +231,16 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
     ['Sabuk', () => emit('belt'), (m) => m.belt],
     ['Sein \u25c0', () => emit('indicator', -1), (m) => m.indicator === -1],
     ['Sein \u25b6', () => emit('indicator', 1), (m) => m.indicator === 1],
+    ['Pintu kiri', () => emit('doorL'), (m) => m.doorL],
+    ['Pintu kanan', () => emit('doorR'), (m) => m.doorR],
+    ['Atap', () => emit('roof'), (m) => m.roof],
   ].map(([label, run, on]) => ({ btn: tile(label, run), on }));
   const modeTile = tile('', () => { settings.mode = settings.mode === 'wheel' ? 'slider' : 'wheel'; saveSettings(settings); wheelRot = 0; steerValue = 0; steerTarget = 0; paint(); });
   const sensTile = tile('', () => { settings.sens = SENS[(SENS.findIndex((s) => s.id === settings.sens) + 1) % SENS.length].id; saveSettings(settings); paint(); });
   document.body.appendChild(panel);
 
   // papan ketik (perangkat dengan keyboard)
-  const KEYMAP = { i: ['engine'], b: ['handbrake'], l: ['lights'], x: ['hazard'], 1: ['gear', 'P'], 2: ['gear', 'R'], 3: ['gear', 'N'], 4: ['gear', 'D'], ',': ['indicator', -1], '.': ['indicator', 1] };
+  const KEYMAP = { i: ['engine'], b: ['handbrake'], l: ['lights'], x: ['hazard'], 1: ['gear', 'P'], 2: ['gear', 'R'], 3: ['gear', 'N'], 4: ['gear', 'D'], ',': ['indicator', -1], '.': ['indicator', 1], k: ['doorL'], ';': ['doorR'], t: ['roof'] };
   const onKey = (e) => {
     if (!shown || !vm || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
     if (/^(input|textarea|select)$/i.test(e.target?.tagName ?? '')) return;
@@ -293,7 +296,7 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
       lit(engineBtn, vm.stage === 'cabin'); // di kabin tombol mesin menonjol (emas)
     }
     for (const [g, b] of gearBtns) lit(b, on && vm.gear === g);
-    for (const t of stateTiles) lit(t.btn, on && t.on(vm));
+    for (const t of stateTiles) lit(t.btn, on && Boolean(t.on(vm)));
     setText(modeTile, `Setir: ${settings.mode === 'wheel' ? 'Bulat' : 'Geser'}`);
     setText(sensTile, `Peka: ${(SENS.find((s) => s.id === settings.sens) ?? SENS[1]).label}`);
   }

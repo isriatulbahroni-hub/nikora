@@ -3,6 +3,7 @@
 //
 // Dua mode kontrol, ditentukan HUD yang diberikan:
 //  - HUD bertahap (punya hud.bind, yaitu car-hud.js): mesin harus dinyalakan, gigi dipilih (P/R/N/D), rem tangan, keluar hanya saat berhenti (car-state.js).
+//    Pintu, atap, lampu, hazard, sein, dan rem tangan juga dikirim ke tampilan mobil lewat car-parts.js (setParts) tiap frame.
 //  - HUD lama (tanpa hud.bind): perilaku semula, pengemudi naik = langsung bisa jalan.
 
 import { gearFor, rpmFor } from './car-models.js';
@@ -10,6 +11,7 @@ import { mergeControls } from './cockpit.js';
 import {
   blockedReason, canLeave, createCarState, driveInput, hudModel, setIndicator, shift, startEngine, stopEngine, tickEngine, toggle, toggleHandbrake,
 } from './car-state.js';
+import { OPENINGS, createOpenings, partsFrom, setParts, tickOpenings, toggleOpening } from './car-parts.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -64,6 +66,7 @@ export function driveControls(rawInput, hud, speed = 0, state = null) {
 export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p, camState = null, isDragging = () => false, isCabin = () => false, toast = () => {} }) {
   const geared = typeof hud?.bind === 'function';
   const states = new WeakMap(); // mobil -> keadaan pengemudi (car-state.js); hanya dipakai pada mode bertahap
+  const openings = new WeakMap(); // mobil -> pintu/atap yang terbuka (car-parts.js)
   const stateOf = (car) => {
     let s = states.get(car);
     if (!s) {
@@ -72,12 +75,25 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     }
     return s;
   };
-  const resetState = (car) => states.set(car, createCarState());
+  const openingsOf = (car) => {
+    let o = openings.get(car);
+    if (!o) {
+      o = createOpenings();
+      openings.set(car, o);
+    }
+    return o;
+  };
+  /** Keadaan pengemudi dikembalikan ke awal: mesin mati, gigi P, pintu/atap tertutup, lampu padam (tampilan kembali ke bawaan). */
+  const resetState = (car) => {
+    states.set(car, createCarState());
+    openings.set(car, createOpenings());
+    setParts(car, null);
+  };
   let lastCar = null; // mobil yang dikemudikan pada frame sebelumnya (keadaan dibersihkan saat tidak lagi mengemudi)
   let clock = 0;
   let lastWarn = -1e9;
 
-  /** Perintah dari HUD: { type: 'engine'|'gear'|'handbrake'|'lights'|'hazard'|'ac'|'belt'|'indicator', value }. Hanya pengemudi. */
+  /** Perintah dari HUD: { type: 'engine'|'gear'|'handbrake'|'lights'|'hazard'|'ac'|'belt'|'indicator'|'doorL'|'doorR'|'roof', value }. Hanya pengemudi. */
   function act({ type, value } = {}) {
     const car = fleet.driving;
     if (!car || !geared) return;
@@ -87,6 +103,7 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     else if (type === 'gear') r = shift(st, value, car.speed);
     else if (type === 'handbrake') r = toggleHandbrake(st);
     else if (type === 'indicator') r = setIndicator(st, value);
+    else if (OPENINGS.includes(type)) r = toggleOpening(openingsOf(car), type, car.speed);
     else r = toggle(st, type);
     if (r?.msg) toast(r.msg);
   }
@@ -152,15 +169,18 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     lastCar = driving;
     clock += delta;
     const st = geared && driving ? stateOf(driving) : null;
+    const op = st ? openingsOf(driving) : null;
     if (driving) {
       if (st) {
         if (tickEngine(st, delta)) toast('Mesin menyala. Pilih gigi D untuk maju atau R untuk mundur.');
+        if (tickOpenings(op, driving.speed)) toast('Pintu dan atap menutup otomatis saat mobil melaju.');
         const why = wantsGas(rawInput, hud) ? blockedReason(st) : '';
         if (why && clock - lastWarn > 2.5) {
           lastWarn = clock;
           toast(why);
         }
         fleet.drive(driveControls(rawInput, hud, driving.speed, st), delta);
+        setParts(driving, partsFrom(st, op)); // sebelum view.update: tampilan membaca keadaan ini
       } else {
         fleet.drive(driveControls(rawInput, hud, driving.speed), delta);
       }
@@ -175,7 +195,7 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     view.update(delta);
     const info = driving ? hudInfo(driving) : null;
     hud.set(driving ? driving.speed * 3.6 : null, info, Boolean(driving && isCabin()));
-    hud.view?.(driving && st ? hudModel(st, driving.speed, info?.gear) : null);
+    hud.view?.(driving && st ? { ...hudModel(st, driving.speed, info?.gear), doorL: op.doorL, doorR: op.doorR, roof: op.roof } : null);
     audio?.engine(driving && (!st || st.eng !== 'off') ? driving : null); // mesin mati = tanpa suara mesin
     const sit = fleet.sitId;
     const seatPose = sit !== null ? fleet.seatPose(sit) : null;
