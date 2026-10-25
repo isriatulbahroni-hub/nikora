@@ -68,6 +68,7 @@ test('gigi: butuh mesin; P hanya saat berhenti total; R dan D hanya saat hampir 
   assert.equal(s.gear, 'D');
   assert.equal(shift(s, 'N', 4).ok, true, 'N kapan saja');
   assert.equal(shift(s, 'D', 4).ok, true, 'D saat masih melaju maju');
+  assert.equal(shift(s, 'N', 0).ok, true);
   assert.equal(shift(s, 'D', -3).ok, false, 'D saat mundur ditolak');
   assert.equal(shift(s, 'X', 0).ok, false, 'gigi tidak dikenal');
   assert.equal(shift(s, 'P', 0.1).ok, true);
@@ -80,8 +81,7 @@ test('masukan fisika mengikuti gigi: D maju, R mundur, N meluncur, P dan rem tan
   assert.deepEqual(driveInput(d, { gas: 1, brake: true, speed: 2 }), { throttle: 0, steer: 0, brake: true }, 'rem menang');
   const r = running('R');
   assert.equal(driveInput(r, { gas: 1 }).throttle, -1, 'gas di R = mundur');
-  assert.equal(driveInput(r, { gas: 0 }).throttle, 0, 'tanpa gas tidak ada -0');
-  assert.equal(Object.is(driveInput(r, { gas: 0 }).throttle, 0), true);
+  assert.equal(Object.is(driveInput(r, { gas: 0 }).throttle, 0), true, 'tanpa gas tidak ada -0');
   const n = running('N');
   assert.deepEqual(driveInput(n, { gas: 1, speed: 3 }), { throttle: 0, steer: 0, brake: false });
   const p = running('P');
