@@ -1,14 +1,16 @@
 // Tampilan mobil armada (THREE). Mobil bermodel mewah (car.model) memakai luxury-cars.js: roda berputar dan membelok mengikuti
 // kecepatan, suspensi menunduk/miring, pintu terbuka saat kursi berganti penghuni, lampu depan/rem/mundur menyala.
 // Mobil bermodel berkas 3D (car.spec.glb, mis. NIKORA W16) dimuat dari GLB (car-glb.js): badan menunduk/miring, roda berputar bila namanya dikenali,
-// dan roda setir BULAT (lingkar torus penuh) yang ikut berputar; mode kabin (tangan, jam, spion) juga berlaku untuk mobil GLB.
+// dan roda setir ASLI model itu (dikenali dari namanya) ikut berputar. Setir buatan kode (lingkar torus penuh) hanya dipasang bila model tidak punya setir sendiri
+// (dulu selalu dipasang, jadi setir tampil dobel). Posisi setir asli juga menentukan kursi pengemudi, tangan, dan kamera kabin (alignSpecToWheel);
+// mode kabin (tangan, jam, spion) juga berlaku untuk mobil GLB.
 // Mobil tanpa model memakai sedan lama (villa-props.js). Kinematik mobil pemain lain diturunkan dari pose (tanpa protokol baru).
 import * as THREE from 'three';
 import { carGeometries } from './villa-props.js';
 import { bakeDoors, buildLuxuryCar } from './luxury-cars.js';
 import { wrapAngle } from './vehicle.js';
 import { buildSteeringWheel, createCockpitRig } from './cockpit-view.js';
-import { cockpitSpec, wheelAngle } from './cockpit.js';
+import { alignSpecToWheel, cockpitSpec, wheelAngle } from './cockpit.js';
 import { hudInfo } from './car-ride.js';
 import { disposeObject, loadCarGlb } from './car-glb.js';
 
@@ -157,10 +159,14 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     root.add(group);
     const entry = { car, group, tilt, glb: true, luxury: false, wheels: [], loaded: null, fallback: null, disposed: false, steering: null, spinAngle: 0, accel: 0, yaw: 0, steer: 0, prev: null, seats: car.seats.slice(), doorTimer: car.seats.map(() => 0), pitch: 0, roll: 0 };
     const C = car.spec;
-    // roda setir bulat (lingkar torus penuh) di kabin: selalu ada, tidak bergantung pada isi berkas GLB, dan ikut berputar saat membelok
-    entry.steering = buildSteeringWheel(cockpitSpec(C));
-    tilt.add(entry.steering.pivot);
-    steeringWheels.push(entry.steering);
+    // Setir buatan kode (lingkar torus penuh) hanya dipasang bila model tidak punya setir asli yang dikenali (atau gagal dimuat): tidak dobel.
+    const addCodeWheel = () => {
+      if (entry.steering || entry.disposed) return;
+      const sw = buildSteeringWheel(cockpitSpec(C));
+      tilt.add(sw.pivot);
+      steeringWheels.push(sw);
+      entry.steering = sw;
+    };
     const stub = () => {
       if (entry.fallback || entry.loaded || entry.disposed) return;
       const mat = new THREE.MeshStandardMaterial({ color: car.color, roughness: 0.3, metalness: 0.5, ...env });
@@ -185,10 +191,18 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
         tilt.add(res.root);
         entry.loaded = res.root;
         entry.wheels = res.wheels;
+        if (res.steering) {
+          // setir asli model: itu yang diputar, dan kursi pengemudi + tangan + kamera kabin dipindah tepat ke setir itu
+          entry.steering = { spin: res.steering.spin, own: true };
+          if (!alignSpecToWheel(car.spec, res.steering)) console.warn('[armada] setir model tidak masuk akal, kursi katalog dipakai:', C.glb.file, res.steering.names);
+        } else {
+          addCodeWheel();
+        }
       })
       .catch((error) => {
         console.warn('[armada] model mobil gagal dimuat:', C.glb.file, error);
         stub();
+        addCodeWheel();
       });
     return entry;
   }
@@ -281,7 +295,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
   function animateGlb(e, delta, mine) {
     const { car } = e;
     const dt = followKinematics(e, delta, mine);
-    e.steering.spin.rotation.z = wheelAngle(e.steer, car.spec.maxSteer); // roda setir bulat ikut berputar
+    if (e.steering) e.steering.spin.rotation.z = wheelAngle(e.steer, car.spec.maxSteer); // roda setir (asli model atau buatan kode) ikut berputar
     for (const w of e.wheels) {
       w.pivot.rotation.x = e.spinAngle;
       if (w.front) w.pivot.rotation.y = e.steer;

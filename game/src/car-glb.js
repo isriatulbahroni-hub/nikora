@@ -1,14 +1,19 @@
 // Memuat model mobil berformat GLB (buatan sendiri, mis. dari Blender) untuk armada: diskalakan ke panjang mobil di spesifikasi, dipusatkan di titik
 // tengah mobil, roda menyentuh tanah, moncong menghadap +z (konvensi vehicle.js). Roda dikenali dari nama node (wheel/roda/tyre/tire/velg/rim)
 // dan dipasang pada poros putar supaya bisa berputar dan membelok; bila namanya tidak dikenali, mobil tetap tampil tanpa roda berputar.
+// Roda setir asli model dikenali dari nama node (steer/setir/kemudi), dipasang pada poros putar, dan posisinya dilaporkan supaya kursi pengemudi,
+// tangan, dan kamera kabin berada tepat di setir itu (vehicle-view.js); setir buatan kode hanya dipasang bila model tidak punya setir sendiri.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 
 const WHEEL_NAME = /wheel|roda|tyre|tire|velg|(?<!t)rim/i;
-const NOT_WHEEL = /steer|setir|arch|well|fender|caliper|kaliper|cover|light|lamp/i;
+const NOT_WHEEL = /steer|setir|kemudi|arch|well|fender|caliper|kaliper|cover|light|lamp/i;
+const STEER_NAME = /steer|setir|kemudi/i;
+const NOT_STEER = /column|kolom|stalk|tuas|paddle|shaft|lock|ctrl|control|wiper/i; // bagian yang tidak ikut berputar bersama setir
 const asArray = (m) => (Array.isArray(m) ? m : [m]);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 // Decoder Draco dimuat dari CDN Google (versi dipatok) hanya bila sebuah GLB memakai kompresi Draco; GLB biasa tidak menyentuhnya.
 const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/';
@@ -78,8 +83,52 @@ function rigWheels(root, model) {
 }
 
 /**
+ * Cari roda setir asli di model: node (paling atas) bernama steer/setir/kemudi yang pusatnya di dalam kabin dan lebarnya sebesar roda setir (0,2-0,7 m).
+ * Semua bagiannya dipasang pada satu poros yang miring seperti setirnya, supaya `spin.rotation.z` memutar setir pada porosnya.
+ * Mengembalikan { spin, center (kerangka mobil, x + = kiri), radius, tilt (rad, sama tanda dengan cockpitSpec.wheel.tilt), names } atau null bila tidak ada.
+ */
+function rigSteering(root, model) {
+  const found = [];
+  const walk = (o) => {
+    if (o.name && STEER_NAME.test(o.name) && !NOT_STEER.test(o.name)) {
+      found.push(o);
+      return;
+    }
+    for (const child of o.children) walk(child);
+  };
+  walk(model);
+  const box = new THREE.Box3();
+  const part = new THREE.Box3();
+  const c = new THREE.Vector3();
+  const nodes = [];
+  for (const o of found) {
+    part.setFromObject(o);
+    if (part.isEmpty()) continue;
+    part.getCenter(c);
+    if (Math.abs(c.x) < 0.15 || Math.abs(c.x) > 1.1 || c.y < 0.45 || c.y > 1.4 || Math.abs(c.z) > 2.2) continue; // bukan roda setir di kabin
+    nodes.push(o);
+    box.union(part);
+  }
+  if (!nodes.length) return null;
+  const size = box.getSize(new THREE.Vector3());
+  if (size.x < 0.2 || size.x > 0.7) return null; // bukan seukuran roda setir
+  const center = box.getCenter(new THREE.Vector3());
+  const tilt = -clamp(Math.atan2(Math.max(0, size.z - 0.03), size.y), 0, 0.8); // bagian atas setir condong ke arah pengemudi
+  const outer = new THREE.Group();
+  outer.position.copy(center);
+  outer.rotation.x = tilt;
+  const spin = new THREE.Group();
+  outer.add(spin);
+  root.add(outer);
+  root.updateMatrixWorld(true);
+  for (const o of nodes) spin.attach(o);
+  return { spin, center, radius: size.x / 2, tilt, names: nodes.map((o) => o.name) };
+}
+
+/**
  * Pasang `scene` (hasil GLTFLoader) ke kerangka mobil: panjangnya `length` m sepanjang sumbu z, pusat di (0, 0, 0), dasar di y = 0.
- * yaw = putaran tambahan (0 atau Math.PI) bila moncong model menghadap ke belakang. Mengembalikan { root, wheels }.
+ * yaw = putaran tambahan (0 atau Math.PI) bila moncong model menghadap ke belakang. Mengembalikan { root, wheels, steering }
+ * (steering = setir asli model, atau null bila model tidak punya setir yang namanya dikenali).
  */
 export function fitCar(scene, { length, yaw = 0, envMap = null }) {
   const root = new THREE.Group();
@@ -114,7 +163,7 @@ export function fitCar(scene, { length, yaw = 0, envMap = null }) {
       }
     }
   });
-  return { root, wheels: rigWheels(root, model) };
+  return { root, wheels: rigWheels(root, model), steering: rigSteering(root, model) };
 }
 
 /** Muat berkas GLB (juga yang berkompresi Draco) lalu pasang dengan fitCar. Janji ditolak bila berkas gagal dimuat atau kosong. */
