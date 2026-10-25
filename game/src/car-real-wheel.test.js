@@ -82,7 +82,9 @@ test('fitCar: setir asli dikenali dari nama, posisinya dilaporkan, dan berputar 
   assert.ok(Math.abs(steering.radius - 0.2) < 0.02, `jari-jari ${steering.radius}`);
   assert.ok(steering.tilt <= 0 && steering.tilt >= -0.8);
   root.updateMatrixWorld(true);
-  const mesh = scene.getObjectByName('Steering_Wheel');
+  const mesh = root.getObjectByName('Steering_Wheel'); // sudah dipindah ke poros putar di bawah root, bukan lagi anak `scene`
+  assert.ok(mesh, 'setir ada di bawah poros putar');
+  assert.equal(mesh.parent, steering.spin, 'setir dipasang pada poros putar');
   const c0 = boundsOf(mesh).getCenter(new THREE.Vector3());
   steering.spin.rotation.z = 1.2;
   root.updateMatrixWorld(true);
