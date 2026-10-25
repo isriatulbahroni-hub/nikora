@@ -1,11 +1,14 @@
 // Tampilan mobil armada (THREE). Mobil bermodel mewah (car.model) memakai luxury-cars.js: roda berputar dan membelok mengikuti
-// kecepatan, suspensi menunduk/miring, pintu terbuka saat kursi berganti penghuni, lampu depan/rem/mundur menyala.
+// kecepatan, suspensi menunduk/miring, pintu terbuka saat kursi berganti penghuni atau lewat tombol HUD, lampu depan/rem/mundur/sein menyala.
 // Mobil bermodel berkas 3D (car.spec.glb, mis. NIKORA W16) dimuat dari GLB (car-glb.js): badan menunduk/miring, roda berputar bila namanya dikenali,
 // dan roda setir ASLI model itu (dikenali dari namanya) ikut berputar. Setir buatan kode (lingkar torus penuh) hanya dipasang bila model tidak punya setir sendiri
 // (dulu selalu dipasang, jadi setir tampil dobel). Posisi setir asli juga menentukan kursi pengemudi, tangan, dan kamera kabin (alignSpecToWheel);
 // mode kabin (tangan, jam, spion) juga berlaku untuk mobil GLB.
+// Pintu (DOOR_L/DOOR_R), atap (ROOF), dan bahan lampu (SIG_*, Headlight LED, Reverse Lamp) model GLB dikenali dari namanya dan digerakkan
+// oleh car-parts-rig.js mengikuti keadaan dari car-parts.js (tombol HUD pengemudi); model tanpa nama itu tetap tampil seperti biasa.
 // Belok roda depan mobil GLB dibatasi secara visual (GLB_STEER_VISUAL) supaya ban lebar tidak menembus lengkung roda/bodi saat setir diputar penuh.
 // Mobil tanpa model memakai sedan lama (villa-props.js). Kinematik mobil pemain lain diturunkan dari pose (tanpa protokol baru).
+// Keadaan tombol (pintu, atap, lampu, sein) hanya ada di perangkat pengemudi: tidak dikirim ke pemain lain.
 import * as THREE from 'three';
 import { carGeometries } from './villa-props.js';
 import { bakeDoors, buildLuxuryCar } from './luxury-cars.js';
@@ -14,11 +17,23 @@ import { buildSteeringWheel, createCockpitRig } from './cockpit-view.js';
 import { alignSpecToWheel, cockpitSpec, wheelAngle } from './cockpit.js';
 import { hudInfo } from './car-ride.js';
 import { disposeObject, loadCarGlb } from './car-glb.js';
+import { getParts } from './car-parts.js';
+import { applyParts, rigParts } from './car-parts-rig.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const BASE = import.meta.env?.BASE_URL ?? '/';
 export const DOOR_OPEN_S = 1.6; // lama pintu terbuka setelah kursi berganti penghuni
 export const GLB_STEER_VISUAL = 0.3; // rad (~17 derajat): batas belok VISUAL roda depan mobil GLB; fisika/setir tetap memakai maxSteer penuh
+const BLINK_S = 0.35; // setengah siklus sein mobil buatan kode (sama dengan lencana HUD)
+const SIG_DIM = 0x4a3008;
+const SIG_BRIGHT = 0xffa020;
+// Posisi lampu sein mobil buatan kode: [x, y] di sisi kiri mobil (+x), depan (f) dan belakang (r); sisi kanan dicerminkan. Perkiraan, boleh disetel.
+const SIGNAL_SPOTS = Object.freeze({
+  royale: { f: [0.84, 0.52], r: [0.82, 0.9] },
+  noir: { f: [0.7, 0.42], r: [0.9, 0.74] },
+  argent: { f: [0.8, 0.3], r: [0.9, 0.7] },
+  rubis: { f: [0.84, 0.62], r: [0.86, 1.02] },
+});
 
 /** Sudut roda depan (rad, + = belok kiri) dari laju yaw: dipakai untuk mobil yang dikemudikan pemain lain. */
 export function steerFromYaw(yawRate, speed, wheelBase, max = 0.5) {
@@ -68,6 +83,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
   scene.add(root);
   const textures = [];
   const ownMats = [];
+  const ownGeos = [];
   const steeringWheels = [];
   const rigs = new Map(); // mobil -> rig kokpit (dibuat saat pertama dikemudikan dalam mode kabin)
   let cockpitCar = null;
@@ -87,7 +103,9 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     const headMat = new THREE.MeshBasicMaterial({ color: 0xdfe3e8 });
     const tailMat = new THREE.MeshBasicMaterial({ color: 0x3a0a0a });
     const revMat = new THREE.MeshBasicMaterial({ color: 0x555555 });
-    ownMats.push(paintMat, headMat, tailMat, revMat);
+    const sigL = new THREE.MeshBasicMaterial({ color: SIG_DIM });
+    const sigR = new THREE.MeshBasicMaterial({ color: SIG_DIM });
+    ownMats.push(paintMat, headMat, tailMat, revMat, sigL, sigR);
     const mesh = (geo, mat, shadow = true) => {
       const m = new THREE.Mesh(geo, mat);
       m.castShadow = shadow;
@@ -100,6 +118,21 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     mesh(shared.head, headMat, false);
     mesh(shared.tail, tailMat, false);
     mesh(shared.rev, revMat, false);
+
+    // lampu sein: kotak kecil di empat sudut; kiri (+x) dan kanan (-x) berkedip sendiri-sendiri
+    const spots = SIGNAL_SPOTS[car.model];
+    if (spots) {
+      const half = shared.model.length / 2;
+      const geo = new THREE.BoxGeometry(0.16, 0.05, 0.05);
+      ownGeos.push(geo);
+      for (const [mat, s] of [[sigL, 1], [sigR, -1]]) {
+        for (const [spot, z] of [[spots.f, half - 0.05], [spots.r, -half + 0.05]]) {
+          const m = new THREE.Mesh(geo, mat);
+          m.position.set(s * spot[0], spot[1], z);
+          tilt.add(m);
+        }
+      }
+    }
 
     const steering = buildSteeringWheel(cockpitSpec(car.spec));
     tilt.add(steering.pivot);
@@ -148,7 +181,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     group.position.set(car.x, 0, car.z);
     group.rotation.y = car.heading;
     root.add(group);
-    return { car, group, tilt, luxury: true, steering, wheels, doors, headMat, tailMat, revMat, paintMat, doorGeos, spinAngle: 0, accel: 0, yaw: 0, steer: 0, brake: false, prev: null, seats: car.seats.slice(), doorTimer: car.seats.map(() => 0), pitch: 0, roll: 0 };
+    return { car, group, tilt, luxury: true, steering, wheels, doors, headMat, tailMat, revMat, sigL, sigR, paintMat, doorGeos, spinAngle: 0, accel: 0, yaw: 0, steer: 0, brake: false, prev: null, seats: car.seats.slice(), doorTimer: car.seats.map(() => 0), manL: false, manR: false, pitch: 0, roll: 0 };
   }
 
   /** Mobil dari berkas GLB: badan dimuat belakangan; selama belum selesai (atau bila gagal) tampil kotak sederhana supaya tetap kelihatan dan bisa dinaiki. */
@@ -159,7 +192,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     group.position.set(car.x, 0, car.z);
     group.rotation.y = car.heading;
     root.add(group);
-    const entry = { car, group, tilt, glb: true, luxury: false, wheels: [], loaded: null, fallback: null, disposed: false, steering: null, spinAngle: 0, accel: 0, yaw: 0, steer: 0, prev: null, seats: car.seats.slice(), doorTimer: car.seats.map(() => 0), pitch: 0, roll: 0 };
+    const entry = { car, group, tilt, glb: true, luxury: false, wheels: [], loaded: null, fallback: null, disposed: false, steering: null, rig: null, driverSide: 1, manL: false, manR: false, spinAngle: 0, accel: 0, yaw: 0, steer: 0, prev: null, seats: car.seats.slice(), doorTimer: car.seats.map(() => 0), pitch: 0, roll: 0 };
     const C = car.spec;
     // Setir buatan kode (lingkar torus penuh) hanya dipasang bila model tidak punya setir asli yang dikenali (atau gagal dimuat): tidak dobel.
     const addCodeWheel = () => {
@@ -193,9 +226,11 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
         tilt.add(res.root);
         entry.loaded = res.root;
         entry.wheels = res.wheels;
+        entry.rig = rigParts(res.root); // pintu, atap, dan bahan lampu dari namanya (kosong bila model tidak punya)
         if (res.steering) {
           // setir asli model: itu yang diputar, dan kursi pengemudi + tangan + kamera kabin dipindah tepat ke setir itu
           entry.steering = { spin: res.steering.spin, own: true };
+          entry.driverSide = res.steering.center.x < 0 ? -1 : 1; // + = kiri mobil: pintu pengemudi ada di sisi setir
           if (!alignSpecToWheel(car.spec, res.steering)) console.warn('[armada] setir model tidak masuk akal, kursi katalog dipakai:', C.glb.file, res.steering.names);
         } else {
           addCodeWheel();
@@ -258,16 +293,31 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     return dt;
   }
 
+  /** Suara pintu saat tombol HUD membuka/menutup (kedua jenis mobil). closeToo = ikut bunyi saat menutup (mobil GLB tidak punya sudut pintu untuk diamati). */
+  function manualDoorSound(e, p, closeToo) {
+    const l = Boolean(p?.doorL);
+    const r = Boolean(p?.doorR);
+    if (l !== e.manL) {
+      e.manL = l;
+      if (l || closeToo) onDoor(e.car, l);
+    }
+    if (r !== e.manR) {
+      e.manR = r;
+      if (r || closeToo) onDoor(e.car, r);
+    }
+  }
+
   function animateLuxury(e, delta, mine) {
     const { car } = e;
     const dt = followKinematics(e, delta, mine);
+    const p = getParts(car); // keadaan tombol HUD pengemudi (null = perilaku lama)
     e.steering.spin.rotation.z = wheelAngle(e.steer, car.spec.maxSteer); // roda setir ikut berputar (juga terlihat dari luar)
     for (const w of e.wheels) {
       w.spin.rotation.x = e.spinAngle * w.side;
       if (w.front) w.pivot.rotation.y = e.steer;
     }
 
-    // pintu: terbuka sebentar setiap kursi berganti penghuni
+    // pintu: terbuka sebentar setiap kursi berganti penghuni, atau selama tombol pintu HUD aktif
     car.seats.forEach((s, i) => {
       if (s !== e.seats[i]) {
         e.doorTimer[i] = DOOR_OPEN_S;
@@ -275,8 +325,10 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
         onDoor(car, true);
       }
     });
+    manualDoorSound(e, p, false);
     for (const d of e.doors) {
-      const want = d.seats.some((s) => e.doorTimer[s] > 0) ? 1 : 0;
+      const manual = d.side > 0 ? p?.doorL : p?.doorR; // side + = kiri mobil
+      const want = manual || d.seats.some((s) => e.doorTimer[s] > 0) ? 1 : 0;
       const before = d.angle;
       d.angle += (want - d.angle) * Math.min(1, dt * 5);
       if (before > 0.5 && d.angle <= 0.5 && !want) onDoor(car, false);
@@ -286,24 +338,33 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     }
     for (let i = 0; i < e.doorTimer.length; i++) e.doorTimer[i] = Math.max(0, e.doorTimer[i] - dt);
 
-    // lampu: depan menyala bila mesin hidup; rem bila melambat/ditahan; mundur bila bergerak mundur
+    // lampu: depan mengikuti tombol Lampu (tanpa tombol: menyala bila mesin hidup); rem bila melambat/ditahan atau rem tangan; mundur bila gigi R
     const on = car.engine;
-    const braking = on && (car === mine ? car.braking : e.accel < -2.5 || (Math.abs(car.speed) < 0.2 && car.seats[0] !== null));
-    e.headMat.color.setHex(on ? 0xfff4d2 : 0xdfe3e8);
-    e.tailMat.color.setHex(braking ? 0xff3030 : on ? 0xa51616 : 0x3a0a0a);
-    e.revMat.color.setHex(on && car.speed < -0.2 ? 0xffffff : 0x555555);
+    const lightsOn = p ? p.lights : on;
+    const braking = Boolean(p?.handbrake) || (on && (car === mine ? car.braking : e.accel < -2.5 || (Math.abs(car.speed) < 0.2 && car.seats[0] !== null)));
+    const reversing = p ? p.reverse : on && car.speed < -0.2;
+    e.headMat.color.setHex(lightsOn ? 0xfff4d2 : 0xdfe3e8);
+    e.tailMat.color.setHex(braking ? 0xff3030 : on || lightsOn ? 0xa51616 : 0x3a0a0a);
+    e.revMat.color.setHex(reversing ? 0xffffff : 0x555555);
+    // sein dan hazard berkedip (kiri = +x)
+    const blink = Math.floor(clock / BLINK_S) % 2 === 0;
+    const left = Boolean(p && (p.hazard || p.indicator < 0));
+    const right = Boolean(p && (p.hazard || p.indicator > 0));
+    e.sigL.color.setHex(left && blink ? SIG_BRIGHT : SIG_DIM);
+    e.sigR.color.setHex(right && blink ? SIG_BRIGHT : SIG_DIM);
   }
 
   function animateGlb(e, delta, mine) {
     const { car } = e;
     const dt = followKinematics(e, delta, mine);
+    const p = getParts(car);
     if (e.steering) e.steering.spin.rotation.z = wheelAngle(e.steer, car.spec.maxSteer); // roda setir (asli model atau buatan kode) ikut berputar
     const turn = clamp(e.steer, -GLB_STEER_VISUAL, GLB_STEER_VISUAL); // ban lebar tidak menembus lengkung roda saat setir penuh
     for (const w of e.wheels) {
       w.pivot.rotation.x = e.spinAngle;
       if (w.front) w.pivot.rotation.y = turn;
     }
-    // suara pintu saat kursi berganti penghuni (model GLB tidak punya pintu yang bisa digerakkan)
+    // pintu terbuka sebentar saat kursi berganti penghuni (kursi genap = sisi pengemudi, ganjil = sisi sebaliknya), atau selama tombol pintu HUD aktif
     car.seats.forEach((s, i) => {
       if (s !== e.seats[i]) {
         e.doorTimer[i] = DOOR_OPEN_S;
@@ -311,10 +372,27 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
         onDoor(car, true);
       }
     });
+    const open = { L: Boolean(p?.doorL), R: Boolean(p?.doorR) };
     for (let i = 0; i < e.doorTimer.length; i++) {
       const before = e.doorTimer[i];
       e.doorTimer[i] = Math.max(0, before - dt);
+      if (before > 0) {
+        const side = i % 2 === 0 ? e.driverSide : -e.driverSide;
+        open[side > 0 ? 'L' : 'R'] = true;
+      }
       if (before > 0 && e.doorTimer[i] === 0) onDoor(car, false);
+    }
+    manualDoorSound(e, p, true);
+    if (e.rig) {
+      applyParts(e.rig, {
+        doorL: open.L,
+        doorR: open.R,
+        roof: Boolean(p?.roof),
+        lights: p ? p.lights : Boolean(car.engine),
+        hazard: Boolean(p?.hazard),
+        indicator: p?.indicator ?? 0,
+        reverse: p ? p.reverse : Boolean(car.engine) && car.speed < -0.2,
+      }, dt, clock);
     }
   }
 
@@ -361,7 +439,9 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
         const ahead = mine.spec.length / 2 + 0.2;
         head.position.set(mine.x + fx * ahead, 0.8, mine.z + fz * ahead);
         headTarget.position.set(mine.x + fx * 22, 0, mine.z + fz * 22);
-        head.intensity += (90 - head.intensity) * Math.min(1, delta * 5);
+        const mp = getParts(mine);
+        const lightsOn = mp ? mp.lights : true; // HUD bertahap: sorot depan mengikuti tombol Lampu; HUD lama: menyala selama mengemudi
+        head.intensity += ((lightsOn ? 90 : 0) - head.intensity) * Math.min(1, delta * 5);
       } else head.intensity += (0 - head.intensity) * Math.min(1, delta * 5);
     },
     dispose() {
@@ -378,6 +458,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
         }
       }
       for (const s of models.values()) for (const k of ['paint', 'trim', 'glass', 'head', 'tail', 'rev', 'wheel']) s[k].dispose();
+      for (const g of ownGeos) g.dispose();
       for (const m of [...ownMats, trimMat, glassMat, doorMat, wheelMat, legacyDetail, legacyLight]) m.dispose();
       for (const t of textures) t.dispose();
     },
