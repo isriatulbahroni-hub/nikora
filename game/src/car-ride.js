@@ -4,14 +4,20 @@
 // Dua mode kontrol, ditentukan HUD yang diberikan:
 //  - HUD bertahap (punya hud.bind, yaitu car-hud.js): mesin harus dinyalakan, gigi dipilih (P/R/N/D), rem tangan, keluar hanya saat berhenti (car-state.js).
 //  - HUD lama (tanpa hud.bind): perilaku semula, pengemudi naik = langsung bisa jalan.
+//
+// Akses dari luar (opsi access: true, dipakai hotel): mendekati mobil tidak langsung naik. Pemain membuka pintu di sisi yang didekati
+// (atau bagasi) dulu, baru naik lewat pintu itu (car-access.js). Tanpa opsi itu (vila) board() tetap langsung menaikkan pemain.
 
 import { gearFor, rpmFor } from './car-models.js';
 import { mergeControls } from './cockpit.js';
 import {
   blockedReason, canLeave, createCarState, driveInput, hudModel, setIndicator, shift, startEngine, stopEngine, tickEngine, toggle, toggleHandbrake,
 } from './car-state.js';
+import { AUTO_CLOSE_M, anyOpen, closeDoorsAndTrunk, createAccess, doorOfSeat, findAccess, tickAccess, toggleAccess } from './car-access.js';
+import { partsFrom, setParts } from './car-parts.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const IDLE_STATE = createCarState(); // keadaan mobil tanpa pengemudi bertahap: lampu padam, mesin mati (hanya dibaca)
 
 /** Data untuk HUD mobil bermodel: nama, gigi (R/N/1..n), RPM. Mobil tanpa model -> null (HUD hanya menampilkan kecepatan). */
 export function hudInfo(car) {
@@ -60,8 +66,9 @@ export function driveControls(rawInput, hud, speed = 0, state = null) {
 /**
  * fleet: Fleet; view: createVehicleView(); hud: mountCarHud() (atau HUD lama); exit({x,z}) -> {x,z} titik turun yang sah (bukan di dalam tembok);
  * camState: { yaw, dist, pitch } kamera orbit; isDragging(): pemain sedang/baru saja memutar kamera sendiri; toast(text).
+ * access: true = naik hanya lewat pintu yang dibuka dulu (interact/prompt); false = board() langsung menaikkan pemain.
  */
-export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p, camState = null, isDragging = () => false, isCabin = () => false, toast = () => {} }) {
+export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p, camState = null, isDragging = () => false, isCabin = () => false, toast = () => {}, access = false }) {
   const geared = typeof hud?.bind === 'function';
   const states = new WeakMap(); // mobil -> keadaan pengemudi (car-state.js); hanya dipakai pada mode bertahap
   const stateOf = (car) => {
@@ -73,6 +80,15 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     return s;
   };
   const resetState = (car) => states.set(car, createCarState());
+  const accessStates = new WeakMap(); // mobil -> bukaan (pintu kiri/kanan, atap, bagasi); hanya dipakai pada mode access
+  const accessOf = (car) => {
+    let o = accessStates.get(car);
+    if (!o) {
+      o = createAccess();
+      accessStates.set(car, o);
+    }
+    return o;
+  };
   let lastCar = null; // mobil yang dikemudikan pada frame sebelumnya (keadaan dibersihkan saat tidak lagi mengemudi)
   let clock = 0;
   let lastWarn = -1e9;
@@ -92,9 +108,8 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
   }
   hud?.bind?.(act);
 
-  /** Naik ke kursi kosong terdekat. Mengembalikan true bila berhasil. */
-  function board(me) {
-    const r = fleet.board(me);
+  /** Sesudah fleet.board berhasil: keadaan pengemudi, kamera, dan pesan. */
+  function afterBoard(r) {
     if (!r) return false;
     if (r.seat === 0) resetState(r.car);
     if (camState) {
@@ -105,6 +120,35 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     else if (geared) toast('Kamu di kursi pengemudi (mengemudi): tekan Nyalakan untuk menghidupkan mesin, lalu pilih gigi D. E = turun.');
     else toast('Kamu mengemudi: geser setir di kiri, pedal gas dan rem di kanan, tombol R untuk mundur (atau W/S/A/D). E = turun.');
     return true;
+  }
+
+  /** Naik ke kursi kosong terdekat, tanpa membuka pintu. Mengembalikan true bila berhasil. (Mode access: pakai interact.) */
+  function board(me) {
+    return afterBoard(fleet.board(me));
+  }
+
+  /** Teks tombol aksi saat berjalan kaki: 'Buka pintu kanan', 'Naik', 'Buka bagasi', 'Tutup bagasi', ... atau '' bila tidak ada mobil yang bisa diakses. */
+  function prompt(me) {
+    if (!access) return fleet.nearest(me) ? 'Naik' : '';
+    return findAccess(fleet.cars, me, accessOf)?.plan.label ?? '';
+  }
+
+  /** Tombol aksi saat berjalan kaki. Mode access: buka/tutup pintu atau bagasi yang didekati, atau naik lewat pintu yang sudah terbuka. */
+  function interact(me) {
+    if (!access) return board(me);
+    if (fleet.mine) return false;
+    const hit = findAccess(fleet.cars, me, accessOf);
+    if (!hit) return false;
+    const { car, plan } = hit;
+    if (plan.kind === 'board') {
+      const r = fleet.board(me, car.index, plan.seat);
+      if (r) accessOf(car)[plan.key] = false; // pintu menutup setelah pemain duduk
+      return afterBoard(r);
+    }
+    const res = toggleAccess(accessOf(car), plan.key, car.speed);
+    if (res.msg) toast(res.msg);
+    if (res.ok) audio?.door?.(Math.hypot(car.x - me.x, car.z - me.z));
+    return res.ok;
   }
 
   /** Turun di sisi pintu; titik turun digeser bila mengenai penghalang. Mode bertahap: hanya saat mobil sudah berhenti (force = lewati pemeriksaan). */
@@ -120,6 +164,10 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     const out = fleet.leave();
     if (!out) return false;
     if (mine.seat === 0) resetState(car);
+    if (access) {
+      accessOf(car)[doorOfSeat(car, mine.seat)] = true; // pintu di sisi kursi terbuka saat turun; menutup sendiri bila pemain menjauh
+      audio?.door?.(0);
+    }
     const p = exit({ x: out.x, z: out.z });
     me.x = p.x;
     me.z = p.z;
@@ -140,6 +188,20 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     net.on('car', ({ from, msg }) => fleet.receive(from, msg));
     net.on('left', (m) => fleet.dropPlayer(m.id));
     net.carSnapshot = () => fleet.snapshot();
+  }
+
+  /**
+   * Mode access, tiap frame: bukaan menutup sendiri saat mobil melaju atau pemain menjauh, lalu keadaan tampilan (pintu, bagasi, lampu, sein)
+   * dipasang ke tiap mobil untuk dibaca vehicle-view.js lewat getParts.
+   */
+  function syncAccess(me, driving, st) {
+    const mineCar = fleet.mine ? fleet.cars[fleet.mine.index] : null;
+    for (const car of fleet.cars) {
+      const o = accessOf(car);
+      tickAccess(o, car.speed);
+      if (car !== mineCar && anyOpen(o) && Math.hypot(car.x - me.x, car.z - me.z) > AUTO_CLOSE_M) closeDoorsAndTrunk(o);
+      setParts(car, { ...partsFrom(car === driving && st ? st : IDLE_STATE, o), trunk: o.trunk });
+    }
   }
 
   /**
@@ -172,6 +234,7 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
       }
     }
     fleet.update(delta);
+    if (access) syncAccess(me, driving, st);
     view.update(delta);
     const info = driving ? hudInfo(driving) : null;
     hud.set(driving ? driving.speed * 3.6 : null, info, Boolean(driving && isCabin()));
@@ -195,5 +258,5 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     return true;
   }
 
-  return { board, leave, wire, step, horn, act, state: () => (fleet.driving && geared ? stateOf(fleet.driving) : null) };
+  return { board, interact, prompt, leave, wire, step, horn, act, state: () => (fleet.driving && geared ? stateOf(fleet.driving) : null), access: accessOf };
 }

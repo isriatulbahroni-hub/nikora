@@ -3,22 +3,26 @@
 //   pintu  : node DOOR_L / DOOR_R (engsel di tepi depan). Putar X lokal sebesar open_angle_deg (68) lalu condong keluar sebesar lean_deg (28)
 //            pada sumbu Y Blender; Y Blender = -Z glTF, jadi condongnya memutar sumbu Z dengan tanda terbalik.
 //   atap   : node ROOF. Naik lift_z (0,085 m) pada sepertiga pertama gerak, lalu bergeser ke belakang slide_y (0,42 m) (Y Blender = -Z glTF).
+//   bagasi : node TRUNK / BAGASI (titik asal node = engsel di tepi depan tutup bagasi; tutup memanjang ke belakang = -Z glTF).
+//            Putar X lokal sebesar open_angle_deg (62): sisi belakang tutup terangkat. Model tanpa node ini tetap tampil seperti biasa.
 //   lampu  : bahan SIG_L_0..2 / SIG_R_0..2 (sein, menyapu 3 lensa lalu padam, siklus 1 detik), Headlight LED, Reverse Lamp: yang diubah emissive-nya.
 // Nilai bawaan boleh ditimpa lewat node.userData (custom property Blender yang ikut terekspor): open_angle_deg, lean_deg, arah_lean, lift_z, slide_y.
-// Pose bawaan berkas harus POSE TERTUTUP (CAR_CTRL: door_L = door_R = roof = 0 saat ekspor).
+// Pose bawaan berkas harus POSE TERTUTUP (CAR_CTRL: door_L = door_R = roof = trunk = 0 saat ekspor).
 import * as THREE from 'three';
 
 const DOOR_NAME = /^(?:door|pintu)[_ .-]?(l|r|left|right|kiri|kanan)(?:\.?\d+)?$/i;
 const ROOF_NAME = /^(?:roof|atap)(?:\.?\d+)?$/i;
+const TRUNK_NAME = /^(?:trunk|bagasi)(?:\.?\d+)?$/i;
 const SIG_MAT = /^SIG_([LR])_(\d)/i;
 const HEAD_MAT = /^headlight[_ ]?led/i;
 const REV_MAT = /^reverse[_ ]?lamp/i;
 
 export const DOOR_OPEN_DEG = 68;
 export const DOOR_LEAN_DEG = 28;
+export const TRUNK_OPEN_DEG = 62;
 export const ROOF_LIFT = 0.085;
 export const ROOF_SLIDE = 0.42;
-const DOOR_RATE = 4; // 1/detik: pintu menghampiri tujuannya secara eksponensial
+const DOOR_RATE = 4; // 1/detik: pintu (dan bagasi) menghampiri tujuannya secara eksponensial
 const ROOF_SPEED = 0.4; // bagian/detik: atap bergerak lurus (2,5 detik penuh)
 const DEG = Math.PI / 180;
 const SIG_OFF = 0.3;
@@ -45,7 +49,7 @@ export function signalLit(index, time) {
 
 /** Cari bagian bergerak di pohon model. Mengembalikan rig (daftar kosong bila tidak ada yang dikenali: model tetap tampil seperti biasa). */
 export function rigParts(root) {
-  const rig = { doors: [], roofs: [], signals: [], heads: [], reverses: [] };
+  const rig = { doors: [], roofs: [], trunks: [], signals: [], heads: [], reverses: [] };
   const seen = new Set();
   const lamp = (m, color, off) => {
     if (!m.emissive) return false;
@@ -71,6 +75,9 @@ export function rigParts(root) {
     } else if (ROOF_NAME.test(name)) {
       const ud = o.userData ?? {};
       rig.roofs.push({ node: o, rest: o.position.clone(), lift: num(ud.lift_z, ROOF_LIFT), slide: num(ud.slide_y, ROOF_SLIDE), amount: 0 });
+    } else if (TRUNK_NAME.test(name)) {
+      const ud = o.userData ?? {};
+      rig.trunks.push({ node: o, rest: o.quaternion.clone(), open: num(ud.open_angle_deg, TRUNK_OPEN_DEG) * DEG, amount: 0 });
     }
     if (!o.isMesh) return;
     for (const m of asArray(o.material)) {
@@ -97,7 +104,7 @@ const approach = (cur, target, rate, dt) => {
 const moveToward = (cur, target, step) => (Math.abs(target - cur) <= step ? target : cur + Math.sign(target - cur) * step);
 
 /**
- * Terapkan keadaan ke rig satu frame. t = { doorL, doorR, roof, lights, hazard, indicator (-1 kiri, 0, +1 kanan), reverse }, dt detik, time = jam animasi (detik).
+ * Terapkan keadaan ke rig satu frame. t = { doorL, doorR, roof, trunk, lights, hazard, indicator (-1 kiri, 0, +1 kanan), reverse }, dt detik, time = jam animasi (detik).
  */
 export function applyParts(rig, t, dt, time) {
   const step = Math.max(0, dt);
@@ -106,6 +113,11 @@ export function applyParts(rig, t, dt, time) {
     qx.setFromAxisAngle(AX, d.open * d.amount);
     qz.setFromAxisAngle(AZ, -d.lean * d.leanSign * d.amount);
     d.node.quaternion.copy(d.rest).multiply(qz).multiply(qx);
+  }
+  for (const k of rig.trunks ?? []) {
+    k.amount = approach(k.amount, t.trunk ? 1 : 0, DOOR_RATE, step);
+    qx.setFromAxisAngle(AX, k.open * k.amount);
+    k.node.quaternion.copy(k.rest).multiply(qx);
   }
   for (const r of rig.roofs) {
     r.amount = moveToward(r.amount, t.roof ? 1 : 0, ROOF_SPEED * step);
