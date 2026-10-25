@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 
 const WHEEL_NAME = /wheel|roda|tyre|tire|velg|(?<!t)rim/i;
 const NOT_WHEEL = /steer|setir|arch|well|fender|caliper|kaliper|cover|light|lamp/i;
@@ -12,13 +13,14 @@ const asArray = (m) => (Array.isArray(m) ? m : [m]);
 // Decoder Draco dimuat dari CDN Google (versi dipatok) hanya bila sebuah GLB memakai kompresi Draco; GLB biasa tidak menyentuhnya.
 const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/';
 let sharedLoader = null;
-/** Pemuat GLTF bersama yang mendukung GLB berkompresi Draco; dibuat saat pertama dipakai. */
+/** Pemuat GLTF bersama yang mendukung GLB berkompresi Draco dan meshopt (decoder meshopt ikut terbundel, tanpa CDN); dibuat saat pertama dipakai. */
 function defaultLoader() {
   if (!sharedLoader) {
     const draco = new DRACOLoader();
     draco.setDecoderPath(DRACO_DECODER_PATH);
     sharedLoader = new GLTFLoader();
     sharedLoader.setDRACOLoader(draco);
+    sharedLoader.setMeshoptDecoder(MeshoptDecoder);
   }
   return sharedLoader;
 }
