@@ -80,7 +80,7 @@ test('fitCar: setir asli dikenali dari nama, posisinya dilaporkan, dan berputar 
   assert.deepEqual(steering.names, ['Steering_Wheel']);
   assert.ok(Math.abs(steering.center.x - 0.4) < 0.02 && Math.abs(steering.center.y - 0.85) < 0.02 && Math.abs(steering.center.z - 0.6) < 0.02, `pusat (${steering.center.x}, ${steering.center.y}, ${steering.center.z})`);
   assert.ok(Math.abs(steering.radius - 0.2) < 0.02, `jari-jari ${steering.radius}`);
-  assert.ok(steering.tilt <= 0 && steering.tilt >= -0.8);
+  assert.ok(Math.abs(steering.tilt) <= 0.8, `tilt ${steering.tilt}`); // bisa positif atau negatif, tergantung arah miring setir
   root.updateMatrixWorld(true);
   const mesh = root.getObjectByName('Steering_Wheel'); // sudah dipindah ke poros putar di bawah root, bukan lagi anak `scene`
   assert.ok(mesh, 'setir ada di bawah poros putar');

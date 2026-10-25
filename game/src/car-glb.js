@@ -5,6 +5,8 @@
 // tangan, dan kamera kabin berada tepat di setir itu (vehicle-view.js); setir buatan kode hanya dipasang bila model tidak punya setir sendiri.
 // Poros putar setir dihitung dari bentuk lingkarnya (bidang rata terbaik), bukan dari perkiraan kotak, dan bagian kecil tak bernama setir yang menempel
 // di bidang itu (hub, lambang, tombol) ikut berputar: dulu setir terlihat "patah" saat dibelokkan karena porosnya miring dan hub tertinggal.
+// Tangan pengemudi bawaan model (DRIVER_HAND_*, IK_*) dibuang: kokpit game menggambar tangannya sendiri, dan tangan bawaan yang padat (puluhan ribu simpul)
+// membuat titik-titik setir tidak lagi "rata", sehingga perhitungan poros gagal dan setir berputar pada poros miring (terlihat patah saat setir layar diputar).
 // Material kaca (nama mengandung glass/kaca/window/windshield) dibuat bening sederhana (tanpa transmission) supaya pandangan dari kabin jernih.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -16,6 +18,7 @@ const NOT_WHEEL = /steer|setir|kemudi|arch|well|fender|caliper|kaliper|cover|lig
 const STEER_NAME = /steer|setir|kemudi/i;
 const NOT_STEER = /column|kolom|stalk|tuas|paddle|shaft|lock|ctrl|control|wiper/i; // bagian yang tidak ikut berputar bersama setir
 const NOT_SPIN_PART = /column|kolom|stalk|tuas|paddle|shaft|lock|ctrl|control|wiper|dash|gauge|cluster|screen|display|speedo|needle|dial|ipad|vent|panel/i; // bukan bagian setir walau dekat
+const DRIVER_HAND = /^(driver[_ ]?hand|ik[_ ])/i; // tangan pengemudi bawaan model dan penanda IK-nya (DRIVER_HAND_L/R, IK_WRIST_L/R)
 const SPIN_SLAB = 0.06; // m: bagian tak bernama ikut berputar bila jaraknya dari bidang setir tidak lebih dari ini
 const GLASS_NAME = /glass|kaca|window|windshield|windscreen|jendela/i;
 const NOT_GLASS = /frame|trim|seal|rubber|karet|wiper|mirror|cermin|spion|cover/i;
@@ -49,6 +52,22 @@ export function disposeObject(obj) {
       mat.dispose();
     }
   });
+}
+
+/**
+ * Buang tangan pengemudi bawaan model (DRIVER_HAND_*, IK_*) dari pohon node. Kokpit game menggambar tangannya sendiri (cockpit-view.js), jadi tangan bawaan
+ * hanya dobel, ikut berputar bersama setir, dan (karena padat) mengacaukan perhitungan bidang setir. Mengembalikan jumlah node yang dibuang.
+ */
+function stripDriverHands(model) {
+  const doomed = [];
+  model.traverse((o) => {
+    if (o.name && DRIVER_HAND.test(o.name)) doomed.push(o);
+  });
+  for (const o of doomed) {
+    o.removeFromParent();
+    disposeObject(o);
+  }
+  return doomed.length;
 }
 
 /** Cari roda: node pertama (paling atas) bernama roda; hanya empat sudut (kiri/kanan x depan/belakang) di dekat tanah yang diterima. */
@@ -90,23 +109,19 @@ function rigWheels(root, model) {
   return wheels;
 }
 
-/** Titik-titik simpul (kerangka root) dari semua mesh di bawah `nodes`, dijarangkan hingga paling banyak ~cap titik. */
-function worldPoints(nodes, cap = 4000) {
-  const meshes = [];
-  let total = 0;
+/**
+ * Titik-titik simpul (kerangka root) dari semua mesh di bawah `nodes`. Tiap mesh dijarangkan sendiri (paling banyak ~perMesh titik), bukan secara global:
+ * mesh yang sangat padat tidak boleh menenggelamkan lingkar setir dalam perhitungan bidang.
+ */
+function worldPoints(nodes, perMesh = 400) {
+  const pts = [];
   for (const n of nodes) {
     n.traverse((m) => {
       const pos = m.isMesh ? m.geometry?.attributes?.position : null;
       if (!pos) return;
-      meshes.push(m);
-      total += pos.count;
+      const step = Math.max(1, Math.ceil(pos.count / perMesh));
+      for (let i = 0; i < pos.count; i += step) pts.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld));
     });
-  }
-  const step = Math.max(1, Math.ceil(total / cap));
-  const pts = [];
-  for (const m of meshes) {
-    const pos = m.geometry.attributes.position;
-    for (let i = 0; i < pos.count; i += step) pts.push(new THREE.Vector3().fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld));
   }
   return pts;
 }
@@ -171,7 +186,8 @@ function ringFrame(points) {
  * Cari roda setir asli di model: node (paling atas) bernama steer/setir/kemudi yang pusatnya di dalam kabin dan lebarnya sebesar roda setir (0,2-0,7 m).
  * Semua bagiannya dipasang pada satu poros yang tegak lurus bidang lingkar setir, supaya `spin.rotation.z` memutar setir tepat pada porosnya
  * (tanpa goyang/patah), dan bagian kecil tak bernama setir yang menempel di bidang itu (hub, lambang, tombol) ikut berputar.
- * Mengembalikan { spin, center (kerangka mobil, x + = kiri), radius, tilt (rad, sama tanda dengan cockpitSpec.wheel.tilt), names } atau null bila tidak ada.
+ * Mengembalikan { spin, center (kerangka mobil, x + = kiri), radius, tilt (rad, sama tanda dengan cockpitSpec.wheel.tilt: putaran di sumbu x yang setara dengan
+ * miring setir; positif = bagian atas setir condong ke depan, negatif = ke arah pengemudi), names } atau null bila tidak ada.
  */
 function rigSteering(root, model) {
   const found = [];
@@ -208,7 +224,7 @@ function rigSteering(root, model) {
     axis = frame.axis;
     center = frame.center;
     radius = frame.radius;
-    tilt = clamp(Math.atan2(-axis.y, axis.z), -0.8, 0); // putaran di sumbu x yang setara dengan miring setir (dipakai kokpit untuk tangan)
+    tilt = clamp(Math.atan2(-axis.y, axis.z), -0.8, 0.8); // putaran di sumbu x yang setara dengan miring setir (dipakai kokpit untuk tangan); bisa positif atau negatif
   }
 
   // bagian kecil tak bernama setir yang menempel di bidang setir (hub, lambang, tombol) ikut berputar
@@ -265,6 +281,7 @@ export function fitCar(scene, { length, yaw = 0, envMap = null }) {
   const model = new THREE.Group(); // transformasi kita; transformasi asli berkas tetap di dalam `scene`
   model.add(scene);
   root.add(model);
+  stripDriverHands(scene); // tangan bawaan model dibuang sebelum apa pun diukur atau dipasang
   const box = new THREE.Box3();
   const size = new THREE.Vector3();
   const center = new THREE.Vector3();
