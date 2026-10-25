@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import * as THREE from 'three';
 import { CAR_MODELS, GLB_MODELS, MODEL_IDS, gearFor, modelOf, rpmFor } from './car-models.js';
 import { createVehicle, stepVehicle, specOf } from './vehicle.js';
-import { Fleet, NIKORA_SPOT, carSitId, hotelCars } from './vehicle-fleet.js';
+import { BUGATTI_SPOT, Fleet, NIKORA_SPOT, carSitId, hotelCars } from './vehicle-fleet.js';
 import { engineLayers, engineSound } from './car-audio.js';
 import { fitCar } from './car-glb.js';
 import { getHotelWorld } from './hotel-layout.js';
@@ -114,8 +115,8 @@ test('hotel: NIKORA W16 mobil ke-9 di bawah kanopi depan lobi, tidak menabrak ap
   const cars = hotelCars();
   const car = cars.find((c) => c.model === 'nikora');
   assert.ok(car, 'ada di armada hotel');
-  assert.equal(cars.at(-1).id, car.id, 'terakhir: indeks mobil lain tidak bergeser');
-  assert.equal(cars.length, 9);
+  assert.equal(cars.at(-2).id, car.id, 'tepat sebelum Bugatti Chiron: indeks mobil lain tidak bergeser');
+  assert.equal(cars.length, 10);
   assert.deepEqual({ x: car.x, z: car.z, heading: car.heading }, { ...NIKORA_SPOT });
   const f = new Fleet({ specs: cars, selfId: 'ani' });
   const n = f.cars.find((c) => c.model === 'nikora');
@@ -131,6 +132,34 @@ test('hotel: NIKORA W16 mobil ke-9 di bawah kanopi depan lobi, tidak menabrak ap
   }
   const hit = f.board({ x: n.x + 1.5, z: n.z });
   assert.equal(hit.car, n, 'mobil terdekat dari pemain di depannya');
+  assert.equal(hit.seat, 0, 'pengemudi dulu');
+});
+
+test('hotel: Bugatti Chiron mobil ke-10 (model GLB sendiri) di bawah kanopi di samping NIKORA W16, tidak menabrak apa pun, bisa dinaiki', () => {
+  assert.equal(modelOf('bugatti'), GLB_MODELS.bugatti);
+  const spec = specOf('bugatti');
+  assert.equal(spec.model, 'bugatti');
+  assert.equal(spec.seatCount, 2);
+  assert.match(spec.glb.file, /mobil-bugatti-chiron\.glb$/);
+  assert.ok(existsSync(new URL(`../public/${spec.glb.file}`, import.meta.url)), 'berkas GLB ada di folder publik');
+  const cars = hotelCars();
+  const car = cars.find((c) => c.model === 'bugatti');
+  assert.ok(car, 'ada di armada hotel');
+  assert.equal(cars.at(-1).id, car.id, 'terakhir: indeks mobil lain tidak bergeser');
+  assert.deepEqual({ x: car.x, z: car.z, heading: car.heading }, { ...BUGATTI_SPOT });
+  const f = new Fleet({ specs: cars, selfId: 'ani' });
+  const b = f.cars.find((c) => c.model === 'bugatti');
+  const n = f.cars.find((c) => c.model === 'nikora');
+  assert.ok(Math.hypot(b.x - n.x, b.z - n.z) > 5, 'tidak berimpit dengan NIKORA W16');
+  const colliders = getHotelWorld().levels[0].colliders;
+  const fwd = { x: Math.sin(b.heading), z: Math.cos(b.heading) };
+  for (const s of [b.spec.circleOffset, -b.spec.circleOffset]) {
+    const p = { x: b.x + fwd.x * s, z: b.z + fwd.z * s };
+    const q = resolveMove(p, b.spec.circleRadius, colliders, HIGHWAY_LIMIT);
+    assert.ok(Math.hypot(q.x - p.x, q.z - p.z) < 1e-6, 'lingkaran tabrakan mobil tidak tumpang tindih penghalang');
+  }
+  const hit = f.board({ x: b.x + 1.5, z: b.z });
+  assert.equal(hit.car, b, 'mobil terdekat dari pemain di depannya');
   assert.equal(hit.seat, 0, 'pengemudi dulu');
 });
 
