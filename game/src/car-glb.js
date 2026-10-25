@@ -3,10 +3,25 @@
 // dan dipasang pada poros putar supaya bisa berputar dan membelok; bila namanya tidak dikenali, mobil tetap tampil tanpa roda berputar.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 
 const WHEEL_NAME = /wheel|roda|tyre|tire|velg|(?<!t)rim/i;
 const NOT_WHEEL = /steer|setir|arch|well|fender|caliper|kaliper|cover|light|lamp/i;
 const asArray = (m) => (Array.isArray(m) ? m : [m]);
+
+// Decoder Draco dimuat dari CDN Google (versi dipatok) hanya bila sebuah GLB memakai kompresi Draco; GLB biasa tidak menyentuhnya.
+const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/';
+let sharedLoader = null;
+/** Pemuat GLTF bersama yang mendukung GLB berkompresi Draco; dibuat saat pertama dipakai. */
+function defaultLoader() {
+  if (!sharedLoader) {
+    const draco = new DRACOLoader();
+    draco.setDecoderPath(DRACO_DECODER_PATH);
+    sharedLoader = new GLTFLoader();
+    sharedLoader.setDRACOLoader(draco);
+  }
+  return sharedLoader;
+}
 
 /** Buang geometri, bahan, dan tekstur sebuah objek (dipakai saat armada dibuang). */
 export function disposeObject(obj) {
@@ -100,8 +115,8 @@ export function fitCar(scene, { length, yaw = 0, envMap = null }) {
   return { root, wheels: rigWheels(root, model) };
 }
 
-/** Muat berkas GLB lalu pasang dengan fitCar. Janji ditolak bila berkas gagal dimuat atau kosong. */
-export function loadCarGlb({ url, length, yaw = 0, envMap = null, loader = new GLTFLoader() }) {
+/** Muat berkas GLB (juga yang berkompresi Draco) lalu pasang dengan fitCar. Janji ditolak bila berkas gagal dimuat atau kosong. */
+export function loadCarGlb({ url, length, yaw = 0, envMap = null, loader = defaultLoader() }) {
   return new Promise((resolve, reject) => {
     loader.load(
       url,

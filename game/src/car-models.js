@@ -56,20 +56,29 @@ export const CAR_MODELS = freeze({
 // pengereman 100-0 km/j sekitar 31 m (12,5 m/s^2), mesin 16 silinder 700-6700 rpm, tujuh gigi.
 // accelFade = berapa bagian percepatan hilang di kecepatan puncak (tenaga makin sulit menambah laju), dragK = hambatan udara saat gas
 // dilepas (m/s^2 per (m/s)^2), grip = pengali cengkeraman ban.
-export const GLB_MODELS = freeze({
-  nikora: freeze({
-    id: 'nikora', name: 'NIKORA W16', kind: 'hypercar',
-    length: 4.55, width: 2.04, height: 1.21, wheelBase: 2.71, wheelRadius: 0.37, tireWidth: 0.32,
-    maxSpeed: 116.7, reverseMax: 6, accel: 11.6, accelFade: 0.9, dragK: 0.0003, brake: 12.5, maxSteer: 0.5, steerRate: 3.8, grip: 1.25,
-    circleRadius: 1.0, circleOffset: 1.3,
-    seats: freeze([{ fwd: 0.1, side: 0.5 }, { fwd: 0.1, side: -0.5 }]), seatLift: -0.36,
-    paint: 0x0a1a3a, accent: 0x0b0c10, interior: 0x15151a,
-    engine: freeze({ cylinders: 16, idleRpm: 700, maxRpm: 6700, gears: gears(21.7, 36.1, 50, 66.7, 83.3, 100, 116.7), timbre: 'deep', turbo: true }),
-    doors: freeze({ style: 'swing', open: 1.0 }),
-    // file = relatif terhadap folder publik; yaw = putaran tambahan (0 atau Math.PI) bila moncong model di berkas menghadap ke belakang
-    glb: freeze({ file: 'models/mobil-hotel.glb', yaw: 0 }),
-  }),
+const NIKORA_W16 = freeze({
+  id: 'nikora', name: 'NIKORA W16', kind: 'hypercar',
+  length: 4.55, width: 2.04, height: 1.21, wheelBase: 2.71, wheelRadius: 0.37, tireWidth: 0.32,
+  maxSpeed: 116.7, reverseMax: 6, accel: 11.6, accelFade: 0.9, dragK: 0.0003, brake: 12.5, maxSteer: 0.5, steerRate: 3.8, grip: 1.25,
+  circleRadius: 1.0, circleOffset: 1.3,
+  seats: freeze([{ fwd: 0.1, side: 0.5 }, { fwd: 0.1, side: -0.5 }]), seatLift: -0.36,
+  paint: 0x0a1a3a, accent: 0x0b0c10, interior: 0x15151a,
+  engine: freeze({ cylinders: 16, idleRpm: 700, maxRpm: 6700, gears: gears(21.7, 36.1, 50, 66.7, 83.3, 100, 116.7), timbre: 'deep', turbo: true }),
+  doors: freeze({ style: 'swing', open: 1.0 }),
+  // file = relatif terhadap folder publik; yaw = putaran tambahan (0 atau Math.PI) bila moncong model di berkas menghadap ke belakang
+  glb: freeze({ file: 'models/mobil-hotel.glb', yaw: 0 }),
 });
+
+// Bugatti Chiron: model GLB buatan sendiri dari Blender (game/blender/nikora_bugatti_chiron.blend). Ukuran dan performa sama dengan NIKORA W16
+// (hypercar 16 silinder empat-turbo, 420 km/j). Bila moncong di berkas ternyata menghadap ke belakang, ubah yaw menjadi Math.PI.
+const BUGATTI_CHIRON = freeze({
+  ...NIKORA_W16,
+  id: 'bugatti', name: 'Bugatti Chiron',
+  paint: 0x0b2a5c,
+  glb: freeze({ file: 'models/mobil-bugatti-chiron.glb', yaw: 0 }),
+});
+
+export const GLB_MODELS = freeze({ nikora: NIKORA_W16, bugatti: BUGATTI_CHIRON });
 
 export const MODEL_IDS = freeze(Object.keys(CAR_MODELS));
 export const modelOf = (id) => CAR_MODELS[id] ?? GLB_MODELS[id] ?? null;
