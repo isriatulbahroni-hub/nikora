@@ -69,11 +69,20 @@ const NIKORA_W16 = freeze({
   glb: freeze({ file: 'models/mobil-hotel.glb', yaw: 0 }),
 });
 
-// Bugatti Chiron: model GLB buatan sendiri dari Blender (game/blender/nikora_bugatti_chiron.blend). Ukuran dan performa sama dengan NIKORA W16
-// (hypercar 16 silinder empat-turbo, 420 km/j). Bila moncong di berkas ternyata menghadap ke belakang, ubah yaw menjadi Math.PI.
+// Bugatti Chiron: model GLB buatan sendiri dari Blender (game/blender/nikora_bugatti_chiron.blend). Performa dicocokkan dengan data pabrik
+// Chiron (0-100 km/j 2,4 s; 0-200 km/j 6,5 s; 0-300 km/j 13,6 s; kecepatan puncak 420 km/j dibatasi elektronik; 100-0 km/j sekitar 31,3 m;
+// massa 1995 kg; mesin W16 quad-turbo 1479 hp). Tenaga yang sampai ke jalan (powerW) diset lebih rendah dari tenaga pabrik (1103 kW) supaya
+// 0-200 dan 0-300 km/j sesuai: rugi transmisi dan pindah gigi tidak dimodelkan. Bila moncong di berkas menghadap ke belakang, ubah yaw menjadi Math.PI.
 const BUGATTI_CHIRON = freeze({
   ...NIKORA_W16,
   id: 'bugatti', name: 'Bugatti Chiron',
+  mass: 1995, // kg
+  powerW: 650000, // tenaga yang sampai ke jalan (W); pabrik 1103 kW
+  dragK: 0.0002, // hambatan udara (m/s^2 per (m/s)^2)
+  accel: 11.6, // batas percepatan awal (m/s^2)
+  accelFade: 0, // dimatikan: percepatan dibatasi daya, bukan pengurangan linear
+  maxSpeed: 116.7, // 420 km/j
+  brake: 12.5, // 100-0 km/j sekitar 31 m
   paint: 0x0b2a5c,
   glb: freeze({ file: 'models/mobil-bugatti-chiron.glb', yaw: 0 }),
 });
