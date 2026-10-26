@@ -14,6 +14,7 @@ import { Fleet, hotelCars } from './vehicle-fleet.js';
 import { createVehicleView } from './vehicle-view.js';
 import { createCarRide } from './car-ride.js';
 import { cockpitFov, eyeWorld, cockpitSpec } from './cockpit.js';
+import { mountCabinLook } from './cabin-look-ui.js';
 import { GATES, HIGHWAY_LIMIT, arrivalGate, gateArrival, leftOf, venueUrl } from './highway.js';
 import { FLOOR_COLORS, GROUP_ORDER, cssColor, describePlace, hotelPlaces } from './hotel-places.js';
 import { hoursAt, zoneFromSearch } from './day-night.js';
@@ -75,7 +76,9 @@ const held = new Set();
 const joystick = { x: 0, z: 0 };
 const KEYS = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
 const hooks = { map: () => {}, camera: () => {}, places: () => {}, action: () => {}, sky: () => {}, horn: () => {} };
-const camInput = { lastDrag: -1e9 }; // kapan pemain terakhir memutar kamera (kamera mobil tidak melawan putaran itu)
+// lastDrag: kapan pemain terakhir memutar kamera (kamera mobil tidak melawan putaran itu).
+// cabinDrag(dx, dy): dipasang start(); mengembalikan true bila geseran satu jari dipakai untuk menoleh di kamera kabin (bukan memutar kamera orbit).
+const camInput = { lastDrag: -1e9, cabinDrag: null };
 const CAM_LIMITS = Object.freeze({ minPitch: 0.06, maxPitch: 1.5, minDist: 1.5, maxDist: 140 });
 // Orang ketiga, lebar, udara, dan pandangan menara dari jauh
 const CAM_PRESETS = Object.freeze([{ pitch: 0.28, dist: 5.6 }, { pitch: 0.55, dist: 11 }, { pitch: 0.95, dist: 21 }, { pitch: 0.4, dist: 110 }]);
@@ -128,6 +131,7 @@ function setupInput(canvas, camState) {
   }, { passive: false });
 
   // Seret = putar dan miringkan kamera (satu jari/mouse); cubit dua jari = zoom, putar dua jari = putar kamera.
+  // Di kamera kabin, seret satu jari = menoleh (camInput.cabinDrag).
   const pointers = new Map();
   let pinch = null;
   const twoFingers = () => {
@@ -148,8 +152,10 @@ function setupInput(canvas, camState) {
     p.y = e.clientY;
     camInput.lastDrag = performance.now();
     if (pointers.size === 1) {
-      camState.yaw -= dx * 0.006;
-      camState.pitch = clamp(camState.pitch + dy * 0.005, CAM_LIMITS.minPitch, CAM_LIMITS.maxPitch);
+      if (!camInput.cabinDrag?.(dx, dy)) {
+        camState.yaw -= dx * 0.006;
+        camState.pitch = clamp(camState.pitch + dy * 0.005, CAM_LIMITS.minPitch, CAM_LIMITS.maxPitch);
+      }
     } else if (pointers.size === 2 && pinch) {
       const now = twoFingers();
       if (now.d > 1 && pinch.d > 1) camState.dist = clamp(camState.dist * (pinch.d / now.d), CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
@@ -533,6 +539,13 @@ async function start() {
     isDragging: () => performance.now() - camInput.lastDrag < 1500,
     isCabin: () => cockpitOn,
   });
+  // pandangan kabin (cabin-look.js): tombol Teman/Belakang/Depan/Tahan dan geseran satu jari = menoleh, hanya selama kamera kabin aktif
+  const cabinLook = mountCabinLook();
+  camInput.cabinDrag = (dx, dy) => {
+    if (!cockpitOn || !fleet.driving) return false;
+    cabinLook.drag(dx, dy);
+    return true;
+  };
   doorHook = (car) => carAudio.door(Math.hypot(car.x - me.x, car.z - me.z));
   hooks.action = () => {
     if (riding) return; // sedang di dalam lift
@@ -745,16 +758,21 @@ async function start() {
     avatar.visible = camArm > 0.95;
     blob.visible = avatar.visible;
 
-    // kamera kabin: mata di kepala pengemudi, menghadap ke depan mobil, sedikit mengintip ke arah belokan; avatar disembunyikan
+    // kamera kabin: mata di kepala pengemudi, menghadap ke depan mobil (atau ke arah pandangan: menoleh ke teman/belakang, cabin-look.js),
+    // sedikit mengintip ke arah belokan saat menatap lurus; avatar disembunyikan
     const inCabin = cockpitOn && !!fleet.driving;
     if (!fleet.driving) cockpitOn = false;
+    cabinLook.show(inCabin);
     carView.setCockpit(inCabin ? fleet.driving : null);
     carAudio.cabin(inCabin);
     if (inCabin) {
       const dc = fleet.driving;
-      const e = eyeWorld(dc, cockpitSpec(dc.spec), dc.steer * 0.35);
+      const cs = cockpitSpec(dc.spec);
+      cabinLook.setEyeX(cs.eye.x);
+      const lk = cabinLook.step(delta, dc.steer);
+      const e = eyeWorld(dc, cs, lk.yaw);
       camera.position.set(e.x, e.y, e.z);
-      camera.lookAt(e.x + Math.sin(e.yaw) * 20, e.y - 0.12, e.z + Math.cos(e.yaw) * 20);
+      camera.lookAt(e.x + Math.sin(e.yaw) * 20, e.y - 0.12 + Math.tan(lk.pitch) * 20, e.z + Math.cos(e.yaw) * 20);
       camera.fov = cockpitFov(dc.speed, dc.spec.maxSpeed, camera.aspect);
       camera.updateProjectionMatrix();
       avatar.visible = false;
