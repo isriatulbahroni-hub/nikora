@@ -8,13 +8,12 @@ import { alongOf, endPoint, gatePsi, localToWorld, planeBeyond, planeBehind, pos
 
 // Perjalanan 20+ menit di DALAM dunia hotel (satu halaman, satu dunia): jalan raya hotel -> gerbang -> rute perjalanan (journey.js) -> tempat acara.
 // Rute dipasang di gerbang jalan raya (hotel-journey-math.js): titik awal rute = titik gerbang, diputar menurut arah keluar gerbang. Bentuk rute
-// (tikungan, bukit, jembatan, danau, durasi >= 20 menit) tidak diubah sedikit pun; yang berubah hanya tempatnya: tidak ada pindah halaman.
+// (tikungan, bukit, jembatan, danau) tidak diubah sedikit pun; yang berubah hanya tempatnya: tidak ada pindah halaman.
 //
 // Mobil dikemudikan PEMAIN SENDIRI (autopilot dimatikan): joystick/pedal bekerja seperti di jalan raya hotel. Modul ini hanya melacak posisi
-// mobil (atau pejalan kaki) di sepanjang rute untuk HUD, tinggi dunia, pemuatan potongan, dan pemasangan villa. Supaya perjalanan tetap
-// >= 20 menit, kecepatan mobil dibatasi sebesar kecepatan jelajah tiap bagian rute (batas kecepatan jalan: 50, 45, 36, 32, 25 km/jam).
-// Mobil dijaga tetap di dalam badan jalan (dinding lunak di tepi aspal), karena tanah di luar jalan tidak punya tabrakan. Autopilot lama
-// masih ada untuk pengujian: tambahkan ?otomatis=1 pada alamat halaman.
+// mobil (atau pejalan kaki) di sepanjang rute untuk HUD, tinggi dunia, pemuatan potongan, dan pemasangan villa. Tidak ada batas kecepatan per bagian
+// dan tidak ada hitung mundur waktu: waktu tiba sepenuhnya tergantung kecepatan pengemudi. Mobil tetap dijaga di dalam badan jalan (dinding lunak
+// di tepi aspal), karena tanah di luar jalan tidak punya tabrakan. Autopilot lama masih ada untuk pengujian: tambahkan ?otomatis=1 pada alamat halaman.
 // Mobil tetap di y = 0 dan seluruh dunia perjalanan digeser vertikal mengikuti tinggi jalan di bawah pemain (hanya dunia perjalanan; hotel tetap),
 // jadi fisika mobil, kursi, dan kamera hotel dipakai apa adanya.
 // Di ujung rute villa dipasang (hotel-villa.js) dan bisa dimasuki langsung; tempat acara lain masih memakai halaman sendiri lewat tombol "Masuk"
@@ -26,6 +25,7 @@ const ANCHOR_BEFORE = 380; // villa dipasang saat sisa rute sependek ini (jalan 
 const ARRIVE_BEFORE = 15; // dianggap tiba saat sisa rute sependek ini (mengemudi sendiri)
 const EDGE_MARGIN = 0.9; // dinding lunak: mobil tidak boleh lebih dekat dari ini ke tepi aspal
 const BIG = Object.freeze({ minX: -60000, maxX: 60000, minZ: -60000, maxZ: 60000 }); // batas dunia mobil selama perjalanan
+const BACK_OUT = -2; // mobil dianggap kembali ke jalan raya hotel saat sejauh ini di belakang gerbang (m): perjalanan selesai otomatis
 
 const fmt = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 const toPlane = (p) => new THREE.Plane(new THREE.Vector3(p.nx, 0, p.nz), p.c);
@@ -157,10 +157,9 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
       const url = ride ? enterUrl(ride.gate) : null;
       if (url) window.location.href = url;
     });
-    const back = mk('Kembali ke hotel', () => { if (ride) onReturn(ride.gate); });
     box.append(title, meta, track, row);
     document.body.appendChild(box);
-    ui = { box, title, part, eta, bar, pause, skip, enter, back };
+    ui = { box, title, part, eta, bar, pause, skip, enter };
   }
 
   function renderUi() {
@@ -172,16 +171,16 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
     ui.box.style.display = 'block';
     const { j, gate, st } = ride;
     if (state === 'riding') {
-      const seg = segmentAt(j, clamp(st.s, 0, j.length));
+      const s = clamp(st.s, 0, j.length);
+      const seg = segmentAt(j, s);
       setText(ui.title, seg.name);
-      const limit = autopilot ? '' : ` · Batas ${Math.round(seg.cruise * 3.6)} km/jam`;
-      setText(ui.part, `${gate.label} · Bagian ${j.bounds.indexOf(seg) + 1}/${SEGMENTS.length}${limit}`);
-      setText(ui.eta, `Sisa ± ${fmt(Math.max(0, j.duration - timeAt(j, clamp(st.s, 0, j.length))))}`);
-      ui.bar.style.width = `${(clamp(st.s, 0, j.length) / j.length) * 100}%`;
+      setText(ui.part, `${gate.label} · Bagian ${j.bounds.indexOf(seg) + 1}/${SEGMENTS.length}`);
+      // tidak ada hitung mundur waktu: waktu tiba tergantung kecepatan pengemudi, jadi yang ditampilkan adalah jarak tersisa
+      setText(ui.eta, `Sisa ${Math.max(0, Math.round(j.length - s))} m`);
+      ui.bar.style.width = `${(s / j.length) * 100}%`;
       ui.pause.style.display = autopilot ? 'block' : 'none';
       ui.skip.style.display = autopilot && st.s <= j.length - 400 ? 'block' : 'none';
       ui.enter.style.display = 'none';
-      ui.back.style.display = autopilot ? 'none' : 'block'; // mengemudi sendiri: selalu boleh putar balik ke hotel
     } else {
       setText(ui.title, `Tiba di ${gate.label}`);
       setText(ui.part, 'Area penurunan tamu');
@@ -192,7 +191,6 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
       const url = enterUrl(gate);
       ui.enter.style.display = url ? 'block' : 'none';
       setText(ui.enter, `Masuk ke ${gate.label}`);
-      ui.back.style.display = 'block';
     }
   }
 
@@ -220,7 +218,7 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
   /**
    * Mengemudi sendiri: hanya MELACAK posisi (mobil, atau pejalan kaki bila pemain turun) pada rute. Mobil didorong kembali ke badan jalan
    * bila keluar dari tepi aspal (tanah di luar jalan tidak punya tabrakan dan tingginya tidak sama dengan jalan) dan melambat seperti
-   * menggesek pembatas. Kecepatan dibatasi kecepatan jelajah bagian rute itu, jadi perjalanan penuh tidak pernah kurang dari durasi rute (20+ menit).
+   * menggesek pembatas. Kecepatan tidak dibatasi per bagian rute: pengemudi bebas memakai kecepatan mobilnya sendiri.
    */
   function trackManual(delta, driving, me) {
     const { j, gate, st } = ride;
@@ -231,19 +229,15 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
       const cl = worldToLocal(gate, who.x, who.z);
       const r = nearestOnRoute(j, cl.x, cl.z);
       s = r.s;
-      if (driving) {
-        const cap = segmentAt(j, clamp(s, 0, j.length)).cruise; // m/s
-        if (Math.abs(driving.speed) > cap) driving.speed = Math.sign(driving.speed) * cap;
-        if (r.s < j.length - 5) {
-          const over = Math.abs(r.d) - (flareHalf(r.s) - EDGE_MARGIN);
-          if (over > 0) {
-            const h = j.hs[r.i];
-            const sg = Math.sign(r.d); // + = sisi kiri jalan; vektor kiri = (cos h, -sin h)
-            const p = localToWorld(gate, cl.x - sg * over * Math.cos(h), cl.z + sg * over * Math.sin(h));
-            driving.x = p.x;
-            driving.z = p.z;
-            driving.speed *= Math.max(0, 1 - 3 * delta);
-          }
+      if (driving && r.s < j.length - 5) {
+        const over = Math.abs(r.d) - (flareHalf(r.s) - EDGE_MARGIN);
+        if (over > 0) {
+          const h = j.hs[r.i];
+          const sg = Math.sign(r.d); // + = sisi kiri jalan; vektor kiri = (cos h, -sin h)
+          const p = localToWorld(gate, cl.x - sg * over * Math.cos(h), cl.z + sg * over * Math.sin(h));
+          driving.x = p.x;
+          driving.z = p.z;
+          driving.speed *= Math.max(0, 1 - 3 * delta);
         }
       }
     }
@@ -336,7 +330,11 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
           else if (d > KEEP && worlds.has(g.id)) disposeWorld(g.id);
         }
         followGround(me);
-      } else stepRideFrame(delta, driving, me);
+      } else {
+        stepRideFrame(delta, driving, me);
+        // mobil diputar balik dan keluar lewat gerbang kembali ke jalan raya hotel: perjalanan selesai tanpa tombol
+        if (ride && ride.st.s < BACK_OUT) this.finish();
+      }
       for (const w of worlds.values()) {
         const cl = worldToLocal(w.gate, camera.position.x, camera.position.z);
         const s = ride && ride.w === w ? ride.st.s : alongOf(w.gate, camera.position.x, camera.position.z).s;
