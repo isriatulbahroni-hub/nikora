@@ -17,9 +17,9 @@ test('hotel-main.js memakai pandangan kabin: modul dipasang, geseran satu jari m
   assert.match(hotel, /Math\.tan\(lk\.pitch\)/);
 });
 
-test('cabin-look-ui.js memakai logika murni cabin-look.js', () => {
+test('cabin-look-ui.js hanya geseran (tanpa tombol) dan memakai logika murni cabin-look.js', () => {
   const ui = src('./cabin-look-ui.js');
   assert.match(ui, /from '\.\/cabin-look\.js'/);
-  for (const fn of ['createCabinLook', 'passengerYaw', 'peekYaw']) assert.ok(ui.includes(fn), `${fn} dipakai`);
-  for (const call of ['look.glance(', 'look.front(', 'look.toggleHold(', 'look.drag(', 'look.snap(']) assert.ok(ui.includes(call), `${call} dipanggil`);
+  for (const call of ['createCabinLook', 'peekYaw', 'look.drag(', 'look.snap(', 'look.step(']) assert.ok(ui.includes(call), `${call} dipakai`);
+  assert.ok(!ui.includes('createElement'), 'tidak ada tombol atau elemen layar');
 });
