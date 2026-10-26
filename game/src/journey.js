@@ -6,6 +6,9 @@
 // Jalan dibangun dengan mengintegrasikan kelengkungan (bukan menyambung titik acak), jadi radius tikungan terkecil dan
 // kemiringan terbesar dijamin oleh konstruksi dan bisa diuji. Tiap tempat acara punya benih sendiri => rute berbeda.
 // Satuan meter dan detik. Heading seperti vehicle.js: maju = (sin h, cos h) pada (x, z). Titik awal = (0, 0, 0).
+//
+// Jalan perjalanan kini selebar Jalan Raya NIKORA (highway.js: 4 lajur per arah + median + bahu = 42 m, setengah lebar 21 m), jadi
+// radius tikungan terkecil dan jarak aman antar-bagian jalan dinaikkan supaya aspal selebar itu tidak terlipat atau saling menimpa.
 
 export const ROAD = Object.freeze({ half: 5.5, lane: 3.75, shoulder: 1.75, embank: 16, step: 2 });
 
@@ -22,14 +25,14 @@ export const SEGMENTS = Object.freeze([
 export const GATE_S = 70;
 export const MIN_DURATION_S = 20 * 60;
 export const MAX_GRADE = 0.1; // kemiringan jalan terbesar (10%)
-export const MIN_RADIUS = 28; // radius tikungan terkecil (tikungan tajam yang aman)
+export const MIN_RADIUS = 50; // radius tikungan terkecil (tikungan tajam yang aman untuk jalan selebar 42 m: tepi dalam masih beradius 29 m)
 
 /** Benih dan watak tiap tempat acara (rute dan tema berbeda-beda). `attempt` = hasil searchAttempt(); dijaga oleh tes. */
 export const JOURNEYS = Object.freeze({
-  villa: { seed: 1101, attempt: 11, theme: 'hutan-tropis', lakeSide: 1, tint: 0x4f8a3c },
-  hall: { seed: 2203, attempt: 27, theme: 'taman-kota', lakeSide: -1, tint: 0x6b9a45 },
-  royal: { seed: 3307, attempt: 27, theme: 'bukit-istana', lakeSide: 1, tint: 0x5a8f52 },
-  masjid: { seed: 4409, attempt: 10, theme: 'dataran-hijau', lakeSide: -1, tint: 0x7a9d4a },
+  villa: { seed: 1101, attempt: 1, theme: 'hutan-tropis', lakeSide: 1, tint: 0x4f8a3c },
+  hall: { seed: 2203, attempt: 1, theme: 'taman-kota', lakeSide: -1, tint: 0x6b9a45 },
+  royal: { seed: 3307, attempt: 1, theme: 'bukit-istana', lakeSide: 1, tint: 0x5a8f52 },
+  masjid: { seed: 4409, attempt: 0, theme: 'dataran-hijau', lakeSide: -1, tint: 0x7a9d4a },
 });
 export const journeyIds = () => Object.keys(JOURNEYS);
 
@@ -169,7 +172,7 @@ function gradesFor(id, rand, s0, len) {
 // ---------------------------------------------------------------- pembangun rute
 const cache = new Map();
 
-export const MIN_CLEARANCE = 40; // jarak minimum antar-bagian jalan yang berjauhan jaraknya sepanjang rute (tidak berpotongan/berhimpit)
+export const MIN_CLEARANCE = 56; // jarak minimum antar-bagian jalan yang berjauhan jaraknya sepanjang rute (aspal 42 m + 14 m ruang hijau; tidak berpotongan/berhimpit)
 
 /** Rute lengkap untuk satu tempat acara (di-cache). `spec.attempt` = percobaan benih yang sudah dipilih (lihat searchAttempt). */
 export function buildJourney(venue) {
@@ -230,7 +233,7 @@ export function localClearance(j, s0, s1, margin = 80) {
   }
   return best;
 }
-export const BRIDGE_CLEARANCE = 40;
+export const BRIDGE_CLEARANCE = 64;
 export const LAKE_CLEARANCE = 50;
 /** Jembatan (jurang) dan danau butuh ruang: tidak boleh ada ruas jalan lain terlalu dekat. */
 export function waterClearanceOk(j) {
@@ -458,6 +461,85 @@ export function distanceAt(j, t) {
 
 export const eventsOf = (j, type) => j.events.filter((e) => e.type === type);
 export const bridgeAt = (j, s) => eventsOf(j, 'bridge').find((e) => s >= e.s0 - 1 && s <= e.s1 + 1) ?? null;
+
+// ---------------------------------------------------------------- tempat putar balik
+// Seperti jalan raya sungguhan: median bertanaman dibuka sepanjang UTURN.gap di tempat yang lurus, datar, dan jauh dari jembatan atau
+// persimpangan. Pengemudi diberi tahu lewat papan penunjuk jarak (UTURN.signs, sebelum bukaan) dan papan di bukaan itu sendiri, untuk
+// kedua arah. Satu bukaan terakhir dibuat dekat area kedatangan supaya tamu bisa berbalik setelah menurunkan penumpang.
+export const UTURN = Object.freeze({
+  gap: 26, // panjang bukaan median (m)
+  spacing: 520, // jarak sasaran antar-bukaan (m)
+  first: GATE_S + 330, // bukaan pertama (setelah ruas gerbang yang lurus)
+  search: 160, // bukaan digeser sampai sejauh ini dari sasaran untuk mencari tempat yang lurus
+  flat: 60, // setengah panjang jendela landai di sekitar bukaan (m)
+  minGap: 300, // jarak minimum antar-bukaan (m)
+  maxCurve: 1 / 300, // kelengkungan terbesar di jendela landai (1/m): radius >= 300 m
+  signs: Object.freeze([500, 250]), // papan penunjuk jarak sebelum bukaan (m)
+  atSign: 35, // papan "PUTAR BALIK" di bukaan: sekian meter sebelum bukaan
+});
+
+/** Daftar bukaan putar balik rute `j` (di-cache): [{ s, final }] berurutan. */
+export function uturnSites(j) {
+  if (j.uturns) return j.uturns;
+  const sites = [];
+  const bridges = eventsOf(j, 'bridge');
+  const junctions = eventsOf(j, 'junction');
+  const straight = (s, flat) => {
+    for (let q = s - flat; q <= s + flat; q += 6) if (Math.abs(frameAt(j, clamp(q, 0, j.length)).curvature) > UTURN.maxCurve) return false;
+    return true;
+  };
+  const free = (s) => bridges.every((e) => s + 90 < e.s0 || s - 90 > e.s1) && junctions.every((e) => Math.abs(s - e.s) > 110);
+  const place = (target, range, flat, final) => {
+    const last = sites.length ? sites[sites.length - 1].s : -Infinity;
+    for (let d = 0; d <= range; d += 4) {
+      for (const sg of d === 0 ? [1] : [1, -1]) {
+        const s = Math.round((target + sg * d) / 4) * 4;
+        if (s < GATE_S + 220 || s > j.length - 40 || s - last < UTURN.minGap) continue;
+        if (!free(s) || !straight(s, flat)) continue;
+        sites.push({ s, final });
+        return true;
+      }
+    }
+    return false;
+  };
+  for (let t = UTURN.first; t < j.length - 420; t += UTURN.spacing) place(t, UTURN.search, UTURN.flat, false);
+  place(j.length - 130, 70, 40, true);
+  j.uturns = Object.freeze(sites);
+  return j.uturns;
+}
+
+/**
+ * Bukaan putar balik berikutnya dari jarak s. returning = pengemudi sedang menuju hotel (bukaan di belakang s). null bila tidak ada.
+ * Dipakai papan informasi perjalanan (hotel-journey.js).
+ */
+export function nextUturn(j, s, returning = false) {
+  const sites = uturnSites(j);
+  if (returning) {
+    for (let i = sites.length - 1; i >= 0; i--) if (sites[i].s < s - 15) return sites[i];
+    return null;
+  }
+  return sites.find((u) => u.s > s - 15) ?? null;
+}
+
+/**
+ * Papan penunjuk putar balik (data murni): untuk tiap bukaan, tiga papan ke arah menjauhi hotel (sisi kiri jalan, menghadap lalu lintas
+ * maju) dan tiga papan ke arah hotel (sisi kiri lalu lintas balik = sisi kanan rute). dir: 1 = maju, -1 = balik. kind: 'jauh' | 'dekat'.
+ */
+export function uturnSigns(j) {
+  if (j.uturnSigns) return j.uturnSigns;
+  const out = [];
+  for (const u of uturnSites(j)) {
+    const spots = [...UTURN.signs.map((m) => ({ off: m, text: `${m} m`, kind: 'jauh' })), { off: UTURN.atSign, text: 'di depan', kind: 'dekat' }];
+    for (const p of spots) {
+      const fs = u.s - p.off;
+      if (fs >= GATE_S + 20) out.push({ s: fs, dir: 1, text: p.text, kind: p.kind, site: u.s });
+      const bs = u.s + p.off;
+      if (bs <= j.length - 20) out.push({ s: bs, dir: -1, text: p.text, kind: p.kind, site: u.s });
+    }
+  }
+  j.uturnSigns = Object.freeze(out.sort((a, b) => a.s - b.s));
+  return j.uturnSigns;
+}
 
 // ---------------------------------------------------------------- medan
 // Tinggi tanah = tinggi jalan terdekat + perbukitan relatif; dekat jalan tanah dipaksa rata dengan badan jalan, lalu
