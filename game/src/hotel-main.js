@@ -556,7 +556,7 @@ async function start() {
     if (fleet.mine) {
       const c = fleet.driving ?? me;
       if (journey.arrived && !villa.active({ x: c.x, z: c.z, level: 0, villa: null })) {
-        toast('Tekan "Masuk" untuk ke tempat acara, atau "Kembali ke hotel".', 3200);
+        toast('Tekan "Masuk" untuk ke tempat acara.', 3200);
         return;
       }
       carRide.leave(me);
@@ -632,8 +632,6 @@ async function start() {
       if (a.s < -3 || a.s > 40 || Math.abs(a.lateral) > 20) continue; // belum sampai garis gerbang, sudah jauh melewatinya, atau di luar badan jalan
       if (!journey.start(g, car).ok) continue; // mobil tidak searah gerbang: tidak masuk
       enteredGate = g;
-      cockpitOn = false;
-      camState.dist = Math.max(camState.dist, 9);
       toast(`Menuju ${g.label} · ± 20 menit`, 3500);
       return;
     }
