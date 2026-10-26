@@ -4,7 +4,8 @@
 // Di dunia hotel rute itu dipasang di gerbang jalan raya: titik awal rute = titik gerbang, lalu rute diputar sebesar psi = arah keluar gerbang.
 // Putaran ini sama dengan THREE `rotation.y = psi`: titik lokal (lx, lz) -> dunia = gerbang + (lx cos psi + lz sin psi, -lx sin psi + lz cos psi).
 // Jadi ujung jalan raya hotel dan awal rute menyambung tanpa putus dan tanpa pindah halaman; tikungan rute tidak berubah sedikit pun.
-import { clamp, frameAt } from './journey.js';
+import { HIGHWAY_HALF } from './highway.js';
+import { clamp, frameAt, nearestOnRoute } from './journey.js';
 import { ACCEL, BRAKE, stepDrive, targetSpeed } from './journey-drive.js';
 
 export const LANE = 1.875; // lajur kiri rute (sama dengan journey-main.js)
@@ -12,6 +13,20 @@ export const START_BEHIND = 150; // mobil boleh mulai sampai sekian meter sebelu
 export const START_AHEAD = 80; // ... dan sampai sekian meter sesudahnya
 export const MAX_LATERAL = 30; // geseran samping terbesar dari sumbu jalan saat mulai
 export const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+
+/**
+ * Apakah titik dunia (x, z) berada di aspal rute perjalanan yang dipasang di `gate` (lebar sama dengan jalan raya hotel: HIGHWAY_HALF)?
+ * Fisika mobil memakai ini supaya aspal rute dihitung 'road' (laju sampai maxSpeed mobil), bukan 'ground' (batas 10 m/s = 36 km/jam).
+ * Rute boleh melengkung kembali ke belakang garis gerbang, jadi yang dipakai jarak ke garis rute (bukan jarak searah gerbang);
+ * `margin` = kelonggaran di luar tepi aspal (m).
+ */
+export function onRoute(gate, j, x, z, margin = 1) {
+  if (Math.hypot(x - gate.x, z - gate.z) > j.length + 60) return false; // terlalu jauh dari gerbang untuk bisa di rute
+  const cl = worldToLocal(gate, x, z);
+  const r = nearestOnRoute(j, cl.x, cl.z);
+  const reach = HIGHWAY_HALF + margin;
+  return Math.abs(r.d) <= reach && r.dist <= reach + 4; // + 4 m: titik terdekat dibulatkan ke simpul rute tiap 2 m; ujung rute tidak diperpanjang
+}
 
 /** Arah keluar gerbang sebagai heading (0 = +z, PI/2 = +x), sama dengan rotation.y rute di dunia. */
 export const gatePsi = (gate) => Math.atan2(gate.dir.x, gate.dir.z);

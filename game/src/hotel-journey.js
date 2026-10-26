@@ -3,8 +3,9 @@ import { BOUNDS as VILLA_BOUNDS } from './villa-layout.js';
 import { GATES, HIGHWAY_LIMIT } from './highway.js';
 import { SEGMENTS, buildJourney, clamp, frameAt, nearestOnRoute, segmentAt, timeAt } from './journey.js';
 import { startState } from './journey-drive.js';
+import { setRoadProbe } from './vehicle.js';
 import { FOG_FAR, createJourneyWorld, flareHalf } from './journey-world.js';
-import { alongOf, endPoint, gatePsi, localToWorld, planeBeyond, planeBehind, poseAt, rideSteer, startCheck, stepRide, villaAnchor, worldToLocal, wrap } from './hotel-journey-math.js';
+import { alongOf, endPoint, gatePsi, localToWorld, onRoute, planeBeyond, planeBehind, poseAt, rideSteer, startCheck, stepRide, villaAnchor, worldToLocal, wrap } from './hotel-journey-math.js';
 
 // Perjalanan 20+ menit di DALAM dunia hotel (satu halaman, satu dunia): jalan raya hotel -> gerbang -> rute perjalanan (journey.js) -> tempat acara.
 // Rute dipasang di gerbang jalan raya (hotel-journey-math.js): titik awal rute = titik gerbang, diputar menurut arah keluar gerbang. Bentuk rute
@@ -195,6 +196,12 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
       if (Math.abs(w.world.group.position.y - y) > 1e-4) w.world.group.position.y = y;
     }
   }
+
+  // Aspal lorong dikenali fisika mobil sebagai 'road' (bukan tanah yang dibatasi 10 m/s = 36 km/jam): lihat vehicle.js setRoadProbe.
+  setRoadProbe((x, z) => {
+    for (const w of worlds.values()) if (onRoute(w.gate, w.j, x, z)) return true;
+    return false;
+  });
 
   return {
     get state() { return state; },
