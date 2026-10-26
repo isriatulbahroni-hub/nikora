@@ -2,13 +2,18 @@
 // Roda setir dipasang di semua mobil mewah (terlihat berputar dari luar juga); tangan, jam, dan spion hanya dibuat untuk mobil yang dikemudikan
 // dalam mode kabin. Spion = render ulang adegan ke tekstur kecil, satu spion per frame bergiliran (hemat HP); mati di kualitas rendah.
 // Tekstur tiap spion berrasio sama dengan kacanya dan kamera spion memakai rasio itu juga (dulu semua 2:1 sehingga gambar melar/gepeng dan buram).
+// Spion terang dan jelas: (1) kamera spion tengah dulu berada DI DALAM bodi mobil (0,3 m dari ujung belakang) sehingga yang terlihat bagian dalam bodi
+// (persegi putih/krem besar); sekarang tepat di belakang bumper dan melihat jalan di belakang. (2) tekstur spion lebih besar + antialias, ditandai sRGB,
+// dan bahan spion tidak ikut tone mapping layar (tidak gelap/pudar). (3) panel spion tengah dikecilkan dan dinaikkan supaya tidak menutupi jalan di layar potret.
 import * as THREE from 'three';
 import { clusterState, cockpitSpec, dialAngle, handPositions, localToWorld, wheelAngle } from './cockpit.js';
 
 const AX_X = new THREE.Vector3(1, 0, 0);
 const AX_Z = new THREE.Vector3(0, 0, 1);
 const AX_Y = new THREE.Vector3(0, 1, 0);
-const MIRROR_RT_H = 160; // tinggi tekstur spion (px); lebarnya mengikuti rasio kaca spion
+const MIRROR_RT_H = 256; // tinggi tekstur spion (px); lebarnya mengikuti rasio kaca spion
+const MIRROR_SCALE = 0.75; // panel spion tengah lebih kecil dari semula (0,3 x 0,1 m) supaya jalan di depan terlihat
+const MIRROR_RAISE = 0.08; // dan sedikit lebih tinggi (m)
 const SKIN = 0xc68a63;
 
 /** Roda setir: lingkar kulit + tiga jari-jari + hub; `spin.rotation.z` = putaran setir (wheelAngle). Dipasang miring seperti kolom setir. */
@@ -161,17 +166,20 @@ export function createCockpitRig(entry, { mirrors = true } = {}) {
   group.add(clusterMesh);
 
   // spion: tengah dan dua samping. fov = sudut pandang VERTIKAL; spion tengah lebar (3:1) jadi sudut vertikalnya kecil agar gambar tidak melar.
+  // Kamera spion tengah di belakang bumper (di luar bodi), bukan di dalam bodi; kamera samping di luar badan di sisinya.
+  const centerCfg = { ...spec.mirror, w: spec.mirror.w * MIRROR_SCALE, h: spec.mirror.h * MIRROR_SCALE, y: spec.mirror.y + MIRROR_RAISE };
   const mirrorDefs = [
-    { cfg: spec.mirror, cam: { x: 0, y: 1.25, z: -car.spec.length / 2 + 0.3, yaw: 0, fov: 26 } },
+    { cfg: centerCfg, cam: { x: 0, y: 1.25, z: -car.spec.length / 2 - 0.08, yaw: 0, fov: 26 } },
     ...spec.sides.map((s) => ({ cfg: s, cam: { x: s.side * (car.spec.width / 2 + 0.05), y: 1.0, z: spec.eye.z + 0.3, yaw: -s.side * 0.22, fov: 40 } })),
   ];
   const glassDark = keep(new THREE.MeshBasicMaterial({ color: 0x10141a }));
   const mirrorList = mirrorDefs.map(({ cfg, cam }) => {
     const rtW = Math.max(64, Math.round((MIRROR_RT_H * cfg.w) / cfg.h)); // rasio tekstur = rasio kaca spion
-    const rt = mirrors ? keep(new THREE.WebGLRenderTarget(rtW, MIRROR_RT_H)) : null;
+    const rt = mirrors ? keep(new THREE.WebGLRenderTarget(rtW, MIRROR_RT_H, { samples: 4 })) : null;
+    if (rt) rt.texture.colorSpace = THREE.SRGBColorSpace; // warna tersimpan sRGB: tidak pudar/gelap saat ditampilkan
     const geo = keep(new THREE.PlaneGeometry(cfg.w, cfg.h));
     geo.scale(-1, 1, 1); // bayangan cermin: kiri-kanan terbalik
-    const mat = rt ? keep(new THREE.MeshBasicMaterial({ map: rt.texture, side: THREE.DoubleSide })) : glassDark;
+    const mat = rt ? keep(new THREE.MeshBasicMaterial({ map: rt.texture, side: THREE.DoubleSide, toneMapped: false })) : glassDark;
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(cfg.x, cfg.y, cfg.z);
     mesh.quaternion.copy(facing(cfg, spec.eye));
@@ -180,7 +188,7 @@ export function createCockpitRig(entry, { mirrors = true } = {}) {
     frame.quaternion.copy(mesh.quaternion);
     frame.translateZ(-0.004);
     group.add(frame, mesh);
-    return { mesh, rt, cam, camera: new THREE.PerspectiveCamera(cam.fov, cfg.w / cfg.h, 0.4, 900) };
+    return { mesh, rt, cam, camera: new THREE.PerspectiveCamera(cam.fov, cfg.w / cfg.h, 0.1, 900) };
   });
 
   let frameNo = 0;

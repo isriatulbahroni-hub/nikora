@@ -7,12 +7,16 @@
 // Belok roda depan mobil GLB dibatasi secara visual (GLB_STEER_VISUAL) supaya ban lebar tidak menembus lengkung roda/bodi saat setir diputar penuh.
 // Pintu, bagasi, atap, sein, dan lampu mobil GLB digerakkan dari nama node/bahan modelnya (car-parts-rig.js) mengikuti keadaan tampilan dari getParts (car-parts.js).
 // Mobil tanpa model memakai sedan lama (villa-props.js). Kinematik mobil pemain lain diturunkan dari pose (tanpa protokol baru).
+// Pandangan kabin: kamera kabin TIDAK ikut menunggang/menungging bersama bodi, jadi selama mobil yang dikemudikan dilihat dari dalam kabin, badan tidak dimiringkan
+// (CABIN_TILT = 0). Dulu saat gas, hidung mobil terangkat (~2,5 derajat) sementara kamera diam, sehingga dasbor/kap naik menutupi jalan.
+// Untuk mobil GLB, atap dan kaca dibuat bersih selama kamera kabin aktif (cockpit-clear.js).
 import * as THREE from 'three';
 import { carGeometries } from './villa-props.js';
 import { bakeDoors, buildLuxuryCar } from './luxury-cars.js';
 import { wrapAngle } from './vehicle.js';
 import { buildSteeringWheel, createCockpitRig } from './cockpit-view.js';
 import { alignSpecToWheel, cockpitSpec, wheelAngle } from './cockpit.js';
+import { applyClearView, findClearView } from './cockpit-clear.js';
 import { hudInfo } from './car-ride.js';
 import { disposeObject, loadCarGlb } from './car-glb.js';
 import { getParts } from './car-parts.js';
@@ -23,6 +27,7 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const BASE = import.meta.env?.BASE_URL ?? '/';
 export const DOOR_OPEN_S = 1.6; // lama pintu terbuka setelah kursi berganti penghuni
 export const GLB_STEER_VISUAL = 0.3; // rad (~17 derajat): batas belok VISUAL roda depan mobil GLB; fisika/setir tetap memakai maxSteer penuh
+export const CABIN_TILT = 0; // pengali kemiringan badan (pitch/roll) untuk mobil yang dilihat dari dalam kabin: 0 = badan tetap rata, kamera dan dasbor tidak bergeser
 
 /** Sudut roda depan (rad, + = belok kiri) dari laju yaw: dipakai untuk mobil yang dikemudikan pemain lain. */
 export function steerFromYaw(yawRate, speed, wheelBase, max = 0.5) {
@@ -163,7 +168,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     group.position.set(car.x, 0, car.z);
     group.rotation.y = car.heading;
     root.add(group);
-    const entry = { car, group, tilt, glb: true, luxury: false, wheels: [], loaded: null, fallback: null, disposed: false, steering: null, rig: null, spinAngle: 0, accel: 0, yaw: 0, steer: 0, prev: null, seats: car.seats.slice(), doorTimer: car.seats.map(() => 0), pitch: 0, roll: 0 };
+    const entry = { car, group, tilt, glb: true, luxury: false, wheels: [], loaded: null, fallback: null, disposed: false, steering: null, rig: null, clear: null, spinAngle: 0, accel: 0, yaw: 0, steer: 0, prev: null, seats: car.seats.slice(), doorTimer: car.seats.map(() => 0), pitch: 0, roll: 0 };
     const C = car.spec;
     // Setir buatan kode (lingkar torus penuh) hanya dipasang bila model tidak punya setir asli yang dikenali (atau gagal dimuat): tidak dobel.
     const addCodeWheel = () => {
@@ -198,6 +203,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
         entry.loaded = res.root;
         entry.wheels = res.wheels;
         entry.rig = rigParts(res.root); // pintu, bagasi, atap, sein, lampu dari nama node/bahan (daftar kosong bila model tidak punya)
+        entry.clear = findClearView(res.root); // atap dan kaca yang disembunyikan/dibeningkan selama kamera kabin (cockpit-clear.js)
         if (res.steering) {
           // setir asli model: itu yang diputar, dan kursi pengemudi + tangan + kamera kabin dipindah tepat ke setir itu
           entry.steering = { spin: res.steering.spin, own: true };
@@ -255,8 +261,9 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
     const steerTarget = car === mine ? car.steer : steerFromYaw(e.yaw, car.speed, C.wheelBase, C.maxSteer);
     e.steer += (steerTarget - e.steer) * Math.min(1, dt * 14);
     const t = bodyTilt(e.accel, car.speed * e.yaw);
-    e.pitch += (t.pitch - e.pitch) * Math.min(1, dt * 6);
-    e.roll += (t.roll - e.roll) * Math.min(1, dt * 6);
+    const cab = car === mine && cockpitCar === car ? CABIN_TILT : 1; // dilihat dari dalam kabin: badan tidak menungging/miring (kamera tidak ikut)
+    e.pitch += (t.pitch * cab - e.pitch) * Math.min(1, dt * 6);
+    e.roll += (t.roll * cab - e.roll) * Math.min(1, dt * 6);
     e.tilt.rotation.x = e.pitch;
     e.tilt.rotation.z = e.roll;
     e.spinAngle += (car.speed * dt) / C.wheelRadius;
@@ -304,6 +311,7 @@ export function createVehicleView({ scene, fleet, envMap = null, onDoor = () => 
   function animateGlb(e, delta, mine) {
     const { car } = e;
     const dt = followKinematics(e, delta, mine);
+    if (e.clear) applyClearView(e.clear, cockpitCar === car); // kamera kabin: atap disembunyikan dan kaca dibeningkan (idempoten), kembali normal di luar kabin
     if (e.steering) e.steering.spin.rotation.z = wheelAngle(e.steer, car.spec.maxSteer); // roda setir (asli model atau buatan kode) ikut berputar
     const turn = clamp(e.steer, -GLB_STEER_VISUAL, GLB_STEER_VISUAL); // ban lebar tidak menembus lengkung roda saat setir penuh
     for (const w of e.wheels) {
