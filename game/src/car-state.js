@@ -7,8 +7,8 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const ok = (msg = '') => ({ ok: true, msg });
 const no = (msg) => ({ ok: false, msg });
 
-export const SAFE_STOP = 0.5; // m/s: di bawah ini mobil dianggap berhenti (aman untuk keluar, masuk R atau D)
-export const PARK_SPEED = 0.3; // m/s: batas untuk masuk gigi P dan menyalakan mesin
+export const SAFE_STOP = 0.5; // m/s: di bawah ini mobil dianggap berhenti (aman untuk keluar)
+export const PARK_SPEED = 0.3; // m/s: batas untuk menyalakan mesin
 export const CRANK_S = 0.7; // detik mesin "menyala" sebelum siap dipakai
 export const GEARS = Object.freeze(['P', 'R', 'N', 'D']);
 const TOGGLES = Object.freeze(['lights', 'hazard', 'ac', 'belt']);
@@ -57,16 +57,15 @@ export function tickEngine(s, dt) {
   return true;
 }
 
-/** Pindah gigi. P hanya saat berhenti total; R dan D hanya saat hampir berhenti (D boleh saat masih melaju maju); N kapan saja. */
-export function shift(s, gear, speed = 0) {
+/**
+ * Pindah gigi kapan saja (P, R, N, D) tanpa syarat kecepatan: mundur, parkir, dan maju bisa langsung dilakukan.
+ * Gas dan rem tetap menentukan gerak mobil (lihat driveInput dan vehicle.js). Hanya mesin yang harus sudah menyala.
+ */
+export function shift(s, gear) {
   if (!GEARS.includes(gear)) return no('Gigi tidak dikenal.');
   if (s.eng === 'starting') return no('Tunggu mesin menyala.');
   if (s.eng !== 'on') return no('Nyalakan mesin dulu.');
   if (gear === s.gear) return ok();
-  const v = Math.abs(speed);
-  if (gear === 'P' && v >= PARK_SPEED) return no('Berhenti total dulu sebelum masuk P.');
-  if (gear === 'R' && v >= SAFE_STOP) return no('Berhenti dulu sebelum mundur.');
-  if (gear === 'D' && speed <= -SAFE_STOP) return no('Berhenti dulu sebelum maju.');
   s.gear = gear;
   return ok();
 }
