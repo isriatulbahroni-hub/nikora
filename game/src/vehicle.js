@@ -17,6 +17,10 @@ export const CAR = Object.freeze({
   seats: 4,
 });
 export const SURFACE_CAP = Object.freeze({ road: 26, compound: 8, ground: 10 });
+// Penanda tambahan "ini aspal" untuk jalan yang tidak dikenal surfaceAt() bawaan hotel: lorong perjalanan (hotel-journey.js) dipasang di luar
+// jalan raya hotel, jadi tanpa ini mobil di sana dianggap di tanah (batas 10 m/s = 36 km/jam). fn(x, z) -> boolean; null = tidak ada.
+let roadProbe = null;
+export const setRoadProbe = (fn) => { roadProbe = typeof fn === 'function' ? fn : null; };
 // Posisi kursi dalam bingkai mobil: fwd (+ ke depan), side (+ ke kanan). Kursi 0 = pengemudi (kanan depan).
 export const SEAT_OFFSETS = Object.freeze([
   { fwd: 0.45, side: 0.46 }, { fwd: 0.45, side: -0.46 }, { fwd: -0.7, side: 0.46 }, { fwd: -0.7, side: -0.46 },
@@ -51,7 +55,8 @@ export function createVehicle({ id, x = 0, z = 0, heading = 0, color = 0xf2f2f0,
  */
 export function stepVehicle(v, input, dt, env = {}) {
   const C = v.spec ?? CAR;
-  const surface = (env.surfaceAt ?? defaultSurface)(v.x, v.z);
+  let surface = (env.surfaceAt ?? defaultSurface)(v.x, v.z);
+  if (surface !== 'road' && roadProbe && roadProbe(v.x, v.z)) surface = 'road';
   const cap = surface === 'road' ? C.maxSpeed : (SURFACE_CAP[surface] ?? SURFACE_CAP.ground);
   const speed0 = v.speed;
   const throttle = v.engine ? clamp(input.throttle ?? 0, -1, 1) : 0;
