@@ -46,7 +46,8 @@ export function createVehicle({ id, x = 0, z = 0, heading = 0, color = 0xf2f2f0,
 /**
  * Satu langkah fisika. input = { throttle: -1..1, steer: -1..1 (kanan positif), brake?: bool }.
  * env = { colliders, surfaceAt, limit? } (limit = batas dunia; bawaan WORLD_LIMIT villa, hotel memakai HIGHWAY_LIMIT). Mengubah dan mengembalikan `v`. v.hit = kekuatan benturan langkah ini (0 = tidak ada).
- * Opsi spesifikasi model: accelFade (0..1, percepatan menyusut mendekati kecepatan puncak) dan dragK (hambatan udara); tanpa keduanya fisika sama seperti semula.
+ * Opsi spesifikasi model: accelFade (0..1, percepatan menyusut mendekati kecepatan puncak), dragK (hambatan udara), dan powerW + mass
+ * (model bertenaga: percepatan dibatasi daya mesin P/(m v), dikurangi hambatan udara). Tanpa opsi ini fisikanya sama seperti semula.
  */
 export function stepVehicle(v, input, dt, env = {}) {
   const C = v.spec ?? CAR;
@@ -63,7 +64,15 @@ export function stepVehicle(v, input, dt, env = {}) {
     v.speed = Math.abs(v.speed) <= C.brake * dt ? 0 : v.speed - Math.sign(v.speed) * C.brake * dt;
   } else if (throttle > 0) {
     const fade = C.accelFade ? 1 - C.accelFade * Math.min(1, (Math.max(0, v.speed) / C.maxSpeed) ** 2) : 1; // tenaga makin sulit menambah laju di kecepatan tinggi
-    v.speed += (v.speed < 0 ? C.brake : C.accel * fade) * throttle * dt;
+    if (v.speed < 0) {
+      v.speed += C.brake * throttle * dt;
+    } else if (C.powerW) {
+      // model bertenaga (Bugatti Chiron): percepatan = yang lebih kecil dari batas awal dan daya/(massa x kecepatan), dikurangi hambatan udara
+      const pull = Math.min(C.accel * fade, C.powerW / (C.mass * Math.max(v.speed, 1)));
+      v.speed += (pull - C.dragK * v.speed * v.speed) * throttle * dt;
+    } else {
+      v.speed += C.accel * fade * throttle * dt;
+    }
   } else if (throttle < 0) {
     v.speed -= (v.speed > 0.3 ? C.brake : C.accel * 0.6) * -throttle * dt;
   }
