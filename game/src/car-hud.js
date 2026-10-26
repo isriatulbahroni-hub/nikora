@@ -3,8 +3,10 @@
 //   kabin (mesin belum siap): tombol Nyalakan + panel fitur. Setir, gas, rem, gigi tersembunyi.
 //   berhenti (mesin siap)   : setir bulat (kiri bawah), pedal rem dan gas tekan-tahan (kanan bawah), pemilih gigi P R N D, tombol Matikan.
 //   melaju                  : sama, tanpa tombol mesin; tombol aksi halaman (#act-button, Turun) disembunyikan sampai berhenti.
-// Lencana kecil kiri atas (gigi, km/j, sein/hazard berkedip, REM saat rem tangan), klakson bulat, dan tombol ⋯ untuk panel fitur
-// (lampu, hazard, rem tangan, AC, sabuk, sein kiri/kanan) plus pengaturan (mode setir bulat/geser, sensitivitas) yang disimpan di perangkat.
+// Susunan layar (rapi, tidak saling menutupi): kolom kiri atas = lencana (gigi, km/j, sein/hazard berkedip, REM saat rem tangan), tombol Turun,
+// lalu tombol ⋯ (panel fitur) DI BAWAH Turun; kiri bawah = klakson dan setir; tengah bawah = tombol mesin kecil di celah antara setir dan pedal;
+// kanan bawah = pemilih gigi dan pedal. Panel fitur (lampu, hazard, rem tangan, AC, sabuk, sein kiri/kanan) plus pengaturan
+// (mode setir bulat/geser, sensitivitas) disimpan di perangkat.
 // Setir bulat: putar dengan satu jempol, kembali halus ke tengah saat dilepas. Warna mengikuti panel hotel (emas #c9a24b).
 // Papan ketik: I = mesin, B = rem tangan, L = lampu, X = hazard, 1-4 = gigi P R N D, koma/titik = sein kiri/kanan.
 const BASE = 'position:fixed;z-index:30;font:600 13px system-ui,sans-serif;color:#fff;';
@@ -201,20 +203,22 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
   });
   document.body.appendChild(gearRow);
 
-  // tombol mesin (tengah bawah): Nyalakan di kabin, Matikan saat berhenti, tersembunyi saat melaju
-  const engineBtn = make('button', `${BASE}left:50%;transform:translateX(-50%);bottom:${SAFE_BOTTOM};display:none;min-width:110px;height:48px;padding:0 18px;border-radius:24px;border:1px solid ${LINE};background:${GLASS};color:${CREAM};font:800 14px system-ui,sans-serif;touch-action:manipulation`);
+  // tombol mesin (tengah bawah): Nyalakan di kabin, Matikan saat berhenti, tersembunyi saat melaju.
+  // Kecil (84 x 44) supaya muat di celah antara setir (kiri) dan pedal (kanan) pada layar 360 px dan tidak menimpa pedal rem.
+  const engineBtn = make('button', `${BASE}left:50%;transform:translateX(-50%);bottom:${SAFE_BOTTOM};display:none;width:84px;height:44px;padding:0;border-radius:22px;border:1px solid ${LINE};background:${GLASS};color:${CREAM};font:800 13px system-ui,sans-serif;touch-action:manipulation`);
   engineBtn.type = 'button';
   engineBtn._bg = GLASS;
   engineBtn.addEventListener('click', () => emit('engine'));
   document.body.appendChild(engineBtn);
 
-  // panel fitur (⋯): lampu, hazard, rem tangan, AC, sabuk, sein, dan pengaturan
-  const panelBtn = make('button', `${BASE}left:14px;top:calc(${SAFE_TOP} + 40px);display:none;width:40px;height:40px;border-radius:50%;border:1px solid ${LINE};background:${GLASS};color:${CREAM};font:800 20px/1 system-ui,sans-serif;padding:0;touch-action:manipulation`, '\u22ef');
+  // panel fitur (⋯): lampu, hazard, rem tangan, AC, sabuk, sein, dan pengaturan.
+  // Tombolnya di bawah tombol Turun (Turun: kiri atas, +40 px, tinggi 34 px; lihat body.driving .act di hotel.html) supaya tidak menimpanya.
+  const panelBtn = make('button', `${BASE}left:14px;top:calc(${SAFE_TOP} + 84px);display:none;width:40px;height:40px;border-radius:50%;border:1px solid ${LINE};background:${GLASS};color:${CREAM};font:800 20px/1 system-ui,sans-serif;padding:0;touch-action:manipulation`, '⋯');
   panelBtn.type = 'button';
   panelBtn.setAttribute('aria-label', 'Fitur kendaraan');
   panelBtn.addEventListener('click', () => { panelOpen = !panelOpen; paint(); });
   document.body.appendChild(panelBtn);
-  const panel = make('div', `${BASE}left:14px;top:calc(${SAFE_TOP} + 88px);display:none;width:min(250px,62vw);max-height:calc(100vh - 230px);overflow:auto;padding:8px;border-radius:12px;background:rgba(20,17,13,.72);grid-template-columns:1fr 1fr;gap:6px;touch-action:pan-y`);
+  const panel = make('div', `${BASE}left:14px;top:calc(${SAFE_TOP} + 132px);display:none;width:min(250px,62vw);max-height:calc(100vh - 280px);overflow:auto;padding:8px;border-radius:12px;background:rgba(20,17,13,.72);grid-template-columns:1fr 1fr;gap:6px;touch-action:pan-y`);
   const tile = (label, onClick) => {
     const b = make('button', `font:700 12px system-ui,sans-serif;color:${CREAM};background:${TILE_BG};border:1px solid rgba(255,255,255,.28);border-radius:8px;padding:9px 6px;touch-action:manipulation`, label);
     b.type = 'button';
@@ -229,8 +233,8 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
     ['Rem tangan', () => emit('handbrake'), (m) => m.handbrake],
     ['AC', () => emit('ac'), (m) => m.ac],
     ['Sabuk', () => emit('belt'), (m) => m.belt],
-    ['Sein \u25c0', () => emit('indicator', -1), (m) => m.indicator === -1],
-    ['Sein \u25b6', () => emit('indicator', 1), (m) => m.indicator === 1],
+    ['Sein ◀', () => emit('indicator', -1), (m) => m.indicator === -1],
+    ['Sein ▶', () => emit('indicator', 1), (m) => m.indicator === 1],
   ].map(([label, run, on]) => ({ btn: tile(label, run), on }));
   const modeTile = tile('', () => { settings.mode = settings.mode === 'wheel' ? 'slider' : 'wheel'; saveSettings(settings); wheelRot = 0; steerValue = 0; steerTarget = 0; paint(); });
   const sensTile = tile('', () => { settings.sens = SENS[(SENS.findIndex((s) => s.id === settings.sens) + 1) % SENS.length].id; saveSettings(settings); paint(); });
