@@ -26,6 +26,7 @@ const ANCHOR_BEFORE = 380; // villa dipasang saat sisa rute sependek ini (jalan 
 const ARRIVE_BEFORE = 15; // dianggap tiba saat sisa rute sependek ini (mengemudi sendiri)
 const EDGE_MARGIN = 0.9; // dinding lunak: mobil tidak boleh lebih dekat dari ini ke tepi aspal
 const BIG = Object.freeze({ minX: -60000, maxX: 60000, minZ: -60000, maxZ: 60000 }); // batas dunia mobil selama perjalanan
+const BACK_OUT = -2; // mobil dianggap kembali ke jalan raya hotel saat sejauh ini di belakang gerbang (m): perjalanan selesai otomatis
 
 const fmt = (sec) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
 const toPlane = (p) => new THREE.Plane(new THREE.Vector3(p.nx, 0, p.nz), p.c);
@@ -157,10 +158,9 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
       const url = ride ? enterUrl(ride.gate) : null;
       if (url) window.location.href = url;
     });
-    const back = mk('Kembali ke hotel', () => { if (ride) onReturn(ride.gate); });
     box.append(title, meta, track, row);
     document.body.appendChild(box);
-    ui = { box, title, part, eta, bar, pause, skip, enter, back };
+    ui = { box, title, part, eta, bar, pause, skip, enter };
   }
 
   function renderUi() {
@@ -181,7 +181,6 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
       ui.pause.style.display = autopilot ? 'block' : 'none';
       ui.skip.style.display = autopilot && st.s <= j.length - 400 ? 'block' : 'none';
       ui.enter.style.display = 'none';
-      ui.back.style.display = autopilot ? 'none' : 'block'; // mengemudi sendiri: selalu boleh putar balik ke hotel
     } else {
       setText(ui.title, `Tiba di ${gate.label}`);
       setText(ui.part, 'Area penurunan tamu');
@@ -192,7 +191,6 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
       const url = enterUrl(gate);
       ui.enter.style.display = url ? 'block' : 'none';
       setText(ui.enter, `Masuk ke ${gate.label}`);
-      ui.back.style.display = 'block';
     }
   }
 
@@ -336,7 +334,11 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
           else if (d > KEEP && worlds.has(g.id)) disposeWorld(g.id);
         }
         followGround(me);
-      } else stepRideFrame(delta, driving, me);
+      } else {
+        stepRideFrame(delta, driving, me);
+        // mobil diputar balik dan keluar lewat gerbang kembali ke jalan raya hotel: perjalanan selesai tanpa tombol
+        if (ride && ride.st.s < BACK_OUT) this.finish();
+      }
       for (const w of worlds.values()) {
         const cl = worldToLocal(w.gate, camera.position.x, camera.position.z);
         const s = ride && ride.w === w ? ride.st.s : alongOf(w.gate, camera.position.x, camera.position.z).s;
