@@ -124,6 +124,11 @@ export function occupancy(slots, ratio = 0.4, seed = 2026) {
   return out;
 }
 
+export const GUEST_FILL = 0.4; // sekitar 40% slot tamu terisi
+let guestOccCache = null;
+/** Keterisian slot tamu yang dipakai bersama gambar 3D, papan blok, dan valet: satu sumber kebenaran, jadi slot "hijau" di layar = slot yang dipilih valet. */
+export const guestOccupied = () => (guestOccCache ??= occupancy(guestSlots(), GUEST_FILL));
+
 /** Warna lampu di kepala slot: tamu hijau/merah (listrik: biru muda saat kosong), karyawan biru, pemilik emas. */
 export function slotLightColor(slot, occupied) {
   if (slot.zone === 'guest') return occupied ? 0xd64545 : slot.ev ? 0x39d0ff : 0x2ecc71;
@@ -144,6 +149,22 @@ export function assignValet(occupied, from = VALET_POINT) {
   }
   return best;
 }
+
+/** Titik berdiri (di lorong, di depan hidung slot) untuk pejalan kaki yang diantar valet ke `slot`. */
+export function valetStandPoint(slot) {
+  if (slot.axis === 'z') return { x: slot.x, z: slot.z + Math.sign(Math.sin(slot.heading)) * (slot.d / 2 + 1.2) };
+  return { x: slot.x + Math.sign(Math.cos(slot.heading)) * (slot.d / 2 + 1.2), z: slot.z };
+}
+
+/** Tujuan menu Jelajah (titik berdiri di lorong, bukan di atas slot). */
+export const PARKING_PLACES = Object.freeze([
+  { id: 'parkir_tamu_a', name: 'Parkir Tamu · Blok A', x: -135.2, z: 410 },
+  { id: 'parkir_tamu_b', name: 'Parkir Tamu · Blok B', x: -97.2, z: 410 },
+  { id: 'parkir_tamu_c', name: 'Parkir Tamu · Blok C', x: -135.2, z: 505 },
+  { id: 'parkir_tamu_d', name: 'Parkir Tamu · Blok D (listrik)', x: -97.2, z: 507 },
+  { id: 'parkir_motor', name: 'Parkir Motor Karyawan', x: 113.5, z: 404 },
+  { id: 'royal_garage', name: 'Royal Garage (Pemilik)', x: 118, z: 468 },
+].map((p) => Object.freeze(p)));
 
 /** Ringkasan per blok tamu dan total: papan "sisa slot" di pintu masuk. */
 export function guestStats(occupied) {
