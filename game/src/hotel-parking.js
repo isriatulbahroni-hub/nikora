@@ -15,7 +15,8 @@ const BIKE_MODULE_PITCH = 8; // 2 + 3 lorong + 2 + 1 jalur
 
 // ---- zona (persegi [minX, minZ, maxX, maxZ])
 export const GUEST_NW = Object.freeze([-146, 358, -44, 447]); // blok barat laut: 5 modul x 2 baris x 31 slot
-export const GUEST_LINK = Object.freeze([-146, 447, -44, 458]); // lajur penghubung barat-timur
+export const GUEST_LINK = Object.freeze([-146, 447, -44, 453]); // lajur penghubung barat-timur (6 m, tepat di utara sudut barat laut menara)
+export const GUEST_LINK_W = Object.freeze([-146, 453, -84, 458]); // pelebaran ke barat (di luar tapak menara), menuju sayap barat
 export const GUEST_FLANK = Object.freeze([-146, 458, -84, 556]); // sayap barat menara: 3 modul
 export const GUEST_ENTRY_LANE = Object.freeze([-44, 380, -30, 449]); // dari halaman drop-off (tepi barat) ke lajur penghubung
 export const STAFF_CARS = Object.freeze([44, 384, 104, 453]); // sama dengan HOTEL_PARKING (mobil karyawan yang sudah ada)
@@ -27,7 +28,7 @@ export const OWNER_TURNTABLE = Object.freeze({ x: 118, z: 478, r: 4.6 });
 
 /** Zona beserta persegi aspalnya, warna aksen, dan nama. */
 export const PARKING_ZONES = Object.freeze([
-  Object.freeze({ id: 'guest', name: 'Parkir Tamu', color: 0xc9a24b, rects: Object.freeze([GUEST_NW, GUEST_LINK, GUEST_FLANK, GUEST_ENTRY_LANE]) }),
+  Object.freeze({ id: 'guest', name: 'Parkir Tamu', color: 0xc9a24b, rects: Object.freeze([GUEST_NW, GUEST_LINK, GUEST_LINK_W, GUEST_FLANK, GUEST_ENTRY_LANE]) }),
   Object.freeze({ id: 'staff_cars', name: 'Parkir Karyawan', color: 0x3b82f6, rects: Object.freeze([STAFF_CARS]) }),
   Object.freeze({ id: 'staff_bikes', name: 'Parkir Motor Karyawan', color: 0x3b82f6, rects: Object.freeze([STAFF_BIKES]) }),
   Object.freeze({ id: 'owner', name: 'Royal Garage', color: 0xe7c76a, rects: Object.freeze([OWNER_LANE, OWNER_GARAGE]) }),
