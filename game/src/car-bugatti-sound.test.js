@@ -22,23 +22,24 @@ test('Bugatti Chiron: W16 empat-turbo, 420 km/j, tujuh gigi, putaran 700-6700 rp
   }
 });
 
-test('watak suara: hanya Bugatti yang w16, NIKORA W16 tetap deep', () => {
-  assert.equal(nikora.engine.timbre, 'deep');
-  assert.notEqual(bugatti.engine, nikora.engine);
-  assert.deepEqual({ ...bugatti.engine, timbre: 'deep' }, { ...nikora.engine });
+test('watak suara: dua mobil bergaya Bugatti (NIKORA W16 dan Bugatti Chiron) sama-sama w16', () => {
+  assert.equal(nikora.engine.timbre, 'w16', 'NIKORA W16 adalah mobil yang dikendarai pemain di hotel');
+  assert.equal(bugatti.engine.timbre, 'w16');
+  assert.deepEqual({ ...bugatti.engine }, { ...nikora.engine });
 });
 
-test('suara Bugatti: dua nada turbo saat gas dalam, letupan knalpot saat gas dilepas di putaran tinggi, hening saat mesin mati', () => {
-  const full = engineLayers(bugatti, { speed: 100 * KMH * 2, throttle: 1, boost: 1 });
-  assert.ok(full.turboGain > 0 && full.turboGain2 > 0, 'dua turbo bersuara');
-  assert.ok(full.turboFreq2 > full.turboFreq, 'turbo kedua di nada lebih tinggi');
-  assert.equal(engineLayers(nikora, { speed: 100 * KMH * 2, throttle: 1, boost: 1 }).turboGain2, 0, 'NIKORA W16 hanya satu turbo');
-  const lift = engineLayers(bugatti, { speed: 80, throttle: 0 });
-  assert.equal(lift.crackle, true, 'letupan saat gas dilepas dengan kecepatan tinggi');
-  assert.equal(engineLayers(bugatti, { speed: 5, throttle: 0 }).crackle, false, 'tidak ada letupan di kecepatan rendah');
-  const off = engineLayers(bugatti, { speed: 50, throttle: 1, engineOn: false });
-  assert.equal(off.exhaustGain, 0);
-  assert.equal(off.crackle, false);
+test('suara w16: dua nada turbo saat gas dalam, letupan knalpot saat gas dilepas di putaran tinggi, hening saat mesin mati', () => {
+  for (const m of [nikora, bugatti]) {
+    const full = engineLayers(m, { speed: 100 * KMH * 2, throttle: 1, boost: 1 });
+    assert.ok(full.turboGain > 0 && full.turboGain2 > 0, 'dua turbo bersuara');
+    assert.ok(full.turboFreq2 > full.turboFreq, 'turbo kedua di nada lebih tinggi');
+    const lift = engineLayers(m, { speed: 80, throttle: 0 });
+    assert.equal(lift.crackle, true, 'letupan saat gas dilepas dengan kecepatan tinggi');
+    assert.equal(engineLayers(m, { speed: 5, throttle: 0 }).crackle, false, 'tidak ada letupan di kecepatan rendah');
+    const off = engineLayers(m, { speed: 50, throttle: 1, engineOn: false });
+    assert.equal(off.exhaustGain, 0);
+    assert.equal(off.crackle, false);
+  }
 });
 
 test('suara Bugatti: nada pembakaran naik tajam dengan putaran, boost turun cepat saat gas dilepas', () => {
