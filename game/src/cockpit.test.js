@@ -58,7 +58,7 @@ test('jarum: dari -210 ke +30 derajat dan dibatasi 0..1', () => {
 test('FOV kokpit melebar dengan kecepatan dan di layar potret', () => {
   assert.ok(cockpitFov(30, 30) > cockpitFov(0, 30));
   assert.ok(cockpitFov(0, 30, 0.5) > cockpitFov(0, 30, 1.8));
-  assert.ok(cockpitFov(1000, 30, 0.2) <= 92);
+  assert.ok(cockpitFov(1000, 30, 0.2) <= 104);
 });
 
 test('pedal layar: gas menang atas joystick, rem menahan gas, tanpa pedal tidak berubah', () => {

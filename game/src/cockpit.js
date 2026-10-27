@@ -95,8 +95,8 @@ export function eyeWorld(car, spec, look = 0) {
   return { x: p.x, y: p.y, z: p.z, yaw: car.heading + look, pitch: 0 };
 }
 
-/** FOV kamera kokpit: makin cepat makin lebar sedikit; lebih lebar di layar potret supaya setir tidak memenuhi layar. */
-export const cockpitFov = (speed, maxSpeed, aspect = 1.8) => clamp(70 + 8 * clamp(Math.abs(speed) / Math.max(1, maxSpeed), 0, 1) + (aspect < 1 ? 16 : 0), 60, 92);
+/** FOV kamera kokpit: makin cepat makin lebar sedikit; jauh lebih lebar di layar potret supaya pandangan mendekati layar mendatar (jalan, spion, dan dasbor sama-sama terlihat). */
+export const cockpitFov = (speed, maxSpeed, aspect = 1.8) => clamp(70 + 8 * clamp(Math.abs(speed) / Math.max(1, maxSpeed), 0, 1) + (aspect < 1 ? 14 + 22 * clamp(1 - aspect, 0, 0.6) : 0), 60, 104);
 
 /** Sudut jarum (rad) pada jam 240 derajat: frac 0..1 -> dari -210 ke +30 derajat (searah jarum jam). */
 export const dialAngle = (frac) => (-210 + 240 * clamp(frac, 0, 1)) * (Math.PI / 180);

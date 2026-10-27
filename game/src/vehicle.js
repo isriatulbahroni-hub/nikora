@@ -28,9 +28,17 @@ export const SEAT_OFFSETS = Object.freeze([
 export const SEAT_HEIGHT = 0.35; // avatar duduk sedikit di atas tanah
 export const BOARD_RANGE = 3.2;
 export const DRAG_K = 0.012; // hambatan udara bawaan (m/s^2 per (m/s)^2); model cepat boleh memakai dragK sendiri
+export const FULL_LOCK = 0.6; // sudut roda depan penuh minimum (rad, sekitar 34 derajat): dulu 0,48-0,52, tikungan sempit tidak terbelok
+export const STEER_SPEED_LOSS = 0.3; // sudut setir hanya berkurang paling banyak 30% di kecepatan puncak (dulu 60%)
+export const STEER_RATE_MIN = 4.5; // laju putar roda minimum (rad/dtk): setir penuh tercapai dalam sekitar 0,13 dtk
+export const WET_GRIP_LOSS = 0.15; // jalan basah (hujan) mengurangi grip sampai 15%
 export const GRIP_STEER_MARGIN = 0.9; // model cepat: sudut setir dibatasi agar percepatan samping paling banyak 90% batas cengkeraman ban
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+// Jalan basah 0..1 (diisi rain-boot.js dari cuaca): memperkecil batas grip ban.
+let wetK = 0;
+export const setWetness = (k) => { wetK = clamp(Number(k) || 0, 0, 1); };
+export const wetness = () => wetK;
 export const forward = (h) => ({ x: Math.sin(h), z: Math.cos(h) });
 export const rightOf = (h) => ({ x: -Math.cos(h), z: Math.sin(h) });
 export const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -95,14 +103,15 @@ export function stepVehicle(v, input, dt, env = {}) {
   if (v.speed < -cap) v.speed = Math.min(-cap, v.speed + 14 * dt);
 
   // setir: makin cepat makin sempit sudutnya
-  const limit = gripLimit(v.tyreTemp ?? TYRE.ambient, surface, C.grip ?? 1);
-  let lock = C.maxSteer * (1 - 0.6 * Math.min(1, Math.abs(v.speed) / C.maxSpeed));
+  const limit = gripLimit(v.tyreTemp ?? TYRE.ambient, surface, C.grip ?? 1) * (1 - WET_GRIP_LOSS * wetK);
+  let lock = Math.max(C.maxSteer, FULL_LOCK) * (1 - STEER_SPEED_LOSS * Math.min(1, Math.abs(v.speed) / C.maxSpeed));
   if (C.powerW !== undefined || C.accelFade !== undefined) {
     // model cepat: sudut yang menghasilkan percepatan samping = 90% batas ban (a = v^2 tan(s) / wheelBase), supaya setir penuh tidak membuat selip yang memotong laju
     lock = Math.min(lock, Math.atan((C.wheelBase * GRIP_STEER_MARGIN * limit) / Math.max(v.speed * v.speed, 1)));
   }
   const target = clamp(input.steer ?? 0, -1, 1) * lock;
-  const dSteer = clamp(target - v.steer, -C.steerRate * dt, C.steerRate * dt);
+  const rate = Math.max(C.steerRate, STEER_RATE_MIN);
+  const dSteer = clamp(target - v.steer, -rate * dt, rate * dt);
   v.steer += dSteer;
 
   // grip ban: yaw rate dibatasi percepatan samping yang masih bisa ditahan ban (understeer + selip), dibawa lingkaran gesek
