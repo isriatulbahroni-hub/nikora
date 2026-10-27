@@ -1,11 +1,11 @@
 // Gambar 3D parkir NIKORA Grand Hotel (THREE). Data dan tata letak ada di hotel-parking.js.
 // Semuanya InstancedMesh murah: aspal, garis slot, lampu slot (hijau/merah/biru/emas), jalur tanaman + pohon + lampu taman, papan zona,
 // ~200 mobil tamu yang sedang parkir, parkir motor berkanopi, pengisi daya blok D, dan paviliun kaca "Royal Garage" dengan panggung putar.
-// Mobil Bugatti pemilik TIDAK digambar di sini (sudah ada di armada kendaraan); OWNER-00 hanya menyiapkan panggungnya.
+// Bugatti pemilik TIDAK digambar di sini: ia mobil armada (vehicle-fleet.js, BUGATTI_SPOT) yang diparkir di panggung OWNER-00.
 import * as THREE from 'three';
 import {
   GUEST_ENTRY_LANE, GUEST_FLANK, GUEST_LINK, GUEST_LINK_W, GUEST_NW, OWNER_GARAGE, OWNER_LANE, OWNER_TURNTABLE, STAFF_BIKES, STAFF_BIKES_CANOPY,
-  bikeSlots, guestSlots, guestStats, occupancy, ownerSlots, parkedGuestCars, slotLightColor,
+  bikeSlots, guestOccupied, guestSlots, guestStats, occupancy, ownerSlots, parkedGuestCars, slotLightColor,
 } from './hotel-parking.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
@@ -97,7 +97,7 @@ export function buildHotelParking(parent) {
   const guest = guestSlots();
   const bikes = bikeSlots();
   const owner = ownerSlots();
-  const guestOcc = occupancy(guest, 0.4);
+  const guestOcc = guestOccupied(); // sama dengan yang dipakai valet (hotel-main.js): slot hijau di layar = slot pilihan valet
   const bikeOcc = occupancy(bikes, 0.55, 11);
 
   // ---- aspal + lantai marmer Royal Garage
@@ -219,7 +219,6 @@ export function buildHotelParking(parent) {
   const deck = new THREE.Mesh(new THREE.CylinderGeometry(OWNER_TURNTABLE.r - 0.35, OWNER_TURNTABLE.r - 0.35, 0.04, 48), M.marble);
   deck.position.y = 0.33;
   const pad = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 0.06, 40), M.light);
-  pad.position.y = 5.18;
   turntable.add(rim, deck);
   turntable.position.set(OWNER_TURNTABLE.x, 0, OWNER_TURNTABLE.z);
   pad.position.set(OWNER_TURNTABLE.x, 5.18, OWNER_TURNTABLE.z);
