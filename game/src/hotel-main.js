@@ -25,6 +25,8 @@ import { buildHotelSurroundings } from './hotel-surroundings.js';
 import { VILLA_APPROACH, createHotelVilla } from './hotel-villa.js';
 import { createHotelJourney } from './hotel-journey.js';
 import { alongOf } from './hotel-journey-math.js';
+import { createHotelLife } from './hotel-life.js';
+import { createHotelAmbience } from './hotel-ambience.js';
 
 // NIKORA Grand Hotel sebagai halaman sendiri (/hotel.html): menara 1000 lantai yang dijelajahi dengan avatar (satu pemain).
 // Geometri 3D dari hotel-world.js dan denah dari hotel-layout.js (dipakai bersama dunia villa); halaman ini hanya
@@ -358,6 +360,23 @@ async function start() {
   // Jarak pandang 6,5 km supaya menara 4,2 km dan lampunya terlihat dari jauh (ketepatan kedalaman ditentukan jarak dekat, bukan jauh).
   const camera = new THREE.PerspectiveCamera(48, 1, 0.2, 6500);
   const sky = createHotelSky({ scene, renderer, camera, lights, search: window.location.search, low: lowQuality });
+  // Hotel dan jalan terasa hidup: lalu lintas Lingkar NIKORA, burung (hotel-life.js), dan suara sekitar (hotel-ambience.js). Hanya pemandangan dan suara.
+  // Dibungkus try/catch: bila gagal dibuat atau galat saat berjalan, efek itu dimatikan sendiri dan hotel tetap jalan.
+  // ?lalin=0 mematikan lalu lintas, ?burung=0 burung, ?suara=0 suara sekitar.
+  let life = null;
+  let ambience = null;
+  try {
+    life = createHotelLife({ scene, low: lowQuality, search: window.location.search });
+  } catch (error) {
+    console.warn('[hotel] lalu lintas dan burung dilewati', error);
+    life = null;
+  }
+  try {
+    ambience = createHotelAmbience({ search: window.location.search });
+  } catch (error) {
+    console.warn('[hotel] suara sekitar dilewati', error);
+    ambience = null;
+  }
   const indoorLight = new THREE.PointLight(0xffe2b8, 0, 26, 1.3);
   scene.add(indoorLight);
   let indoorK = 0;
@@ -816,6 +835,33 @@ async function start() {
     const nightK = nightLevel(sky.phase());
     surroundings.setNight(nightK); // jendela kota dan menara satelit menyala di malam hari
     journey.setNight(nightK); // lampu jalan lorong menyala satu per satu saat senja (night-lamps.js)
+    // hotel dan jalan hidup: lalu lintas, burung, suara sekitar (hotel-life.js, hotel-ambience.js); efek yang galat dimatikan sendiri, hotel tetap jalan
+    const rainK = (() => {
+      try {
+        const r = window.__weather?.intensity?.();
+        return Number.isFinite(r) ? r : 0;
+      } catch {
+        return 0;
+      }
+    })();
+    if (life) {
+      try {
+        life.update({ time: time / 1000, me, night: nightK, rain: rainK, active: journey.state === 'idle' }); // disembunyikan selama lorong (dunia lain)
+      } catch (error) {
+        console.warn('[hotel] lalu lintas dan burung dimatikan karena galat', error);
+        try { life.dispose(); } catch { /* sudah dibuang */ }
+        life = null;
+      }
+    }
+    if (ambience) {
+      try {
+        ambience.update({ time: time / 1000, night: nightK, rain: rainK, indoor: indoorK, cabin: inCabin });
+      } catch (error) {
+        console.warn('[hotel] suara sekitar dimatikan karena galat', error);
+        try { ambience.dispose(); } catch { /* sudah ditutup */ }
+        ambience = null;
+      }
+    }
     const qChange = quality.tick(performance.now());
     if (qChange) renderer.setPixelRatio(qChange.ratio);
     if (inCabin) carView.renderMirrors(renderer, scene);
@@ -836,6 +882,8 @@ async function start() {
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio() }),
     places: () => places,
     staff: () => staffView.stats(), // petugas yang sedang digambar (pengujian)
+    life: () => life?.info() ?? null, // lalu lintas dan burung (pengujian); null bila dimatikan
+    ambience: () => ambience?.info() ?? null, // suara sekitar (pengujian); null bila dimatikan
     sky: () => sky.info(), // langit dan lampu saat ini (pengujian)
     surroundings: () => surroundings.info(), // satelit, kota, pohon (pengujian)
     villa: () => villa.state(), // villa di dalam dunia hotel: sudah dimuat? gagal? (pengujian)
