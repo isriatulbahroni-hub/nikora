@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { GATE_S, ROAD, SEGMENTS, UTURN, bridgeAt, clamp, eventsOf, frameAt, nearestOnRoute, noise2, rng, segmentAt, smooth, terrainHeight, uturnSigns, uturnSites, waterLevelOf } from './journey.js';
 import { CARRIAGE_HALF, HIGHWAY_HALF, LANES_PER_DIRECTION, LANE_WIDTH, MEDIAN_WIDTH, SHOULDER_WIDTH } from './highway.js';
 import { VENUES } from './venues.js';
+import { lampThreshold, paintLamps, warmScale } from './night-lamps.js';
 
 export const CHUNK = 96; // sisi potongan medan (m)
 export const RES = 24; // sel per sisi potongan (4 m)
@@ -126,7 +127,8 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
     sign: std(0x6e7378),
     yellow: std(0xf0c020, { roughness: 0.6 }),
     laneYellow: std(0xe6b422, { roughness: 0.7 }),
-    glow: basic(0xfff1c2),
+    glow: basic(0xffffff), // warna per lampu dari night-lamps.js (padam siang, menyala satu per satu saat senja)
+    warm: basic(0xffffff), // lampu hangat gerbang dan jendela kedatangan: meredup di siang
     stone: std(0xe3d5b3),
     stoneDark: std(0x7d6e55),
     wood: std(0x5a3e28),
@@ -136,6 +138,8 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
   };
   const sites = uturnSites(j);
   const nearGap = (s, pad = 0) => sites.some((u) => Math.abs(s - u.s) < UTURN.gap / 2 + pad);
+  const lamps = new Set(); // InstancedMesh kepala lampu jalan (dicat ulang saat tingkat malam berubah)
+  let nightNow = 0;
 
   // ------------------------------------------------------------ medan
   const zoneTint = (seg) => ({ utama: 0x5f9a45, berkelok: 0x4f8a3c, bukit: 0x477f3a, premium: 0x88b25a, kedatangan: 0x78a850 }[seg.id]);
@@ -330,7 +334,7 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
         if (cell % 8 === 0) {
           lampP.push({ x: f.x, y: f.y + 4.5, z: f.z, sx: 0.25, sy: 9, sz: 0.25 });
           lampA.push({ x: f.x, y: f.y + 8.9, z: f.z, sx: 17, sy: 0.18, sz: 0.18, ry: f.heading });
-          for (const sd of [-1, 1]) lampH.push({ x: f.x + L.x * sd * 8, y: f.y + 8.7, z: f.z + L.z * sd * 8, sx: 0.8, sy: 0.2, sz: 0.5, ry: f.heading });
+          for (const sd of [-1, 1]) lampH.push({ x: f.x + L.x * sd * 8, y: f.y + 8.7, z: f.z + L.z * sd * 8, sx: 0.8, sy: 0.2, sz: 0.5, ry: f.heading, color: 0xffffff, th: lampThreshold(cell) });
         }
       }
       const sides = inBridge ? [-1, 1] : Math.abs(k) > 1 / 170 ? [-Math.sign(k)] : [];
@@ -388,7 +392,12 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
     boxes(g, chev, mats.yellow);
     boxes(g, lampP, mats.post);
     boxes(g, lampA, mats.post);
-    boxes(g, lampH, mats.glow);
+    const lampMesh = boxes(g, lampH, mats.glow);
+    if (lampMesh) {
+      lampMesh.userData.th = lampH.map((l) => l.th);
+      lamps.add(lampMesh);
+      paintLamps(lampMesh, nightNow);
+    }
     boxes(g, signBack, mats.plain);
     boxes(g, signPosts, mats.post);
     group.add(g);
@@ -489,7 +498,7 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
     items.push({ x: H + 2.7, y: 1.9, z: -1.55, sx: 2.2, sy: 1.6, sz: 0.1, color: 0x1b2a33 }); // kaca
     boxes(g, items, std(0xffffff), { cast: shadows, receive: shadows });
     boxes(g, slats, std(0xffffff));
-    boxes(g, [{ x: 0, y: 10.3, z: -3.6, sx: 50 + 2 * D, sy: 0.12, sz: 0.3, color: 0xffd98a }], basic(0xffffff)); // lampu hangat di bawah kanopi
+    boxes(g, [{ x: 0, y: 10.3, z: -3.6, sx: 50 + 2 * D, sy: 0.12, sz: 0.3, color: 0xffd98a }], mats.warm); // lampu hangat di bawah kanopi (meredup di siang)
     // palem (di luar tepi aspal)
     const tr = [];
     const cr = [];
@@ -535,7 +544,7 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
     boxes(g, items, std(0xffffff), { cast: shadows, receive: shadows });
     const win = [];
     for (let x = -27; x <= 27; x += 6) win.push({ x, y: 7, z: 76.6, sx: 2.6, sy: 6, sz: 0.2, color: 0xffd38a });
-    boxes(g, win, basic(0xffffff));
+    boxes(g, win, mats.warm); // jendela kedatangan: meredup di siang, terang di malam
     const island = new THREE.Mesh(new THREE.CylinderGeometry(8, 8.6, 0.6, 24), std(0x5f8f4a));
     island.position.set(0, 0.35, 56);
     g.add(island);
@@ -545,6 +554,14 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
   }
 
   buildFixed();
+
+  /** Tingkat malam 0..1: kepala lampu jalan menyala satu per satu, lampu hangat gerbang dan jendela menyala penuh di malam hari. */
+  function setNight(n) {
+    nightNow = clamp(n, 0, 1);
+    mats.warm.color.setScalar(warmScale(nightNow));
+    for (const m of lamps) paintLamps(m, nightNow);
+  }
+  setNight(0);
 
   // ------------------------------------------------------------ pemuatan per potongan
   // Jalan dimuat LEBIH DULU dan yang terdekat dengan pemain lebih dulu (dulu dari yang paling belakang, dan menunggu anggaran tanah habis,
@@ -588,6 +605,7 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
   function dispose(g) {
     group.remove(g);
     g.traverse((o) => {
+      lamps.delete(o);
       if (o.geometry && o.geometry !== BOX && o.geometry !== TRUNK && o.geometry !== CROWN) o.geometry.dispose();
       if (o.isInstancedMesh) o.dispose();
     });
@@ -599,11 +617,12 @@ export function createJourneyWorld(j, { shadows = true } = {}) {
   }
 
   return {
-    group, ensure, prime, counts: () => ({ terrain: terrain.size, roads: roads.size }),
+    group, ensure, prime, setNight, counts: () => ({ terrain: terrain.size, roads: roads.size }),
     dispose: () => {
       for (const g of [...terrain.values(), ...roads.values()]) dispose(g);
       terrain.clear();
       roads.clear();
+      lamps.clear();
       for (const m of signMats.values()) { m.map?.dispose?.(); m.dispose(); }
       signMats.clear();
     },

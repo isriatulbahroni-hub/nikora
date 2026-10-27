@@ -813,7 +813,9 @@ async function start() {
     sky.update(time); // langit, awan, bintang, dan lampu mengikuti kamera yang sudah final
     journey.applyFog(me); // kabut dekat di luar gerbang (sesudah langit memperbarui kabutnya)
     journey.syncGround(grassMesh.material); // rumput hotel tidak berimpit dengan tanah perjalanan
-    surroundings.setNight(nightLevel(sky.phase())); // jendela kota dan menara satelit menyala di malam hari
+    const nightK = nightLevel(sky.phase());
+    surroundings.setNight(nightK); // jendela kota dan menara satelit menyala di malam hari
+    journey.setNight(nightK); // lampu jalan lorong menyala satu per satu saat senja (night-lamps.js)
     const qChange = quality.tick(performance.now());
     if (qChange) renderer.setPixelRatio(qChange.ratio);
     if (inCabin) carView.renderMirrors(renderer, scene);

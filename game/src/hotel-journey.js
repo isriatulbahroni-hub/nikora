@@ -89,12 +89,14 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
   let fog = null;
   let baseFog = null;
   let groundKey = '';
+  let night = 0; // tingkat malam 0..1 (lampu jalan lorong menyala satu per satu: night-lamps.js)
 
   function ensureWorld(gate) {
     let w = worlds.get(gate.id);
     if (w) return w;
     const j = buildJourney(gate.id);
     const world = createJourneyWorld(j, { shadows: false });
+    world.setNight?.(night);
     world.group.position.set(gate.x, 0, gate.z);
     world.group.rotation.y = gatePsi(gate);
     if (gate.id === 'villa') dropArrivalPlaceholder(world.group, j);
@@ -243,6 +245,12 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
     get arrived() { return state === 'arrived'; },
     get autopilot() { return autopilot; },
     get gate() { return ride?.gate ?? null; },
+    /** Tingkat malam 0..1: lampu jalan semua lorong yang sudah dibangun menyala satu per satu. */
+    setNight(n) {
+      if (Math.abs(n - night) < 0.004) return;
+      night = n;
+      for (const w of worlds.values()) w.world.setNight?.(n);
+    },
 
     /** Mulai perjalanan dari gerbang `gate` dengan mobil yang sedang dikemudikan `car` (objek Fleet). Mengembalikan { ok } atau { ok: false, reason }. */
     start(gate, car) {
