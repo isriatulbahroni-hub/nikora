@@ -6,11 +6,11 @@
 export const G = 9.81;
 
 export const TYRE = Object.freeze({
-  mu: 1.15,          // grip puncak (kali g) pada suhu ideal di aspal
+  mu: 1.4,           // grip puncak (kali g) pada suhu ideal di aspal (dulu 1,15: tikungan jalan raya terlalu licin)
   ambient: 28,       // suhu udara/ban dingin (C)
   optTemp: 85,       // suhu ban dengan grip terbaik
   tempWidth: 60,     // lebar lonceng grip terhadap suhu
-  coldGrip: 0.78,    // faktor grip terendah (ban sangat dingin/terlalu panas)
+  coldGrip: 0.9,     // faktor grip terendah (ban sangat dingin/terlalu panas); dulu 0,78
   maxTemp: 140,
   heatPerSlip: 90,   // pemanasan (C/dtk) pada selip penuh
   heatRolling: 0.35, // pemanasan gelinding (C/dtk) per m/s
@@ -19,7 +19,7 @@ export const TYRE = Object.freeze({
 });
 
 /** Kali grip permukaan; selaras dengan jenis permukaan hotel-layout (road / compound / ground). */
-export const SURFACE_MU = Object.freeze({ road: 1, compound: 0.82, ground: 0.62 });
+export const SURFACE_MU = Object.freeze({ road: 1, compound: 0.9, ground: 0.75 });
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
