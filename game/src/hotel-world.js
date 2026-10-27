@@ -18,6 +18,8 @@ import { buildHighway } from './highway-world.js';
 import { skinShape } from './hotel-tower-shape.js';
 import { buildTowerSkin } from './hotel-tower-skin.js';
 import { exteriorOccluders } from './hotel-occluders.js';
+import { PARKING_KEEP_OUT } from './hotel-parking.js';
+import { buildHotelParking } from './hotel-parking-world.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const GOLD = 0xc9a24b;
@@ -148,7 +150,7 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
   const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const trunks = [];
   const crowns = [];
-  const clear = (x, z) => !(Math.abs(x) < HIGHWAY_HALF + 3 && z < HOTEL_FORECOURT[1] + 2) && !(x > HOTEL_FORECOURT[0] - 3 && x < HOTEL_FORECOURT[2] + 3 && z > HOTEL_FORECOURT[1] - 3 && z < B[1] + 4) && !(x > HOTEL_PARKING[0] - 3 && x < HOTEL_PARKING[2] + 3 && z > HOTEL_PARKING[1] - 3 && z < HOTEL_PARKING[3] + 3) && !(x > B[0] - 6 && x < B[2] + 6 && z > B[1] - 3 && z < B[3] + 8);
+  const clear = (x, z) => !(Math.abs(x) < HIGHWAY_HALF + 3 && z < HOTEL_FORECOURT[1] + 2) && !(x > HOTEL_FORECOURT[0] - 3 && x < HOTEL_FORECOURT[2] + 3 && z > HOTEL_FORECOURT[1] - 3 && z < B[1] + 4) && !(x > HOTEL_PARKING[0] - 3 && x < HOTEL_PARKING[2] + 3 && z > HOTEL_PARKING[1] - 3 && z < HOTEL_PARKING[3] + 3) && !(x > B[0] - 6 && x < B[2] + 6 && z > B[1] - 3 && z < B[3] + 8) && !PARKING_KEEP_OUT.some((r) => x > r[0] - 3 && x < r[2] + 3 && z > r[1] - 3 && z < r[3] + 3);
   for (let i = 0, n = 0; i < 400 && n < 70; i++) {
     const x = HOTEL_SITE.minX + 6 + rand() * (HOTEL_SITE.maxX - HOTEL_SITE.minX - 12);
     const z = HOTEL_SITE.minZ + 10 + rand() * (HOTEL_SITE.maxZ - HOTEL_SITE.minZ - 14);
@@ -160,6 +162,15 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
   }
   instancedBoxes(root, trunks, M.trunk, { cast: true });
   instancedBoxes(root, crowns, M.leaf, { cast: true });
+
+  // parkir mewah tiga zona (tamu 500, karyawan + motor, Royal Garage pemilik): hotel-parking.js + hotel-parking-world.js.
+  // Dibungkus try/catch supaya kegagalan menggambar parkir tidak pernah menggagalkan seluruh hotel.
+  let parking = null;
+  try {
+    parking = buildHotelParking(root);
+  } catch (err) {
+    console.warn('[hotel] parkir gagal dibangun', err);
+  }
 
   // ---- cangkang menara (seluruh 1000 lantai, murah: beberapa InstancedMesh saja). Pelat dan list mengikuti tapak tiap lantai.
   const slabs = [];
@@ -343,6 +354,7 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     builtLevels: () => [...groups.keys()].sort((a, b) => a - b),
     highway,
     skin,
-    dispose: () => { skin.dispose(); highway.dispose(); scene.remove(root); },
+    parking,
+    dispose: () => { parking?.dispose(); skin.dispose(); highway.dispose(); scene.remove(root); },
   };
 }
