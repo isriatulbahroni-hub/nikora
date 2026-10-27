@@ -6,7 +6,8 @@ test('siang terang: lampu padam', () => {
   const lights = createAutoLights();
   assert.equal(lights(-1, 0), false);
 });
-	est('menjelang senja: lampu menyala, dan bertahan di antara dua ambang (tidak berkedip)', () => {
+
+test('menjelang senja: lampu menyala, dan bertahan di antara dua ambang (tidak berkedip)', () => {
   const lights = createAutoLights();
   assert.equal(lights(NIGHT_ON + 0.05, 0), true);
   assert.equal(lights((NIGHT_ON + NIGHT_OFF) / 2, 0), true); // sudah menyala: tetap menyala
