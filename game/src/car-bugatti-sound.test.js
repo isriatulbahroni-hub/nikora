@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GLB_MODELS, gearFor, rpmFor } from './car-models.js';
+import { CAR_MODELS, GLB_MODELS, gearFor, rpmFor } from './car-models.js';
 import { engineLayers, nextBoost } from './car-audio.js';
 
 const bugatti = GLB_MODELS.bugatti;
@@ -39,6 +39,22 @@ test('suara w16: dua nada turbo saat gas dalam, letupan knalpot saat gas dilepas
     const off = engineLayers(m, { speed: 50, throttle: 1, engineOn: false });
     assert.equal(off.exhaustGain, 0);
     assert.equal(off.crackle, false);
+  }
+});
+
+test('suara w16: lapisan geraman rendah (seperempat-orde) hanya untuk watak w16, jauh di bawah nada pembakaran, hening saat mesin mati', () => {
+  for (const m of [nikora, bugatti]) {
+    const fast = engineLayers(m, { speed: 100, throttle: 1, boost: 1 });
+    const idle = engineLayers(m, { speed: 0, throttle: 0 });
+    assert.ok(fast.growlGain > 0.15 && idle.growlGain > 0.15, 'geraman terdengar di putaran tinggi dan saat diam');
+    assert.ok(fast.growlHz * 3 < fast.fireHz, 'nada geraman jauh di bawah nada pembakaran (tidak lagi hanya 500-900 Hz)');
+    assert.ok(fast.growlHz > idle.growlHz, 'geraman naik dengan putaran');
+    assert.ok(fast.growlCut > idle.growlCut, 'saringan geraman makin terbuka di putaran tinggi');
+    assert.equal(engineLayers(m, { speed: 100, throttle: 1, engineOn: false }).growlGain, 0);
+    assert.ok(engineLayers(m, { speed: 100, throttle: 1, cabin: true }).growlGain > fast.growlGain, 'di kabin geraman lebih terasa');
+  }
+  for (const id of Object.keys(CAR_MODELS)) {
+    assert.equal(engineLayers(CAR_MODELS[id], { speed: 20, throttle: 1 }).growlGain, 0, `${id}: mesin lain tidak berubah`);
   }
 });
 
