@@ -73,6 +73,7 @@ const NIKORA_W16 = freeze({
 // Chiron (0-100 km/j 2,4 s; 0-200 km/j 6,5 s; 0-300 km/j 13,6 s; kecepatan puncak 420 km/j dibatasi elektronik; 100-0 km/j sekitar 31,3 m;
 // massa 1995 kg; mesin W16 quad-turbo 1479 hp). Tenaga yang sampai ke jalan (powerW) diset lebih rendah dari tenaga pabrik (1103 kW) supaya
 // 0-200 dan 0-300 km/j sesuai: rugi transmisi dan pindah gigi tidak dimodelkan. Bila moncong di berkas menghadap ke belakang, ubah yaw menjadi Math.PI.
+// Suara mesin: watak 'w16' (geraman tebal, dua nada turbo, blow-off panjang, letupan knalpot saat gas dilepas); NIKORA W16 tetap 'deep'.
 const BUGATTI_CHIRON = freeze({
   ...NIKORA_W16,
   id: 'bugatti', name: 'Bugatti Chiron',
@@ -84,6 +85,7 @@ const BUGATTI_CHIRON = freeze({
   maxSpeed: 116.7, // 420 km/j
   brake: 12.5, // 100-0 km/j sekitar 31 m
   paint: 0x0b2a5c,
+  engine: freeze({ ...NIKORA_W16.engine, timbre: 'w16' }), // putaran, gigi, dan turbo sama; hanya watak suara yang berbeda
   glb: freeze({ file: 'models/mobil-bugatti-chiron.glb', yaw: 0 }),
 });
 
