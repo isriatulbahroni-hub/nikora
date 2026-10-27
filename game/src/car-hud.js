@@ -1,8 +1,10 @@
 // HUD mengemudi bertahap untuk mobil mewah (DOM murni, tanpa berkas CSS). Hanya kontrol yang relevan dengan keadaan kendaraan yang tampil
 // (aturan tahapnya di car-state.js, dikirim car-ride.js lewat view()):
 //   kabin (mesin belum siap): tombol Nyalakan + panel fitur. Setir, gas, rem, gigi tersembunyi.
-//   berhenti (mesin siap)   : setir bulat (kiri bawah), pedal rem dan gas tekan-tahan (kanan bawah), pemilih gigi P R N D, tombol Matikan.
+//   berhenti (mesin siap)   : setir bulat (kiri bawah), pedal rem dan gas (kanan bawah), pemilih gigi P R N D, tombol Matikan.
 //   melaju                  : sama, tanpa tombol mesin; tombol aksi halaman (#act-button, Turun) disembunyikan sampai berhenti.
+// Pedal GAS ANALOG: posisi jempol di pedal menentukan besar gas. Ujung bawah pedal = gas tipis (10%), ujung atas = gas penuh; geser jempol naik/turun
+// tanpa melepas untuk menambah/mengurangi gas, isian emas di pedal menunjukkan besar gas. Pedal rem tetap tekan-tahan (on/off).
 // Susunan layar (rapi, tidak saling menutupi): kolom kiri atas = lencana (gigi, km/j, sein/hazard berkedip, REM saat rem tangan), tombol Turun,
 // lalu tombol ⋯ (panel fitur) DI BAWAH Turun; kiri bawah = klakson dan setir; tengah bawah = tombol mesin kecil di celah antara setir dan pedal;
 // kanan bawah = pemilih gigi dan pedal. Panel fitur (lampu, hazard, rem tangan, AC, sabuk, sein kiri/kanan) plus pengaturan
@@ -23,6 +25,8 @@ const NOSEL = 'touch-action:none;user-select:none;-webkit-user-select:none';
 const STORE_KEY = 'nikora-car-hud';
 const WHEEL = 118; // garis tengah setir bulat (px)
 const KNOB = 44; // kenop penggeser setir (mode geser)
+const GAS_MIN = 0.1; // gas terkecil saat jempol menyentuh pedal gas (ujung bawah)
+const GAS_REACH = 1.12; // jempol di 89% tinggi pedal ke atas sudah gas penuh (tidak perlu menjangkau ujung atas)
 // Putaran setir (rad) dari tengah sampai kunci penuh: makin kecil makin peka.
 const SENS = Object.freeze([{ id: 'low', label: 'Rendah', lock: 1.9 }, { id: 'mid', label: 'Normal', lock: 1.4 }, { id: 'high', label: 'Tinggi', lock: 1.0 }]);
 
@@ -71,7 +75,7 @@ const lit = (n, on) => {
 
 /**
  * Dipakai car-ride.js: set(kmh, info, compact) tiap frame (kmh null = sembunyi), view(model) tiap frame (null = tanpa kontrol kendaraan),
- * bind(fn) menerima perintah { type, value } dari tombol. pedals() = { gas, brake, reverse } (0/1; reverse selalu 0, mundur lewat gigi R);
+ * bind(fn) menerima perintah { type, value } dari tombol. pedals() = { gas, brake, reverse } (gas 0..1 analog, brake 0/1; reverse selalu 0, mundur lewat gigi R);
  * steer() = setir -1..1 (kanan = +, sama dengan sumbu x joystick).
  */
 export function mountCarHud({ onHorn = () => {} } = {}) {
@@ -172,22 +176,41 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
   for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) slider.addEventListener(ev, sliderEnd);
   document.body.appendChild(slider);
 
-  // pedal rem (lebar, pendek) dan gas (sempit, tinggi), kanan bawah; ditahan = ditekan
+  // pedal rem (lebar, pendek) dan gas (sempit, tinggi), kanan bawah; ditahan = ditekan.
+  // Gas analog: besar gas = tinggi jempol di pedal (ujung bawah GAS_MIN, ujung atas penuh), dan terus mengikuti saat jempol digeser.
   const pedals = { gas: 0, brake: 0, reverse: 0 };
   const pedalSetters = {};
   const pedalBox = make('div', `${BASE}right:14px;bottom:${SAFE_BOTTOM};display:none;gap:12px;align-items:flex-end;touch-action:none`);
-  const pedal = (label, key, w, h) => {
-    const b = make('button', `width:${w}px;height:${h}px;border-radius:10px;border:1px solid ${LINE};background:${RIB},${GLASS};background-blend-mode:normal;padding:0;${NOSEL}`);
+  const pedal = (label, key, w, h, analog = false) => {
+    const b = make('button', `position:relative;overflow:hidden;width:${w}px;height:${h}px;border-radius:10px;border:1px solid ${LINE};background:${RIB},${GLASS};background-blend-mode:normal;padding:0;${NOSEL}`);
     b.type = 'button';
     b.setAttribute('aria-label', `Pedal ${label}`);
-    const set = (on) => { pedals[key] = on ? 1 : 0; b.style.opacity = on ? '1' : '.72'; b.style.borderColor = on ? GOLD : LINE; };
-    pedalSetters[key] = set;
-    set(false);
-    b.addEventListener('pointerdown', (e) => { e.preventDefault(); b.setPointerCapture?.(e.pointerId); set(true); });
-    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, () => set(false));
+    const fill = analog ? make('div', `position:absolute;left:0;right:0;bottom:0;height:0;background:${GOLD};opacity:.7;pointer-events:none`) : null;
+    if (fill) b.appendChild(fill);
+    let ptr = null;
+    const level = (e) => {
+      const r = b.getBoundingClientRect();
+      return clamp(((r.bottom - e.clientY) / Math.max(1, r.height)) * GAS_REACH, GAS_MIN, 1);
+    };
+    const apply = (v) => {
+      pedals[key] = v;
+      b.style.opacity = v ? '1' : '.72';
+      b.style.borderColor = v ? GOLD : LINE;
+      if (fill) fill.style.height = `${Math.round(v * 100)}%`;
+    };
+    pedalSetters[key] = (on) => { if (!on) ptr = null; apply(on ? 1 : 0); };
+    apply(0);
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      b.setPointerCapture?.(e.pointerId);
+      ptr = e.pointerId;
+      apply(analog ? level(e) : 1);
+    });
+    if (analog) b.addEventListener('pointermove', (e) => { if (e.pointerId === ptr) apply(level(e)); });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(ev, () => { ptr = null; apply(0); });
     return b;
   };
-  pedalBox.append(pedal('rem', 'brake', 64, 84), pedal('gas', 'gas', 46, 118));
+  pedalBox.append(pedal('rem', 'brake', 64, 84), pedal('gas', 'gas', 46, 118, true));
   document.body.appendChild(pedalBox);
 
   // pemilih gigi P R N D, di atas pedal
@@ -332,7 +355,7 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
     bind(fn) {
       handler = typeof fn === 'function' ? fn : () => {};
     },
-    /** Keadaan pedal layar { gas, brake, reverse } (0/1). */
+    /** Keadaan pedal layar { gas (0..1 analog), brake (0/1), reverse }. */
     pedals: () => pedals,
     /** Setir -1..1 (kanan = +). 0 bila tidak disentuh. */
     steer: () => (settings.mode === 'wheel' ? clamp(wheelRot / lockNow(), -1, 1) : steerValue),
