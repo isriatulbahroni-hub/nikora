@@ -15,6 +15,7 @@ import {
 } from './car-state.js';
 import { AUTO_CLOSE_M, anyOpen, closeDoorsAndTrunk, createAccess, doorOfSeat, findAccess, tickAccess, toggleAccess } from './car-access.js';
 import { partsFrom, setParts } from './car-parts.js';
+import { createCrashHaptics } from './haptics.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const IDLE_STATE = createCarState(); // keadaan mobil tanpa pengemudi bertahap: lampu padam, mesin mati (hanya dibaca)
@@ -91,6 +92,7 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
   };
   let lastCar = null; // mobil yang dikemudikan pada frame sebelumnya (keadaan dibersihkan saat tidak lagi mengemudi)
   let clock = 0;
+  const crashBuzz = createCrashHaptics();
   let lastWarn = -1e9;
 
   /** Perintah dari HUD: { type: 'engine'|'gear'|'handbrake'|'lights'|'hazard'|'ac'|'belt'|'indicator', value }. Hanya pengemudi. */
@@ -227,6 +229,7 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
         fleet.drive(driveControls(rawInput, hud, driving.speed), delta);
       }
       if (driving.hit > 6) toast('Tabrakan!');
+      crashBuzz(driving.hit, clock); // HP bergetar saat menabrak (haptics.js)
       if (camState && !isDragging()) {
         // kamera pelan-pelan berputar ke belakang mobil (konvensi kamera: yaw = heading + PI berarti kamera di belakang)
         const diff = Math.atan2(Math.sin(driving.heading + Math.PI - camState.yaw), Math.cos(driving.heading + Math.PI - camState.yaw));
