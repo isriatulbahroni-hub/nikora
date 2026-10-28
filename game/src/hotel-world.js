@@ -21,6 +21,7 @@ import { buildSkyWalk } from './hotel-skywalk-world.js';
 import { exteriorOccluders } from './hotel-occluders.js';
 import { PARKING_KEEP_OUT } from './hotel-parking.js';
 import { buildHotelParking } from './hotel-parking-world.js';
+import { buildLuxeLevel } from './hotel-luxe.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const GOLD = 0xc9a24b;
@@ -272,7 +273,7 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
       const s = Math.sin(ry);
       for (const q of propParts(p)) {
         const item = { x: p.x + q.dx * c + q.dz * s, y: y0 + q.dy, z: p.z - q.dx * s + q.dz * c, sx: q.sx, sy: q.sy, sz: q.sz, ry, color: q.color };
-        (q.color === LAMP_COLOR ? lamps : props).push(item);
+        if (q.color === LAMP_COLOR) lamps.push(item); // lampu tetap dari sini; sisa perabot digambar dalam versi mewah oleh hotel-luxe.js
       }
     }
     for (const r of L.rooms) {
@@ -301,7 +302,6 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     instancedBoxes(group, rails, M.glass);
     instancedBoxes(group, ceilingLights, M.light);
     instancedBoxes(group, lamps, M.light);
-    instancedBoxes(group, props, M.prop, { cast: false });
     instancedBoxes(group, pools, M.water);
     instancedBoxes(group, liftDoors, M.gold);
     if (beds.length) {
@@ -316,6 +316,7 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
         group.add(mesh);
       });
     }
+    buildLuxeLevel(group, { L, l, y0, F, guestLevel: isGuestLevel(l), anisotropy }); // lantai marmer/parket/karpet, panel emas, lampu gantung, perabot mewah
     return group;
   }
 
@@ -336,7 +337,7 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     for (const [l, group] of groups) {
       if (keep.has(l)) continue;
       root.remove(group);
-      group.traverse((o) => { if (o.isInstancedMesh) o.dispose(); });
+      group.traverse((o) => { if (o.isInstancedMesh) o.dispose(); else if (o.userData?.luxeFloor) o.geometry.dispose(); });
       groups.delete(l);
     }
     for (const l of keep) {
