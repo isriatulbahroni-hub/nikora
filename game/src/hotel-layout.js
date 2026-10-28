@@ -16,6 +16,7 @@ import { PLAYER_RADIUS, WALL_THICKNESS, BOUNDS as VILLA_BOUNDS, GATE_HALF_WIDTH,
 import { furnishLevel } from './hotel-furnish.js';
 import { PROP_DEFS, propRect } from './hotel-props.js';
 import { inSkyWalk, skyWalkSpec } from './hotel-skywalk.js';
+import { LAGOON_COLLIDERS, LAGOON_RECT } from './hotel-lagoon-data.js';
 
 export const HOTEL_LEVEL_COUNT = 1000;
 export const HOTEL_LEVEL_HEIGHT = 4.2;
@@ -272,6 +273,7 @@ export const HOTEL_LEVELS_ROOMS = new Proxy([], {
 export const HOTEL_ZONES = Object.freeze([
   { id: 'hotel_forecourt', name: 'Drop-off & Valet', kind: 'forecourt', rect: HOTEL_FORECOURT },
   { id: 'hotel_parking', name: 'Parkir Tamu Hotel', kind: 'parking', rect: HOTEL_PARKING },
+  { id: 'hotel_lagoon', name: 'Taman Air Terjun & Kolam Lagoon', kind: 'garden', rect: LAGOON_RECT },
 ]);
 
 // Penghalang tetap di halaman: air mancur dan tiang kanopi drop-off (juga digambar hotel-world.js).
@@ -280,6 +282,7 @@ export const HOTEL_CANOPY = Object.freeze({ rect: [-18, 439, 18, 453], height: 6
 const FIXED_COLLIDERS = Object.freeze([
   { minX: HOTEL_FOUNTAIN.x - HOTEL_FOUNTAIN.r, maxX: HOTEL_FOUNTAIN.x + HOTEL_FOUNTAIN.r, minZ: HOTEL_FOUNTAIN.z - HOTEL_FOUNTAIN.r, maxZ: HOTEL_FOUNTAIN.z + HOTEL_FOUNTAIN.r },
   ...HOTEL_CANOPY.pillars.map(([x, z]) => ({ minX: x - 0.5, maxX: x + 0.5, minZ: z - 0.5, maxZ: z + 0.5 })),
+  ...LAGOON_COLLIDERS, // Taman Air Terjun & Kolam Lagoon (hotel-lagoon-data.js): air kolam, tebing, kursi, kabana, palem
 ]);
 
 // Slot parkir tamu (2 baris x 6) dan titik drop-off; dipakai untuk menaruh mobil.
