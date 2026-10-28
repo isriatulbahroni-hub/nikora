@@ -1,15 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { HOTEL_BUILDING, HOTEL_FORECOURT, HOTEL_PARKING, HOTEL_SITE } from './hotel-layout.js';
+import { BUGATTI_SPOT, defaultCars, hotelCars } from './vehicle-fleet.js';
 import {
-  PARKING_ZONES, PARKING_KEEP_OUT, GUEST_NW, GUEST_LINK, GUEST_LINK_W, GUEST_FLANK, GUEST_ENTRY_LANE, STAFF_CARS, STAFF_BIKES, STAFF_BIKES_CANOPY, OWNER_LANE, OWNER_GARAGE, OWNER_TURNTABLE,
-  VALET_POINT, guestSlots, bikeSlots, ownerSlots, slotRect, parkingZoneAt, occupancy, slotLightColor, assignValet, guestStats, parkedGuestCars, CAR_COLORS,
+  PARKING_ZONES, PARKING_KEEP_OUT, PARKING_PLACES, GUEST_FILL, GUEST_NW, GUEST_LINK, GUEST_LINK_W, GUEST_FLANK, GUEST_ENTRY_LANE, STAFF_CARS, STAFF_BIKES, STAFF_BIKES_CANOPY, OWNER_LANE, OWNER_GARAGE, OWNER_TURNTABLE,
+  VALET_POINT, guestSlots, bikeSlots, ownerSlots, slotRect, parkingZoneAt, occupancy, guestOccupied, slotLightColor, assignValet, valetStandPoint, guestStats, parkedGuestCars, CAR_COLORS,
 } from './hotel-parking.js';
 
 const E = 1e-9;
 const inside = (r, outer) => r[0] >= outer[0] - E && r[2] <= outer[2] + E && r[1] >= outer[1] - E && r[3] <= outer[3] + E;
 const overlap = (a, b) => a[0] < b[2] - E && a[2] > b[0] + E && a[1] < b[3] - E && a[3] > b[1] + E;
 const touch = (a, b) => overlap([a[0] - 0.01, a[1] - 0.01, a[2] + 0.01, a[3] + 0.01], b);
+const pointIn = (r, x, z) => x > r[0] && x < r[2] && z > r[1] && z < r[3];
 const siteRect = [HOTEL_SITE.minX, HOTEL_SITE.minZ, HOTEL_SITE.maxX, HOTEL_SITE.maxZ];
 
 test('parkir: STAFF_CARS persis lahan HOTEL_PARKING yang sudah ada', () => {
@@ -98,6 +100,14 @@ test('parkir: keterisian deterministik (sekitar 40%), mobil digambar hanya di sl
   assert.equal(occupancy(slots, 1).size, 500);
 });
 
+test('parkir: guestOccupied satu sumber kebenaran (sama dengan occupancy bawaan) dan dipakai valet', () => {
+  assert.equal(GUEST_FILL, 0.4);
+  assert.deepEqual([...guestOccupied()].sort(), [...occupancy(guestSlots(), GUEST_FILL)].sort());
+  assert.equal(guestOccupied(), guestOccupied(), 'di-cache');
+  const slot = assignValet(guestOccupied());
+  assert.ok(slot && !guestOccupied().has(slot.id), 'valet memilih slot yang kosong menurut keterisian yang digambar');
+});
+
 test('parkir: valet digital memilih slot kosong terdekat dari titik masuk, melewati yang terisi, null bila penuh', () => {
   const first = assignValet(new Set());
   assert.ok(first);
@@ -106,6 +116,40 @@ test('parkir: valet digital memilih slot kosong terdekat dari titik masuk, melew
   const second = assignValet(new Set([first.id]));
   assert.notEqual(second.id, first.id);
   assert.equal(assignValet(new Set(guestSlots().map((s) => s.id))), null);
+});
+
+test('parkir: titik berdiri valet ada di lorong depan slot (zona tamu, bukan di atas slot mana pun)', () => {
+  const rects = guestSlots().map(slotRect);
+  for (const s of guestSlots()) {
+    const p = valetStandPoint(s);
+    assert.equal(parkingZoneAt(p.x, p.z)?.id, 'guest', `${s.id}: titik berdiri di zona tamu`);
+    assert.ok(rects.every((r) => !pointIn(r, p.x, p.z)), `${s.id}: titik berdiri tidak di atas slot`);
+  }
+});
+
+test('parkir: tujuan menu Jelajah punya id unik, di dalam zona parkir, dan tidak di atas slot atau panggung putar', () => {
+  assert.equal(new Set(PARKING_PLACES.map((p) => p.id)).size, PARKING_PLACES.length);
+  const rects = [...guestSlots(), ...bikeSlots(), ...ownerSlots()].map(slotRect);
+  for (const p of PARKING_PLACES) {
+    assert.ok(parkingZoneAt(p.x, p.z), `${p.id} di dalam zona parkir`);
+    assert.ok(rects.every((r) => !pointIn(r, p.x, p.z)), `${p.id} tidak di atas slot`);
+    assert.ok(Math.hypot(p.x - OWNER_TURNTABLE.x, p.z - OWNER_TURNTABLE.z) > OWNER_TURNTABLE.r, `${p.id} tidak di atas panggung putar`);
+  }
+  assert.equal(parkingZoneAt(...Object.values(PARKING_PLACES.find((p) => p.id === 'royal_garage')).slice(2, 4)).id, 'owner');
+});
+
+test('parkir: Bugatti Chiron milik pemilik diparkir di panggung putar Royal Garage, jumlah dan urutan armada tidak berubah', () => {
+  assert.equal(BUGATTI_SPOT.x, OWNER_TURNTABLE.x);
+  assert.equal(BUGATTI_SPOT.z, OWNER_TURNTABLE.z);
+  assert.equal(BUGATTI_SPOT.heading, Math.PI, 'moncong ke pintu depan garasi (utara)');
+  assert.equal(parkingZoneAt(BUGATTI_SPOT.x, BUGATTI_SPOT.z).id, 'owner');
+  const cars = defaultCars();
+  assert.equal(cars.length, 16);
+  assert.equal(cars.at(-1).model, 'bugatti', 'tetap mobil terakhir: indeks mobil lain tidak bergeser');
+  assert.deepEqual([cars.at(-1).x, cars.at(-1).z], [OWNER_TURNTABLE.x, OWNER_TURNTABLE.z]);
+  assert.equal(hotelCars().filter((c) => c.model === 'bugatti').length, 1);
+  const rect = [BUGATTI_SPOT.x - 1.2, BUGATTI_SPOT.z - 2.5, BUGATTI_SPOT.x + 1.2, BUGATTI_SPOT.z + 2.5];
+  assert.ok(inside(rect, OWNER_GARAGE), 'badan mobil di dalam garasi');
 });
 
 test('parkir: statistik blok dan warna lampu slot', () => {
