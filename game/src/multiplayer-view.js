@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { applyPose, auraSpecFor, createAvatar, setAvatarAura, setAvatarConfig } from './avatar.js';
+import { applyCarSeat } from './car-seat-pose.js';
 import { configFromId, sameConfig } from './avatar-config.js';
 import { HALL } from './hall-layout.js';
 import { NetClient } from './net-client.js';
@@ -89,8 +90,11 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
         const speed = Math.hypot(tx - group.position.x, tz - group.position.z) / Math.max(delta, 1e-3);
         // duduk: pose duduk (tilt 0) atau, tanpa poseFor (aula), titik duduk apa pun; berbaring (tilt != 0) bukan duduk
         group.userData.seated = pose ? pose.tilt === 0 : target.sit != null;
-        group.userData.seatKind = pose?.snap ? 'car' : null; // kursi mobil: kaki maju ke bawah dasbor, bukan menjuntai seperti di kursi biasa (avatar-human.js)
-        applyPose(group, avatar.act ?? (speed > 0.8 ? 'walk' : null), time, delta);
+        const inCar = Boolean(pose?.snap); // kursi mobil: kaki maju ke bawah dasbor, bukan menjuntai seperti di kursi biasa (avatar-human.js)
+        group.userData.seatKind = inCar ? 'car' : null;
+        // penumpang mobil yang melaju tidak berjalan di tempat: posisinya menempel ke kursi, jadi "laju" avatarnya hanyalah laju mobil
+        applyPose(group, avatar.act ?? (!inCar && speed > 0.8 ? 'walk' : null), time, delta);
+        if (inCar) applyCarSeat(group, pose.fit); // punggung bersandar sesuai tinggi atap supaya kepala tidak menembus atap (car-seat-pose.js)
         const kp = pose?.snap ? 1 : k; // kursi mobil yang melaju: tempel ke kursi (interpolasi akan membuat penumpang tertinggal di luar mobil)
         group.position.x += (tx - group.position.x) * kp;
         group.position.z += (tz - group.position.z) * kp;
