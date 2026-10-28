@@ -405,10 +405,11 @@ function applyPoseBase(group, act, t, delta, speed) {
 
   const legs = group.userData.legs;
   if (legs) {
-    const hipR = seated ? SEAT_HIP : gp.hipR; // duduk: paha hampir mendatar, sedikit miring ke bawah
-    const hipL = seated ? SEAT_HIP : gp.hipL;
-    const kneeR = seated ? -SEAT_HIP : gp.kneeR; // betis menggantung tegak, telapak rata di lantai
-    const kneeL = seated ? -SEAT_HIP : gp.kneeL;
+    const seatHip = group.userData.seatHip ?? SEAT_HIP; // duduk di perabot hotel: sudut paha menyesuaikan tinggi dudukan (hotel-seating.js)
+    const hipR = seated ? seatHip : gp.hipR; // duduk: paha hampir mendatar, sedikit miring ke bawah
+    const hipL = seated ? seatHip : gp.hipL;
+    const kneeR = seated ? -seatHip : gp.kneeR; // betis menggantung tegak, telapak rata di lantai
+    const kneeL = seated ? -seatHip : gp.kneeL;
     const spread = seated ? 0.08 : 0; // lutut sedikit terbuka (rotasi z: + = ke luar untuk kaki kanan)
     const lk = seated || gait.amp < 0.02 ? k : 1; // sambil berjalan langsung mengikuti siklus; duduk/berdiri dihaluskan
     legs.r.hip.rotation.x = lerp(legs.r.hip.rotation.x, hipR, lk);
@@ -424,7 +425,7 @@ function applyPoseBase(group, act, t, delta, speed) {
       ankle.rotation.y = lerp(ankle.rotation.y, 0, k);
     }
   }
-  if (spinPivot) spinPivot.position.y = lerp(spinPivot.position.y, seated ? 0 : gp.dip, k);
+  if (spinPivot) spinPivot.position.y = lerp(spinPivot.position.y, seated ? (group.userData.seatLift ?? 0) : gp.dip, k);
   group.userData.leanTarget = lean;
   group.userData.leanNow = lerp(group.userData.leanNow ?? 0, lean, k);
   group.rotation.x = group.userData.leanNow;
