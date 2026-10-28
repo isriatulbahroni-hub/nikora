@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { applyPose, createAvatar } from './avatar.js';
+import { applyCarSeat } from './car-seat-pose.js';
 import { loadConfig, toWire } from './avatar-config.js';
 import { createQualityGovernor } from './quality.js';
 import { chooseCameraPose, forwardLookBlend, resolveCameraDistance } from './villa-camera.js';
@@ -721,17 +722,10 @@ async function start() {
     avatar.position.y = seatPose ? seatPose.y : me.y + (moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0);
     avatar.rotation.y = shownFacing;
     avatar.userData.seated = !!seatPose;
+    avatar.userData.seatKind = seatPose ? 'car' : null; // kursi mobil: kaki avatar manusia maju ke bawah dasbor, bukan menjuntai seperti di kursi biasa (avatar-human.js)
     applyPose(avatar, moving ? 'walk' : null, time / 1000, delta);
-    if (seatPose) {
-      // duduk di mobil: paha hampir mendatar dan betis maju ke bawah dasbor. Pose kursi biasa (betis tegak ke lantai) membuat kaki
-      // menembus lantai mobil dan terlihat menjuntai di bawah pintu.
-      const legs = avatar.userData.legs;
-      if (legs) for (const [side, spread] of [['r', 0.06], ['l', -0.06]]) {
-        legs[side].hip.rotation.x = 1.45;
-        legs[side].hip.rotation.z = spread;
-        legs[side].knee.rotation.x = -0.5;
-      }
-    }
+    // duduk di mobil: kaki ke depan dan punggung bersandar sesuai tinggi atap supaya kepala tidak menembus atap; avatar sederhana dan manusia (car-seat-pose.js)
+    if (seatPose) applyCarSeat(avatar, seatPose.fit);
     const others = multiplayer ? multiplayer.net.players.filter((p) => p.id !== multiplayer.net.id) : [];
     if (multiplayer) {
       multiplayer.view.update(delta, time / 1000); // pemain lain
