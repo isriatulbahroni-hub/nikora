@@ -155,3 +155,14 @@ test('HumanRig.seatKind: membaca penanda kursi mobil dari grup avatar pembungkus
   avatar.userData.seatKind = 'car';
   assert.equal(rig.seatKind(), 'car');
 });
+
+test('HumanRig duduk: di kursi mobil memakai pose kaki mobil, bukan klip kursi (tanpa imbangan)', () => {
+  const rig = seatRig();
+  const avatar = new THREE.Group();
+  avatar.userData.legs = {};
+  avatar.userData.seatKind = 'car';
+  avatar.add(rig.root);
+  step(rig, null, true, 0.1);
+  assert.equal(rig.current, 'idle', 'klip sit_idle tidak dipakai di mobil');
+  assert.equal(rig.root.position.y, 0);
+});
