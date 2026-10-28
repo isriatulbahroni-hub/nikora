@@ -3,6 +3,10 @@
 // Tingkat suara dihitung murni di ambienceLevels (diuji di hotel-ambience.test.js); mesin audio baru dibuat saat pemain pertama kali menyentuh
 // layar atau menekan tombol (aturan autoplay peramban). Pelan dan meredup di dalam ruangan dan di kabin mobil. ?suara=0 mematikannya.
 // Yang SUDAH ada dan tidak diulang: suara mesin, klakson, dan pintu mobil (car-audio.js), suara lift, air, dan masjid di halaman masing-masing.
+// Tiap frame update() juga meneruskan indoor dan cabin ke weather-shelter.js (walau ?suara=0), supaya rain-boot.js tidak menggambar hujan
+// di dalam ruangan dan di kabin mobil.
+
+import { publishShelter } from './weather-shelter.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const smooth = (a, b, x) => {
@@ -26,13 +30,22 @@ export function ambienceLevels({ night = 0, rain = 0, indoor = 0, cabin = false 
 const MAX = Object.freeze({ wind: 0.05, traffic: 0.035, birds: 0.05 });
 
 /**
- * Mengembalikan { update({ time, night, rain, indoor, cabin }), info(), dispose() }. Tanpa WebAudio atau dengan ?suara=0 semuanya tidak berbuat apa-apa.
+ * Mengembalikan { update({ time, night, rain, indoor, cabin }), info(), dispose() }. Tanpa WebAudio atau dengan ?suara=0 suaranya tidak berbunyi
+ * (update tetap meneruskan indoor dan cabin ke weather-shelter.js).
  * time = detik jam game (menjadwalkan kicau).
  */
 export function createHotelAmbience({ search = '' } = {}) {
   const AC = globalThis.AudioContext ?? globalThis.webkitAudioContext;
   const off = !AC || new URLSearchParams(search).get('suara') === '0';
-  if (off) return { update() {}, info: () => ({ on: false }), dispose() {} };
+  if (off) {
+    return {
+      update({ indoor = 0, cabin = false } = {}) {
+        publishShelter({ indoor, cabin });
+      },
+      info: () => ({ on: false }),
+      dispose() {},
+    };
+  }
 
   let ctx = null;
   let bus = null; // gain per lapisan
@@ -101,6 +114,7 @@ export function createHotelAmbience({ search = '' } = {}) {
 
   return {
     update({ time = 0, night = 0, rain = 0, indoor = 0, cabin = false } = {}) {
+      publishShelter({ indoor, cabin }); // sebelum pengecekan audio: hujan tetap tahu teduh walau suara belum dimulai
       if (!ctx || !bus) return;
       last = ambienceLevels({ night, rain, indoor, cabin });
       for (const k of Object.keys(bus)) bus[k].gain.setTargetAtTime(last[k] * MAX[k], ctx.currentTime, 0.8);
