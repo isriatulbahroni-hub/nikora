@@ -1,6 +1,6 @@
 // Data murni untuk lalu lintas dan burung di sekitar hotel (tanpa THREE, diuji di hotel-life-data.test.js). Gambar 3D: hotel-life.js.
 // Lalu lintas berjalan di Lingkar NIKORA (RING di highway.js): persegi bersudut membulat, empat lajur per arah, lalu lintas di sisi KIRI
-// (sama dengan highway.js). Hanya pemandangan: tidak ada tabrakan dengan pemain, jadi mobil lalu lintas mengecil halus bila terlalu dekat.
+// (sama dengan highway.js). Hanya pemandangan: tidak ada tabrakan dengan pemain, jadi kendaraan lalu lintas mengecil halus bila terlalu dekat.
 import { HUB, LANES_PER_DIRECTION, LANE_WIDTH, MEDIAN_WIDTH, RING } from './highway.js';
 
 const TAU = Math.PI * 2;
@@ -110,13 +110,56 @@ export function trafficSpecs({ lanes = LANES_PER_DIRECTION, perLane = 3 } = {}) 
   return out;
 }
 
-/** Pose { x, z, heading } sebuah mobil lalu lintas pada waktu t (detik). */
+// ---- lalu lintas campuran (mobil, motor, bus, truk): dipakai hotel-life.js
+/** Lajur yang dikosongkan dari lalu lintas biasa: dipakai kendaraan karyawan yang berbelok ke parkir (hotel-commute-data.js). Lajur dalam sisi utara. */
+export const COMMUTE_LANE = Object.freeze({ lane: 3, ccw: true });
+export const TRAFFIC_KIND_ORDER = Object.freeze(['car', 'motor', 'bus', 'truck']);
+/** Bobot jenis per lajur (0 = dekat median): lajur cepat hanya mobil dan motor, bus dan truk di lajur luar yang lambat. */
+const MIX = Object.freeze([[0.55, 0.45, 0, 0], [0.55, 0.45, 0, 0], [0.42, 0.33, 0.1, 0.15], [0.25, 0.2, 0.25, 0.3]]);
+const PALETTES = Object.freeze({
+  car: PALETTE,
+  motor: [0x222428, 0x3a3d44, 0xb3262c, 0x1f4fa8, 0xe7e7e7, 0xc9a24b],
+  bus: [0xd9d4c4, 0x2d5a3d, 0x274a7c, 0xc9a24b],
+  truck: [0xe9e1cf, 0xb9bcc0, 0x274a7c, 0x8e1b1b, 0x3a3f46],
+});
+
+/**
+ * Lalu lintas campuran. Tiap lajur satu kecepatan, jarak antar kendaraan sejalur >= 40% dari panjang lajur / perLane.
+ * `skip` = daftar [lajur, ccw] yang dikosongkan (bawaan: lajur kendaraan karyawan).
+ */
+export function mixedTrafficSpecs({ lanes = LANES_PER_DIRECTION, perLane = 9, skip = [[COMMUTE_LANE.lane, COMMUTE_LANE.ccw]] } = {}) {
+  const out = [];
+  let n = 0;
+  for (const ccw of [false, true]) {
+    for (let k = 0; k < lanes; k++) {
+      if (skip.some(([sk, sc]) => sk === k && sc === ccw)) continue;
+      const path = lanePath(k, ccw);
+      const speed = 22 - 3.2 * k + 1.5 * hash01(k * 2 + (ccw ? 1 : 0));
+      const w = MIX[Math.min(k, MIX.length - 1)];
+      for (let i = 0; i < perLane; i++) {
+        n++;
+        const r = hash01(n * 31 + 5);
+        let acc = 0;
+        let kind = 'car';
+        for (let j = 0; j < TRAFFIC_KIND_ORDER.length; j++) {
+          acc += w[j];
+          if (r < acc) { kind = TRAFFIC_KIND_ORDER[j]; break; }
+        }
+        const pal = PALETTES[kind];
+        out.push({ id: n, kind, lane: k, ccw, speed, u0: (path.length * (i + 0.6 * hash01(n * 7))) / perLane, color: pal[Math.floor(hash01(n * 13) * pal.length)] });
+      }
+    }
+  }
+  return out;
+}
+
+/** Pose { x, z, heading } sebuah kendaraan lalu lintas pada waktu t (detik). */
 export const trafficPose = (spec, t) => lanePath(spec.lane, spec.ccw).at(spec.u0 + spec.speed * t);
 
-/** Skala 0..1 mobil lalu lintas menurut jarak ke pemain: penuh di >= far, hilang di <= near (tidak ada tabrakan, jadi menyingkir halus). */
+/** Skala 0..1 kendaraan lalu lintas menurut jarak ke pemain: penuh di >= far, hilang di <= near (tidak ada tabrakan, jadi menyingkir halus). */
 export const proximityScale = (dist, near = 34, far = 60) => smooth(near, far, dist);
 
-/** Kekuatan lampu mobil lalu lintas 0..1: menyala saat gelap atau hujan lebat. night 0..1 (nightLevel), rain 0..1. */
+/** Kekuatan lampu kendaraan lalu lintas 0..1: menyala saat gelap atau hujan lebat. night 0..1 (nightLevel), rain 0..1. */
 export const lightLevel = (night, rain) => clamp(Math.max(smooth(0.12, 0.5, night), smooth(0.25, 0.6, rain) * 0.9), 0, 1);
 
 /** Burung yang mengorbit di luar tapak hotel (jari-jari 200..340 m dari pusat menara, tinggi 28..98 m). */
