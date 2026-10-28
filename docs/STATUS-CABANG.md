@@ -2,7 +2,7 @@
 
 Diperbarui: 29 Okt 2026. Dibuat saat perapian cabang: 122 cabang yang sudah 100% masuk `main` dihapus, lalu PR #122, #95, dan #136 diselesaikan konfliknya dan digabung (tes game 1297 lulus, build lolos), sehingga cabang remote turun dari 158 menjadi 31. Daftar di bawah adalah yang **belum** tergabung. Cek ulang dengan `git branch -r --no-merged origin/main` sebelum bertindak; berkas ini bisa tertinggal.
 
-Kolom *Merge ke main*: hasil uji merge virtual (`git merge-tree`) pada tanggal di atas. Bersih = tidak ada konflik, Konflik = perlu diselesaikan manual.
+Kolom *Merge ke main*: hasil uji merge virtual (`git merge-tree`) yang dijalankan sebelum PR #122, #95, dan #136 digabung; ulangi sebelum bertindak. Bersih = tidak ada konflik, Konflik = perlu diselesaikan manual.
 
 ## A. PR masih terbuka
 Tidak ada.
