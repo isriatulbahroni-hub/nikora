@@ -16,9 +16,10 @@ export const venueHourNow = (search = '') => {
 
 /**
  * `venue` = 'villa' | 'royal' | 'hall' | 'masjid'. `hourNow()` mengembalikan jam permainan pecahan (0..24).
- * `groundY(x, z, level)` = tinggi permukaan tempat karyawan berdiri (bawaan 0). `me` = { x, z, level } pemain. Panggil update() tiap frame.
+ * `groundY(x, z, level)` = tinggi permukaan tempat karyawan berdiri (bawaan 0). `visible()` = false bila pemain sedang di luar
+ * area karyawan (mis. di pulau melayang Royal): tidak ada yang digambar. `me` = { x, z, level } pemain. Panggil update() tiap frame.
  */
-export function createVenueStaffView({ scene, venue, hourNow, groundY = () => 0 }) {
+export function createVenueStaffView({ scene, venue, hourNow, groundY = () => 0, visible = () => true }) {
   const group = new THREE.Group();
   group.name = `staff-${venue}`;
   scene.add(group);
@@ -41,7 +42,7 @@ export function createVenueStaffView({ scene, venue, hourNow, groundY = () => 0 
 
   return {
     update(me, delta, timeSec) {
-      const near = pickNearby(staffOnLevel(venue, me.level ?? 0, hourNow()), me, STAFF_VIEW_RADIUS, STAFF_VIEW_MAX);
+      const near = visible() ? pickNearby(staffOnLevel(venue, me.level ?? 0, hourNow()), me, STAFF_VIEW_RADIUS, STAFF_VIEW_MAX) : [];
       const keep = new Set(near.map((s) => s.id));
       for (const [id, e] of active) {
         if (keep.has(id)) continue;
