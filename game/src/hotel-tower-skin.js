@@ -4,13 +4,16 @@ import { crownSpec, podiumWingTriangles } from './hotel-tower-shape.js';
 import { facadeLayout, facadeRepeat } from './hotel-facade-data.js';
 import { bayTexture } from './hotel-facade.js';
 import { QUAD_TRIANGLES, crownQuads, diagonalUV, quadNormal, skinQuads } from './hotel-tower-skin-data.js';
+import { zoneTint } from './hotel-tower-glow-data.js';
 
 // Kulit luar menara yang MERUNCING (hotel-tower-shape.js + hotel-tower-skin-data.js), pengganti kotak fasad penuh (hotel-facade.js):
 //  - kulit kaca: 20 zona x 4 sisi, satu tekstur "bay" bermipmap (sama dengan fasad lama, jadi tidak berkedip dari jauh),
+//    diwarnai per zona lewat vertex color (zoneTint: hijau toska di bawah, makin terang di atas) tanpa tekstur atau draw call tambahan,
 //  - 4 potongan sudut per zona berwarna emas (lebar ~5 m, jelas terlihat dari jauh; tiang setipis 1 m akan berkedip),
 //  - rangka diagonal bersilang sebagai TEKSTUR transparan per panel (4 zona = ~210 m), bukan batang tipis,
 //  - mahkota meruncing, jarum puncak, dan sayap kristal di podium.
 // Kulit berhenti di bawah Sky Level (lantai 1000), yang terasnya terbuka; mahkota mulai tepat di atap.
+// Pantulan langit, nyala malam, dan berkas cahaya mahkota ditambahkan hotel-tower-glow.js (dicari lewat nama mesh: skin-glass, skin-corners, skin-diagrid-N, crown-*).
 const SRGB = THREE.SRGBColorSpace;
 const GOLD = 0xc9a24b;
 const BAY_WIDTH = 6;
@@ -43,20 +46,26 @@ function paintDiagonals(panel) {
   return t;
 }
 
-/** BufferGeometry (tanpa indeks) dari bidang kulit/mahkota. `uvOf(q)` mengembalikan 4 UV [lo0, lo1, hi1, hi0]; `push` menggeser titik keluar. */
-function quadsGeometry(quads, uvOf, push = 0) {
+/**
+ * BufferGeometry (tanpa indeks) dari bidang kulit/mahkota. `uvOf(q)` mengembalikan 4 UV [lo0, lo1, hi1, hi0]; `push` menggeser titik keluar.
+ * `colorOf(q)` (opsional) mengembalikan warna pengali [r, g, b] untuk seluruh bidang q (atribut 'color', pakai vertexColors pada bahan).
+ */
+function quadsGeometry(quads, uvOf, push = 0, colorOf = null) {
   const pos = [];
   const nor = [];
   const uv = [];
+  const col = colorOf ? [] : null;
   for (const q of quads) {
     const P = [q.lo[0], q.lo[1], q.hi[1], q.hi[0]];
     const n = quadNormal(q);
     const T = uvOf ? uvOf(q) : [[0, 0], [1, 0], [1, 1], [0, 1]];
+    const C = colorOf ? colorOf(q) : null;
     for (const tri of QUAD_TRIANGLES) {
       for (const i of tri) {
         pos.push(P[i][0] + n[0] * push, P[i][1] + n[1] * push, P[i][2] + n[2] * push);
         nor.push(n[0], n[1], n[2]);
         uv.push(T[i][0], T[i][1]);
+        if (col) col.push(C[0], C[1], C[2]);
       }
     }
   }
@@ -64,6 +73,7 @@ function quadsGeometry(quads, uvOf, push = 0) {
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  if (col) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   return g;
 }
 
@@ -90,15 +100,16 @@ export function buildTowerSkin(parent, { anisotropy = 8 } = {}) {
   const mains = quads.filter((q) => q.main);
   const chamfers = quads.filter((q) => !q.main);
 
-  // kulit kaca: UV bay mengulang menurut ukuran bidang, jadi satu tekstur dan satu geometri untuk seluruh menara
+  // kulit kaca: UV bay mengulang menurut ukuran bidang, jadi satu tekstur dan satu geometri untuk seluruh menara; warna per zona lewat vertex color
   const layout = facadeLayout({ bayWidth: BAY_WIDTH, levelHeight: HOTEL_LEVEL_HEIGHT, finWidth: 0.28, edgeHeight: 0.24 });
   const bay = bayTexture(layout, anisotropy, 1, 1);
   textures.push(bay);
+  const zoneCount = mains.reduce((m, q) => Math.max(m, q.zone), 0) + 1;
   const glassGeo = quadsGeometry(mains, (q) => {
     const { u, v } = facadeRepeat(widthOf(q), q.hi[0][1] - q.lo[0][1], BAY_WIDTH, HOTEL_LEVEL_HEIGHT);
     return [[0, 0], [u, 0], [u, v], [0, v]];
-  });
-  add(glassGeo, new THREE.MeshStandardMaterial({ map: bay, roughness: 0.32, metalness: 0.12, transparent: true, depthWrite: false }), 1, 'skin-glass');
+  }, 0, (q) => zoneTint(q.zone, zoneCount));
+  add(glassGeo, new THREE.MeshStandardMaterial({ map: bay, vertexColors: true, roughness: 0.32, metalness: 0.12, transparent: true, depthWrite: false }), 1, 'skin-glass');
 
   // potongan sudut emas (buram)
   add(quadsGeometry(chamfers), new THREE.MeshStandardMaterial({ color: GOLD, roughness: 0.35, metalness: 0.75 }), 0, 'skin-corners');

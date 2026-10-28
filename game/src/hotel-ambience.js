@@ -1,7 +1,12 @@
-// Suara sekitar hotel (WebAudio, disintesis tanpa berkas): angin, dengung lalu lintas jauh, kicau burung di siang hari, jangkrik di malam hari.
+// Suara sekitar hotel (WebAudio, disintesis tanpa berkas): angin, dengung lalu lintas jauh, dan kicau burung di siang hari.
+// (Suara jangkrik malam sudah dihapus: tidak cocok untuk suasana hotel mewah.)
 // Tingkat suara dihitung murni di ambienceLevels (diuji di hotel-ambience.test.js); mesin audio baru dibuat saat pemain pertama kali menyentuh
 // layar atau menekan tombol (aturan autoplay peramban). Pelan dan meredup di dalam ruangan dan di kabin mobil. ?suara=0 mematikannya.
 // Yang SUDAH ada dan tidak diulang: suara mesin, klakson, dan pintu mobil (car-audio.js), suara lift, air, dan masjid di halaman masing-masing.
+// Tiap frame update() juga meneruskan indoor dan cabin ke weather-shelter.js (walau ?suara=0), supaya rain-boot.js tidak menggambar hujan
+// di dalam ruangan dan di kabin mobil.
+
+import { publishShelter } from './weather-shelter.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const smooth = (a, b, x) => {
@@ -19,25 +24,33 @@ export function ambienceLevels({ night = 0, rain = 0, indoor = 0, cabin = false 
     wind: (0.25 + 0.55 * r) * base,
     traffic: (0.5 + 0.5 * (1 - n)) * base,
     birds: (1 - smooth(0.15, 0.6, n)) * (1 - clamp(r * 2.2, 0, 1)) * base,
-    crickets: smooth(0.35, 0.8, n) * (1 - clamp(r * 1.6, 0, 1)) * base,
   };
 }
 
-const MAX = Object.freeze({ wind: 0.05, traffic: 0.035, crickets: 0.03, birds: 0.05 });
+const MAX = Object.freeze({ wind: 0.05, traffic: 0.035, birds: 0.05 });
 
 /**
- * Mengembalikan { update({ time, night, rain, indoor, cabin }), info(), dispose() }. Tanpa WebAudio atau dengan ?suara=0 semuanya tidak berbuat apa-apa.
+ * Mengembalikan { update({ time, night, rain, indoor, cabin }), info(), dispose() }. Tanpa WebAudio atau dengan ?suara=0 suaranya tidak berbunyi
+ * (update tetap meneruskan indoor dan cabin ke weather-shelter.js).
  * time = detik jam game (menjadwalkan kicau).
  */
 export function createHotelAmbience({ search = '' } = {}) {
   const AC = globalThis.AudioContext ?? globalThis.webkitAudioContext;
   const off = !AC || new URLSearchParams(search).get('suara') === '0';
-  if (off) return { update() {}, info: () => ({ on: false }), dispose() {} };
+  if (off) {
+    return {
+      update({ indoor = 0, cabin = false } = {}) {
+        publishShelter({ indoor, cabin });
+      },
+      info: () => ({ on: false }),
+      dispose() {},
+    };
+  }
 
   let ctx = null;
   let bus = null; // gain per lapisan
   let nextChirp = 0;
-  let last = { wind: 0, traffic: 0, birds: 0, crickets: 0 };
+  let last = { wind: 0, traffic: 0, birds: 0 };
 
   const noiseSource = () => {
     const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
@@ -58,7 +71,7 @@ export function createHotelAmbience({ search = '' } = {}) {
   function build() {
     const master = gain(0.9);
     master.connect(ctx.destination);
-    bus = { wind: gain(), traffic: gain(), crickets: gain(), birds: gain() };
+    bus = { wind: gain(), traffic: gain(), birds: gain() };
     for (const g of Object.values(bus)) g.connect(master);
     const wind = ctx.createBiquadFilter();
     wind.type = 'lowpass';
@@ -70,18 +83,6 @@ export function createHotelAmbience({ search = '' } = {}) {
     hum.frequency.value = 180;
     noiseSource().connect(hum);
     hum.connect(bus.traffic);
-    const cricket = ctx.createOscillator();
-    cricket.frequency.value = 4300;
-    const am = gain(0.5);
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 13;
-    const depth = gain(0.5);
-    lfo.connect(depth);
-    depth.connect(am.gain);
-    cricket.connect(am);
-    am.connect(bus.crickets);
-    cricket.start();
-    lfo.start();
   }
 
   function chirp(t0, f0) {
@@ -113,6 +114,7 @@ export function createHotelAmbience({ search = '' } = {}) {
 
   return {
     update({ time = 0, night = 0, rain = 0, indoor = 0, cabin = false } = {}) {
+      publishShelter({ indoor, cabin }); // sebelum pengecekan audio: hujan tetap tahu teduh walau suara belum dimulai
       if (!ctx || !bus) return;
       last = ambienceLevels({ night, rain, indoor, cabin });
       for (const k of Object.keys(bus)) bus[k].gain.setTargetAtTime(last[k] * MAX[k], ctx.currentTime, 0.8);

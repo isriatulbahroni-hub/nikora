@@ -1,17 +1,17 @@
 import * as THREE from 'three';
 import { LANES_PER_DIRECTION } from './highway.js';
-import { birdPose, birdSpecs, birdVisibility, lightLevel, proximityScale, trafficPose, trafficSpecs } from './hotel-life-data.js';
+import { birdPose, birdSpecs, birdVisibility, lightLevel, mixedTrafficSpecs, proximityScale, trafficPose } from './hotel-life-data.js';
+import { createVehicleSet, setVehicleLights } from './hotel-vehicle-parts.js';
 
-// Hotel dan jalan terasa hidup (THREE): lalu lintas di Lingkar NIKORA (mobil dengan lampu yang menyala saat gelap dan hujan) dan burung yang
-// mengitari tapak di siang hari. Data dan matematikanya di hotel-life-data.js (diuji). Hanya pemandangan: tidak ada tabrakan; mobil lalu lintas
-// mengecil halus bila terlalu dekat pemain. Semuanya InstancedMesh (sekitar 8 draw call). ?lalin=0 mematikan lalu lintas, ?burung=0 burung.
-// Yang SUDAH ada dan tidak diulang: pesawat dan helikopter (hotel-aircraft.js), petugas (hotel-staff-view.js), langit dan lampu (hotel-sky.js),
-// hujan (rain-boot.js). Suara sekitar ada di hotel-ambience.js.
+// Hotel dan jalan terasa hidup (THREE): lalu lintas campuran (mobil, motor, bus, truk; lampu menyala saat gelap dan hujan) di Lingkar NIKORA
+// dan burung yang mengitari tapak di siang hari. Data dan matematikanya di hotel-life-data.js (diuji); bentuk kendaraan di hotel-vehicle-parts.js
+// (dipakai bersama hotel-commute.js). Hanya pemandangan: tidak ada tabrakan; kendaraan lalu lintas mengecil halus bila terlalu dekat pemain.
+// ?lalin=0 mematikan lalu lintas, ?burung=0 burung. Lajur dalam sisi utara dikosongkan untuk kendaraan karyawan (COMMUTE_LANE).
+// Yang SUDAH ada dan tidak diulang: pesawat dan helikopter (hotel-aircraft.js), petugas (hotel-staff-view.js), karyawan pulang-pergi (hotel-commute.js),
+// langit dan lampu (hotel-sky.js), hujan (rain-boot.js). Suara sekitar ada di hotel-ambience.js.
 
-const MIN_SCALE = 1e-4;
-const HEAD = [[-0.62, 0.78, 2.22], [0.62, 0.78, 2.22]];
-const TAIL = [[-0.65, 0.8, -2.22], [0.65, 0.8, -2.22]];
-const WHEELS = [[-0.9, 0.3, 1.4], [0.9, 0.3, 1.4], [-0.9, 0.3, -1.4], [0.9, 0.3, -1.4]];
+const NEAR = 7; // m: lebih dekat dari ini kendaraan lalu lintas menghilang (tanpa tabrakan); jalan tetap terasa ramai di sekitar pemain
+const FAR = 18;
 
 export function createHotelLife({ scene, low = false, search = '' } = {}) {
   const q = new URLSearchParams(search);
@@ -21,82 +21,55 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
   root.name = 'nikora-life';
   scene.add(root);
   const owned = [];
-  const own = (x) => {
-    owned.push(x);
-    return x;
-  };
   const dummy = new THREE.Object3D();
   const local = new THREE.Matrix4();
   const world = new THREE.Matrix4();
-  const color = new THREE.Color();
-  const instanced = (geo, mat, count) => {
-    const mesh = new THREE.InstancedMesh(own(geo), own(mat), count);
-    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    mesh.frustumCulled = false; // matriks berubah tiap frame: bola pembatas tidak dihitung ulang
-    root.add(mesh);
-    return mesh;
-  };
 
-  // ---- lalu lintas
-  const specs = trafficOn ? trafficSpecs({ lanes: low ? 2 : LANES_PER_DIRECTION, perLane: low ? 2 : 3 }) : [];
-  let cars = null;
-  if (specs.length) {
-    const n = specs.length;
-    const body = instanced(new THREE.BoxGeometry(1.85, 0.7, 4.4).translate(0, 0.7, 0), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.5 }), n);
-    specs.forEach((s, i) => body.setColorAt(i, color.setHex(s.color)));
-    body.instanceColor.needsUpdate = true;
-    const cabin = instanced(new THREE.BoxGeometry(1.6, 0.6, 2.2).translate(0, 1.35, -0.2), new THREE.MeshStandardMaterial({ color: 0x1b2430, roughness: 0.15, metalness: 0.6 }), n);
-    const wheels = instanced(new THREE.BoxGeometry(0.3, 0.6, 0.6), new THREE.MeshStandardMaterial({ color: 0x111214, roughness: 0.9 }), n * 4);
-    const headMat = new THREE.MeshBasicMaterial({ color: 0xfff1cf });
-    const tailMat = new THREE.MeshBasicMaterial({ color: 0xff2a1c });
-    const heads = instanced(new THREE.BoxGeometry(0.42, 0.2, 0.1), headMat, n * 2);
-    const tails = instanced(new THREE.BoxGeometry(0.42, 0.16, 0.1), tailMat, n * 2);
-    cars = { body, cabin, wheels, heads, tails, headMat, tailMat };
+  // ---- lalu lintas: satu kumpulan per jenis kendaraan
+  const specs = trafficOn ? mixedTrafficSpecs({ lanes: low ? 2 : LANES_PER_DIRECTION, perLane: low ? 4 : 9 }) : [];
+  const groups = new Map();
+  for (const s of specs) {
+    if (!groups.has(s.kind)) groups.set(s.kind, []);
+    groups.get(s.kind).push(s);
   }
+  const sets = [...groups].map(([kind, list]) => ({ list, set: createVehicleSet({ parent: root, kind, capacity: list.length, riders: true, name: `lalin-${kind}` }) }));
 
   // ---- burung: dua sayap per burung (satu InstancedMesh per sisi), berporos di badan
   const birdList = birdsOn ? birdSpecs(low ? 8 : 16) : [];
   let birds = null;
   if (birdList.length) {
     const mat = new THREE.MeshBasicMaterial({ color: 0x1d2229, side: THREE.DoubleSide });
-    birds = {
-      left: instanced(new THREE.BoxGeometry(1.1, 0.05, 0.4).translate(-0.55, 0, 0), mat, birdList.length),
-      right: instanced(new THREE.BoxGeometry(1.1, 0.05, 0.4).translate(0.55, 0, 0), mat, birdList.length),
+    const make = (dx) => {
+      const geo = new THREE.BoxGeometry(1.1, 0.05, 0.4).translate(dx, 0, 0);
+      const mesh = new THREE.InstancedMesh(geo, mat, birdList.length);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.frustumCulled = false;
+      root.add(mesh);
+      owned.push(geo);
+      return mesh;
     };
+    owned.push(mat);
+    birds = { left: make(-0.55), right: make(0.55) };
   }
-
-  const place = (mesh, index, base, [x, y, z]) => {
-    local.makeTranslation(x, y, z);
-    world.multiplyMatrices(base, local);
-    mesh.setMatrixAt(index, world);
-  };
   let level = 0;
 
   return {
     root,
-    info: () => ({ cars: specs.length, birds: birdList.length, lights: level }),
+    info: () => ({ cars: specs.length, kinds: Object.fromEntries(sets.map(({ list, set }) => [set.kind, list.length])), birds: birdList.length, lights: level }),
     /** Tiap frame: time detik, me = pemain {x, z}, night 0..1 (nightLevel), rain 0..1, active = false selama perjalanan lorong (dunia berbeda). */
     update({ time, me, night = 0, rain = 0, active = true }) {
       root.visible = active;
       if (!active) return;
-      if (cars) {
+      if (sets.length) {
         level = lightLevel(night, rain);
-        cars.headMat.color.setHex(0xfff1cf).multiplyScalar(0.3 + 0.7 * level);
-        cars.tailMat.color.setHex(0xff2a1c).multiplyScalar(0.35 + 0.65 * level);
-        for (let i = 0; i < specs.length; i++) {
-          const p = trafficPose(specs[i], time);
-          const s = Math.max(MIN_SCALE, proximityScale(Math.hypot(p.x - me.x, p.z - me.z)));
-          dummy.position.set(p.x, 0.06, p.z);
-          dummy.rotation.set(0, p.heading, 0);
-          dummy.scale.setScalar(s);
-          dummy.updateMatrix();
-          cars.body.setMatrixAt(i, dummy.matrix);
-          cars.cabin.setMatrixAt(i, dummy.matrix);
-          WHEELS.forEach((w, j) => place(cars.wheels, i * 4 + j, dummy.matrix, w));
-          HEAD.forEach((w, j) => place(cars.heads, i * 2 + j, dummy.matrix, w));
-          TAIL.forEach((w, j) => place(cars.tails, i * 2 + j, dummy.matrix, w));
+        setVehicleLights(level);
+        for (const { list, set } of sets) {
+          for (let i = 0; i < list.length; i++) {
+            const p = trafficPose(list[i], time);
+            set.place(i, p.x, p.z, p.heading, proximityScale(Math.hypot(p.x - me.x, p.z - me.z), NEAR, FAR), list[i].color);
+          }
+          set.commit(list.length);
         }
-        for (const m of [cars.body, cars.cabin, cars.wheels, cars.heads, cars.tails]) m.instanceMatrix.needsUpdate = true;
       }
       if (birds) {
         const visible = birdVisibility(night, rain) > 0.05;
@@ -123,7 +96,8 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
     },
     dispose() {
       scene.remove(root);
-      root.traverse((o) => o.dispose?.());
+      for (const { set } of sets) set.dispose();
+      for (const m of [birds?.left, birds?.right]) m?.dispose?.();
       for (const x of owned) x.dispose?.();
     },
   };

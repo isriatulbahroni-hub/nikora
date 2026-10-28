@@ -11,15 +11,17 @@ import { bedGeometries } from './villa-props.js';
 import { LAMP_COLOR, propParts } from './hotel-props.js';
 import {
   HOTEL_BUILDING, HOTEL_CANOPY, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_FOUNTAIN, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_PARKING, HOTEL_SITE,
-  HOTEL_TOP_LEVEL, HOTEL_TOP_Y, HOTEL_WALL_HEIGHT, LIFTS, PODIUM_LEVELS, TOWER_CENTER, TOWER_ZONE_LEVELS, getHotelWorld, hotelFootprint, hotelLevelY, isGuestLevel, isSkyLobbyLevel,
+  HOTEL_TOP_LEVEL, HOTEL_TOP_Y, HOTEL_WALL_HEIGHT, LIFTS, PODIUM_LEVELS, SKY_WALK, TOWER_CENTER, TOWER_ZONE_LEVELS, getHotelWorld, hotelFootprint, hotelLevelY, isGuestLevel, isSkyLobbyLevel,
 } from './hotel-layout.js';
 import { HIGHWAY_HALF } from './highway.js';
 import { buildHighway } from './highway-world.js';
 import { skinShape } from './hotel-tower-shape.js';
 import { buildTowerSkin } from './hotel-tower-skin.js';
+import { buildSkyWalk } from './hotel-skywalk-world.js';
 import { exteriorOccluders } from './hotel-occluders.js';
 import { PARKING_KEEP_OUT } from './hotel-parking.js';
 import { buildHotelParking } from './hotel-parking-world.js';
+import { buildLuxeLevel } from './hotel-luxe.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 const GOLD = 0xc9a24b;
@@ -209,6 +211,9 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     { x: TOWER_CENTER.x - 4, y: HOTEL_TOP_Y + 1.2, z: TOWER_CENTER.z, sx: 0.8, sy: 0.05, sz: 6 }, { x: TOWER_CENTER.x + 4, y: HOTEL_TOP_Y + 1.2, z: TOWER_CENTER.z, sx: 0.8, sy: 0.05, sz: 6 }, { x: TOWER_CENTER.x, y: HOTEL_TOP_Y + 1.2, z: TOWER_CENTER.z, sx: 8, sy: 0.05, sz: 0.8 },
   ], M.line);
 
+  // Sky Walk: dek kaca di luar tapak Sky Level, langit terbuka di atasnya (hotel-skywalk-world.js; denah dan fisika di hotel-skywalk.js)
+  const skyWalk = buildSkyWalk(root);
+
   // ---- interior per lantai (dibangun hanya untuk lantai yang dekat pemain)
   const bg = bedGeometries();
   const bedMaterials = [M.vertex, std(0xffffff, { roughness: 0.9 }), new THREE.MeshBasicMaterial({ color: 0xffe2a8 })];
@@ -268,7 +273,7 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
       const s = Math.sin(ry);
       for (const q of propParts(p)) {
         const item = { x: p.x + q.dx * c + q.dz * s, y: y0 + q.dy, z: p.z - q.dx * s + q.dz * c, sx: q.sx, sy: q.sy, sz: q.sz, ry, color: q.color };
-        (q.color === LAMP_COLOR ? lamps : props).push(item);
+        if (q.color === LAMP_COLOR) lamps.push(item); // lampu tetap dari sini; sisa perabot digambar dalam versi mewah oleh hotel-luxe.js
       }
     }
     for (const r of L.rooms) {
@@ -278,7 +283,11 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
         const edge = (x1, z1, x2, z2, on) => on && rails.push({ x: (x1 + x2) / 2, y: y0 + 0.6, z: (z1 + z2) / 2, sx: Math.max(0.1, x2 - x1), sy: 1.2, sz: Math.max(0.1, z2 - z1) });
         edge(e[0], e[1], e[2], e[1], e[1] === F[1]);
         edge(e[0], e[3], e[2], e[3], e[3] === F[3]);
-        edge(e[0], e[1], e[0], e[3], e[0] === F[0]);
+        if (l === SKY_WALK.level && r.id === 'infinity_pool') { // pintu keluar ke Sky Walk: pagar barat dibuka selebar dek
+          const onWest = Math.abs(e[0] - F[0]) < 1e-6;
+          edge(e[0], e[1], e[0], SKY_WALK.z[0], onWest);
+          edge(e[0], SKY_WALK.z[1], e[0], e[3], onWest);
+        } else edge(e[0], e[1], e[0], e[3], e[0] === F[0]);
         edge(e[2], e[1], e[2], e[3], e[2] === F[2]);
         if (r.id === 'infinity_pool') pools.push(rectBox([e[0] + 3, e[1] + 3, e[2] - 3, e[3] - 3], y0 + 0.07, 0.04));
       }
@@ -293,7 +302,6 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     instancedBoxes(group, rails, M.glass);
     instancedBoxes(group, ceilingLights, M.light);
     instancedBoxes(group, lamps, M.light);
-    instancedBoxes(group, props, M.prop, { cast: false });
     instancedBoxes(group, pools, M.water);
     instancedBoxes(group, liftDoors, M.gold);
     if (beds.length) {
@@ -308,6 +316,7 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
         group.add(mesh);
       });
     }
+    buildLuxeLevel(group, { L, l, y0, F, guestLevel: isGuestLevel(l), anisotropy }); // lantai marmer/parket/karpet, panel emas, lampu gantung, perabot mewah
     return group;
   }
 
@@ -328,7 +337,7 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     for (const [l, group] of groups) {
       if (keep.has(l)) continue;
       root.remove(group);
-      group.traverse((o) => { if (o.isInstancedMesh) o.dispose(); });
+      group.traverse((o) => { if (o.isInstancedMesh) o.dispose(); else if (o.userData?.luxeFloor) o.geometry.dispose(); });
       groups.delete(l);
     }
     for (const l of keep) {
@@ -354,7 +363,8 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     builtLevels: () => [...groups.keys()].sort((a, b) => a - b),
     highway,
     skin,
+    skyWalk,
     parking,
-    dispose: () => { parking?.dispose(); skin.dispose(); highway.dispose(); scene.remove(root); },
+    dispose: () => { parking?.dispose(); skyWalk.dispose(); skin.dispose(); highway.dispose(); scene.remove(root); },
   };
 }

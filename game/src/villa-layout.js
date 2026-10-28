@@ -7,6 +7,7 @@
 import { GAME_DOORS, GAME_ROOFS, GAME_ROOMS, GAME_ZONES, gameEdgeHeight, insideGameWing } from './villa-gamewing.js';
 
 import { COURT_MARGIN, VILLA_COURT, createCourtFrame } from './activities/court-frame.js';
+import { inParkingKeepOut } from './villa-parking.js';
 // Ukuran dasar denah
 export const WALL_THICKNESS = 0.3;
 export const WALL_HEIGHT = 3.0;
@@ -276,6 +277,7 @@ function buildCountryside() {
     const z = (rand() * 2 - 1) * COUNTRYSIDE.radius;
     if (x > minX - COUNTRYSIDE.margin && x < maxX + COUNTRYSIDE.margin && z > minZ - COUNTRYSIDE.margin && z < maxZ + COUNTRYSIDE.margin) continue;
     if (Math.abs(x) < COUNTRYSIDE.roadHalf + 2 && z > 0 && z < COUNTRYSIDE.roadLength) continue; // jalan
+    if (inParkingKeepOut(x, z, 3)) continue; // parkir villa (villa-parking.js): pohon tidak tumbuh di atas lahan parkir
     if (out.some((t) => Math.hypot(t.x - x, t.z - z) < 4)) continue;
     out.push({ level: 0, type: 'tree', x, z, s: 0.8 + rand() * 0.7 });
   }

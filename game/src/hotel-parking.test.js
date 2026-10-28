@@ -135,7 +135,8 @@ test('parkir: tujuan menu Jelajah punya id unik, di dalam zona parkir, dan tidak
     assert.ok(rects.every((r) => !pointIn(r, p.x, p.z)), `${p.id} tidak di atas slot`);
     assert.ok(Math.hypot(p.x - OWNER_TURNTABLE.x, p.z - OWNER_TURNTABLE.z) > OWNER_TURNTABLE.r, `${p.id} tidak di atas panggung putar`);
   }
-  assert.equal(parkingZoneAt(...Object.values(PARKING_PLACES.find((p) => p.id === 'royal_garage')).slice(2, 4)).id, 'owner');
+  const garage = PARKING_PLACES.find((p) => p.id === 'royal_garage');
+  assert.equal(parkingZoneAt(garage.x, garage.z).id, 'owner');
 });
 
 test('parkir: Bugatti Chiron milik pemilik diparkir di panggung putar Royal Garage, jumlah dan urutan armada tidak berubah', () => {
