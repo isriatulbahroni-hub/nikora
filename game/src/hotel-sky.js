@@ -7,6 +7,8 @@ import {
   buildWindowLights, canopyLights, gateLights, groundLampSpots, helipadLights, horizonDip, lampLevel, nightLevel, sunsetLevel, windowLevel,
 } from './hotel-sky-data.js';
 import { createTowerGlow } from './hotel-tower-glow.js';
+import { MOON_DOME_FUNCS, MOON_DOME_UNIFORMS, createHotelMoon } from './hotel-moon.js';
+import { MOON, moonDirection } from './hotel-moon-data.js';
 
 // Langit, cahaya, dan lampu NIKORA Grand Hotel yang berganti otomatis mengikuti jam asli (siang, senja, malam).
 // ?sky=auto|day|sunset|night|cycle dan ?tz=WIB|WITA|WIT mengatur mode dan zona waktu (sama dengan villa, masjid, dan aula); tombol N berganti mode.
@@ -17,6 +19,8 @@ import { createTowerGlow } from './hotel-tower-glow.js';
 // (renderOrder 1, hampir buram): tanpa itu fasad menimpa lampu dan jendela tampak redup.
 // Keindahan kulit menara (pantulan langit di kaca, rangka menyala, berkas cahaya mahkota) ada di hotel-tower-glow.js dan dipasang dari sini.
 // Jendela kamar tamu menyala dari lantai bawah ke atas saat senja (uRise di GLOW_VERT), dengan sebaran acak per kamar.
+// Bulan Purnama Agung (hotel-moon.js) digambar langsung di kubah langit: cakram berkawah, pendar, cincin es 22 derajat, dan berkas cahaya; kaca menara ikut
+// memantulkannya, awan berpinggir perak di dekatnya, dan terang bulan menaikkan cahaya malam. ?moon=real mengikuti fase bulan sesungguhnya (bawaan: purnama).
 
 export const SKY_MODE_LABELS = Object.freeze({ auto: 'otomatis (jam asli)', day: 'siang', sunset: 'senja', night: 'malam', cycle: 'demo satu hari 20 menit' });
 
@@ -71,7 +75,9 @@ uniform float uDip;
 uniform float uSunset;
 uniform float uNight;
 uniform float uAlt;
+${MOON_DOME_UNIFORMS}
 ${NOISE}
+${MOON_DOME_FUNCS}
 void main() {
   vec3 d = normalize(vDir);
   float h = d.y + uDip; // 0 tepat di garis horizon sebenarnya (turun menurut ketinggian)
@@ -107,6 +113,9 @@ void main() {
     col += vec3(0.55, 0.62, 0.9) * mw * 0.2;
   }
 
+  // Bulan Purnama Agung (hotel-moon.js): cakram, pendar, cincin es, dan berkas cahaya
+  col = moonLayer(col, d, h);
+
   col += (hash21(gl_FragCoord.xy) - 0.5) / 255.0; // dither: tanpa pita warna pada gradasi
   gl_FragColor = vec4(col, 1.0);
   #include <colorspace_fragment>
@@ -130,6 +139,9 @@ uniform float uCover;
 uniform vec3 uLit;
 uniform vec3 uShade;
 uniform vec2 uSunXZ;
+uniform vec3 uMoonDir;
+uniform vec3 uMoonTint;
+uniform float uMoonVis;
 ${NOISE}
 void main() {
   vec2 p = vWorld.xz * 0.00065 + vec2(uTime * 0.004, uTime * 0.0015);
@@ -139,6 +151,8 @@ void main() {
   float n2 = fbm(p + uSunXZ * 0.035);
   float lit = clamp(0.55 + (n - n2) * 5.0, 0.0, 1.0); // sisi yang menghadap matahari lebih terang
   vec3 col = mix(uShade, uLit, lit);
+  vec3 rd = normalize(vWorld - uCam);
+  col += uMoonTint * pow(max(dot(rd, uMoonDir), 0.0), 18.0) * uMoonVis * 0.7; // awan di dekat bulan berpinggir perak
   float fade = 1.0 - smoothstep(3600.0, 6000.0, length(vWorld - uCam));
   float inside = smoothstep(30.0, 220.0, abs(uCam.y - vWorld.y)); // tidak berkedip saat kamera tepat di lapisan awan
   gl_FragColor = vec4(col, dens * fade * inside * 0.9);
@@ -326,10 +340,14 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
   scene.background = null;
   if (!scene.fog) scene.fog = new THREE.Fog(0xc7e0f5, 420, 3400);
 
+  // Bulan Purnama Agung: uniformnya dipakai bersama kubah langit dan awan
+  const moon = createHotelMoon({ search, motion });
+
   // kubah langit
   const domeU = {
     uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uZenith: { value: new THREE.Vector3() }, uMid: { value: new THREE.Vector3() }, uHorizon: { value: new THREE.Vector3() },
     uSunColor: { value: new THREE.Vector3(1, 1, 1) }, uDip: { value: 0 }, uSunset: { value: 0 }, uNight: { value: 0 }, uAlt: { value: 0 },
+    ...moon.uniforms,
   };
   const dome = new THREE.Mesh(
     new THREE.SphereGeometry(100, 32, 20),
@@ -343,6 +361,7 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
   const cloudU = {
     uTime: { value: 0 }, uCam: { value: new THREE.Vector3() }, uCover: { value: 0.5 }, uLit: { value: new THREE.Vector3(1, 1, 1) }, uShade: { value: new THREE.Vector3(0.5, 0.5, 0.5) },
     uSunXZ: { value: new THREE.Vector2(0.4, 0.3) },
+    uMoonDir: moon.uniforms.uMoonDir, uMoonTint: moon.uniforms.uMoonTint, uMoonVis: moon.uniforms.uMoonVis,
   };
   const cloud = new THREE.Mesh(
     new THREE.PlaneGeometry(14000, 14000).rotateX(-Math.PI / 2),
@@ -359,10 +378,10 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
   farGround.renderOrder = -500;
   root.add(farGround);
 
-  // bintang dan bulan
-  const decor = createNightDecor({ radius: 3000, stars: 1400, moonRadius: 105, seed: 11 });
+  // bintang (bulan digambar di kubah langit; bintang di dekat bulan tidak ditaruh karena ditelan terang bulan)
+  const moonDir = new THREE.Vector3(...moonDirection());
+  const decor = createNightDecor({ radius: 3000, stars: 1400, moonRadius: 105, seed: 11, moon: false, clearCone: { dir: moonDir.toArray(), angle: MOON.starClearAngle } });
   root.add(decor.group);
-  const moonDir = new THREE.Vector3(...SKY_FRAMES.night.dir).normalize();
 
   // bintang jatuh sesekali (tanpa kabut, supaya tetap terlihat di jarak 2,6 km)
   const streak = new THREE.Line(
@@ -494,8 +513,10 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
       hemi.color.setRGB(s.hemiSky[0], s.hemiSky[1], s.hemiSky[2], SRGB);
       hemi.groundColor.setRGB(s.hemiGround[0], s.hemiGround[1], s.hemiGround[2], SRGB);
     }
-    base.sunI = s.sunI;
-    base.hemiI = s.hemiI;
+    moon.apply(phase);
+    const moonGain = moon.gains(phase); // terang bulan menaikkan cahaya malam (searah bulan, karena arah cahaya malam = arah bulan)
+    base.sunI = s.sunI * moonGain.sun;
+    base.hemiI = s.hemiI * moonGain.hemi;
     scene.fog.color.setRGB(s.fog[0], s.fog[1], s.fog[2], SRGB);
     scene.fog.near = s.fogNear;
     scene.fog.far = s.fogFar;
@@ -547,7 +568,7 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
     info: () => ({
       phase: tracker.phase, mode: tracker.mode, shell, windows: win.count, streetLamps: hw.bulbs.length / 3, pylons: hw.caps.length / 3, groundLamps: ground.length,
       lampMaterials: lampMats.size, beacons: beacons.length, mast: crown.mast, helipad: crown.helipad, farClip: camera.far, motion,
-      visibleLayers: layers.filter((l) => l.points.visible).map((l) => l.points.name), towerGlow: towerGlow.info(),
+      visibleLayers: layers.filter((l) => l.points.visible).map((l) => l.points.name), towerGlow: towerGlow.info(), moon: moon.info(),
     }),
     update(perfMs = performance.now()) {
       const t = perfMs / 1000;
@@ -561,6 +582,7 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
       domeU.uDip.value = horizonDip(cp.y);
       cloudU.uTime.value = t * motion;
       cloudU.uCam.value.copy(cp);
+      moon.update({ time: t });
       renderer.getDrawingBufferSize(size);
       const scale = size.y / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
       for (const l of layers) {
