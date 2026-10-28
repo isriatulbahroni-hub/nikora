@@ -1,15 +1,11 @@
 # Status cabang repo nikora
 
-Diperbarui: 29 Okt 2026. Dibuat saat perapian cabang: 122 cabang yang sudah 100% masuk `main` dihapus (158 menjadi 35 cabang). Daftar di bawah adalah yang **belum** tergabung. Cek ulang dengan `git branch -r --no-merged origin/main` sebelum bertindak; berkas ini bisa tertinggal.
+Diperbarui: 29 Okt 2026. Dibuat saat perapian cabang: 122 cabang yang sudah 100% masuk `main` dihapus, lalu PR #122, #95, dan #136 diselesaikan konfliknya dan digabung (tes game 1297 lulus, build lolos), sehingga cabang remote turun dari 158 menjadi 31. Daftar di bawah adalah yang **belum** tergabung. Cek ulang dengan `git branch -r --no-merged origin/main` sebelum bertindak; berkas ini bisa tertinggal.
 
 Kolom *Merge ke main*: hasil uji merge virtual (`git merge-tree`) pada tanggal di atas. Bersih = tidak ada konflik, Konflik = perlu diselesaikan manual.
 
 ## A. PR masih terbuka
-| Cabang | PR | Merge ke main | Catatan |
-|---|---|---|---|
-| `fitur/jalan-lebar-putar-balik` | #122 | Konflik | mobil: gigi tanpa syarat, perjalanan tanpa batas waktu, Bugatti sesuai data pabrik |
-| `fix/avatar-duduk-klip-asli` | #95 | Konflik | avatar duduk memakai klip Mixamo asli |
-| `feat/parkir-mewah` | #136 | Konflik | PR #132 sudah digabung; 3 dari 5 commit sisa sudah ada di main |
+Tidak ada.
 
 ## B. PR-nya sudah digabung, tetapi ada commit sisa yang dipush sesudahnya
 Isi utama sudah di `main`; hanya commit sesudah merge yang belum masuk. Perlu dicek satu per satu apakah masih relevan atau sudah tergantikan.
@@ -55,7 +51,6 @@ Isi utama sudah di `main`; hanya commit sesudah merge yang belum masuk. Perlu di
 
 ## E. Lain-lain
 - `fitur/karyawan-di-jalan`: cabang baru tanpa PR, mungkin sedang dikerjakan sesi lain. Jangan dihapus.
-- `fix/moba-origin-roney-biz-id`: isinya sudah ada di `main` (perubahan sudah terpasang), aman ditutup.
 
 ## Aturan
 Lihat `CLAUDE.md`. Setiap kali cabang digabung atau ditutup, perbarui berkas ini.
