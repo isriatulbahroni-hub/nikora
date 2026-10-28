@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GATES, HIGHWAY_HALF, HIGHWAY_LIMIT, HUB, HIGHWAY_SEGMENTS, gateAt, gateArrival, gateCarSpecs, gateUrl, arrivalGate } from './highway.js';
+import { GATES, HIGHWAY_HALF, HIGHWAY_LIMIT, HUB, HIGHWAY_SEGMENTS, gateAt, gateArrival, gateCarSpecs, gateUrl, journeyUrl, venueUrl, arrivalGate } from './highway.js';
 import { HOTEL_SPAWN, getHotelWorld, roomAt, surfaceAt } from './hotel-layout.js';
 import { CAR, createVehicle, boardVehicle, stepVehicle } from './vehicle.js';
 
@@ -65,9 +65,26 @@ test('mobil tidak lagi tertahan batas ±600 villa di jaringan jalan hotel', () =
   assert.ok(v.x > 610, `x=${v.x.toFixed(1)}`);
 });
 
-test('gateUrl dan kedatangan: alamat halaman tujuan membawa from=hotel; tamu yang datang muncul di luar zona gerbang', () => {
+test('gateUrl: lewat gerbang = perjalanan menuju tempat acara; ?langsung=1 melompatinya; nama dan mode ringan ikut, peran tidak', () => {
   for (const g of GATES) {
-    const url = gateUrl(g, '?name=Sari&q=low&role=owner');
+    const trip = gateUrl(g, '?name=Sari&q=low&role=owner');
+    assert.match(trip, /^journey\.html\?/);
+    assert.match(trip, new RegExp(`venue=${g.id}`));
+    assert.match(trip, /name=Sari/);
+    assert.match(trip, /q=low/);
+    assert.doesNotMatch(trip, /role=/);
+    assert.equal(trip, journeyUrl(g, '?name=Sari&q=low&role=owner'));
+    const direct = gateUrl(g, '?name=Sari&langsung=1&role=owner');
+    assert.equal(direct, venueUrl(g, '?name=Sari&langsung=1&role=owner'));
+    assert.ok(direct.startsWith(g.page));
+    assert.match(direct, /from=hotel/);
+    assert.doesNotMatch(direct, /role=|langsung/);
+  }
+});
+
+test('kedatangan: tamu yang datang muncul di luar zona gerbang', () => {
+  for (const g of GATES) {
+    const url = venueUrl(g, '?name=Sari&q=low&role=owner');
     assert.match(url, /from=hotel/);
     assert.match(url, /name=Sari/);
     assert.doesNotMatch(url, /role=/);

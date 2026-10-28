@@ -1,0 +1,140 @@
+// Suara sekitar hotel (WebAudio, disintesis tanpa berkas): angin, dengung lalu lintas jauh, dan kicau burung di siang hari.
+// (Suara jangkrik malam sudah dihapus: tidak cocok untuk suasana hotel mewah.)
+// Tingkat suara dihitung murni di ambienceLevels (diuji di hotel-ambience.test.js); mesin audio baru dibuat saat pemain pertama kali menyentuh
+// layar atau menekan tombol (aturan autoplay peramban). Pelan dan meredup di dalam ruangan dan di kabin mobil. ?suara=0 mematikannya.
+// Yang SUDAH ada dan tidak diulang: suara mesin, klakson, dan pintu mobil (car-audio.js), suara lift, air, dan masjid di halaman masing-masing.
+// Tiap frame update() juga meneruskan indoor dan cabin ke weather-shelter.js (walau ?suara=0), supaya rain-boot.js tidak menggambar hujan
+// di dalam ruangan dan di kabin mobil.
+
+import { publishShelter } from './weather-shelter.js';
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const smooth = (a, b, x) => {
+  const t = clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+
+/** Tingkat tiap lapisan suara 0..1. night 0..1 (nightLevel), rain 0..1, indoor 0..1 (indoorK), cabin = kamera di dalam kabin mobil. */
+export function ambienceLevels({ night = 0, rain = 0, indoor = 0, cabin = false } = {}) {
+  const n = clamp(night, 0, 1);
+  const r = clamp(rain, 0, 1);
+  const i = clamp(indoor, 0, 1);
+  const base = (1 - 0.8 * i) * (cabin ? 0.55 : 1);
+  return {
+    wind: (0.25 + 0.55 * r) * base,
+    traffic: (0.5 + 0.5 * (1 - n)) * base,
+    birds: (1 - smooth(0.15, 0.6, n)) * (1 - clamp(r * 2.2, 0, 1)) * base,
+  };
+}
+
+const MAX = Object.freeze({ wind: 0.05, traffic: 0.035, birds: 0.05 });
+
+/**
+ * Mengembalikan { update({ time, night, rain, indoor, cabin }), info(), dispose() }. Tanpa WebAudio atau dengan ?suara=0 suaranya tidak berbunyi
+ * (update tetap meneruskan indoor dan cabin ke weather-shelter.js).
+ * time = detik jam game (menjadwalkan kicau).
+ */
+export function createHotelAmbience({ search = '' } = {}) {
+  const AC = globalThis.AudioContext ?? globalThis.webkitAudioContext;
+  const off = !AC || new URLSearchParams(search).get('suara') === '0';
+  if (off) {
+    return {
+      update({ indoor = 0, cabin = false } = {}) {
+        publishShelter({ indoor, cabin });
+      },
+      info: () => ({ on: false }),
+      dispose() {},
+    };
+  }
+
+  let ctx = null;
+  let bus = null; // gain per lapisan
+  let nextChirp = 0;
+  let last = { wind: 0, traffic: 0, birds: 0 };
+
+  const noiseSource = () => {
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.start();
+    return src;
+  };
+  const gain = (value = 0) => {
+    const g = ctx.createGain();
+    g.gain.value = value;
+    return g;
+  };
+
+  function build() {
+    const master = gain(0.9);
+    master.connect(ctx.destination);
+    bus = { wind: gain(), traffic: gain(), birds: gain() };
+    for (const g of Object.values(bus)) g.connect(master);
+    const wind = ctx.createBiquadFilter();
+    wind.type = 'lowpass';
+    wind.frequency.value = 700;
+    noiseSource().connect(wind);
+    wind.connect(bus.wind);
+    const hum = ctx.createBiquadFilter();
+    hum.type = 'lowpass';
+    hum.frequency.value = 180;
+    noiseSource().connect(hum);
+    hum.connect(bus.traffic);
+  }
+
+  function chirp(t0, f0) {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.frequency.setValueAtTime(f0, t0);
+    o.frequency.exponentialRampToValueAtTime(f0 * 1.45, t0 + 0.07);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.9, t0 + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.09);
+    o.connect(g);
+    g.connect(bus.birds);
+    o.start(t0);
+    o.stop(t0 + 0.1);
+  }
+
+  const start = () => {
+    if (ctx) return;
+    try {
+      ctx = new AC();
+      build();
+      ctx.resume?.();
+    } catch {
+      ctx = null;
+    }
+  };
+  addEventListener('pointerdown', start, { once: true });
+  addEventListener('keydown', start, { once: true });
+
+  return {
+    update({ time = 0, night = 0, rain = 0, indoor = 0, cabin = false } = {}) {
+      publishShelter({ indoor, cabin }); // sebelum pengecekan audio: hujan tetap tahu teduh walau suara belum dimulai
+      if (!ctx || !bus) return;
+      last = ambienceLevels({ night, rain, indoor, cabin });
+      for (const k of Object.keys(bus)) bus[k].gain.setTargetAtTime(last[k] * MAX[k], ctx.currentTime, 0.8);
+      if (last.birds > 0.05 && time >= nextChirp) {
+        const f0 = 2300 + Math.random() * 1500;
+        const n = 2 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < n; i++) chirp(ctx.currentTime + 0.02 + i * 0.13, f0 * (1 + 0.06 * i));
+        nextChirp = time + (1.5 + Math.random() * 5) / (0.3 + last.birds);
+      }
+    },
+    info: () => ({ on: !!ctx, levels: last }),
+    dispose() {
+      removeEventListener('pointerdown', start);
+      removeEventListener('keydown', start);
+      try {
+        ctx?.close?.();
+      } catch {
+        /* sudah tertutup */
+      }
+      ctx = null;
+    },
+  };
+}

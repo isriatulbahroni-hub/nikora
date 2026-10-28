@@ -9,8 +9,14 @@
 //   level 4..997 kamar tamu (76 kamar per lantai), kecuali Sky Lobby
 //   Sky Lobby    tiap 50 lantai (level 50, 100, ... 950): fasilitas publik bergilir
 //   level 998    suite eksekutif | level 999 Sky Lounge, kolam infinity, teras
+//   Sky Walk     dek kaca di luar tapak level 999, menjorok ke barat dari teras Infinity Pool (hotel-skywalk.js), langit terbuka
+// Perabot tiap ruang ditata oleh hotel-furnish.js (katalog di hotel-props.js); sekat kamar mandi ikut menjadi dinding.
 import { HIGHWAY_LIMIT, highwayName, onHighway } from './highway.js';
-import { PLAYER_RADIUS, WALL_THICKNESS, BOUNDS as VILLA_BOUNDS, GATE_HALF_WIDTH, buildWallSegments, wallToRect, propToRect, resolveMove, isWalkable } from './villa-layout.js';
+import { PLAYER_RADIUS, WALL_THICKNESS, BOUNDS as VILLA_BOUNDS, GATE_HALF_WIDTH, buildWallSegments, wallToRect, resolveMove, isWalkable } from './villa-layout.js';
+import { furnishLevel } from './hotel-furnish.js';
+import { PROP_DEFS, propRect } from './hotel-props.js';
+import { inSkyWalk, skyWalkSpec } from './hotel-skywalk.js';
+import { LAGOON_COLLIDERS, LAGOON_RECT } from './hotel-lagoon-data.js';
 
 export const HOTEL_LEVEL_COUNT = 1000;
 export const HOTEL_LEVEL_HEIGHT = 4.2;
@@ -73,6 +79,10 @@ function planMap(level) {
   return { x: (v) => squash(v, TOWER_CENTER.x, TOWER_HALF.x, s), z: (v) => squash(v, TOWER_CENTER.z, TOWER_HALF.z, s) };
 }
 const mapRect = (m, r) => (m ? [m.x(r[0]), m.z(r[1]), m.x(r[2]), m.z(r[3])] : r);
+
+// Sky Walk: dek kaca di luar tapak Sky Level (level 999), menjorok ke barat dari tepi teras Infinity Pool (hotel-skywalk.js). Tanpa atap.
+// Pusatnya 15 m di selatan pusat menara: di dalam rentang z teras Infinity Pool (sisi barat inti) pada denah yang menyusut.
+export const SKY_WALK = skyWalkSpec(hotelFootprint(HOTEL_TOP_LEVEL), TOWER_CENTER.z + 15);
 
 // Tapak bangunan dan halaman.
 export const HOTEL_BUILDING = Object.freeze([CX - HX, CZ - HZ, CX + HX, CZ + HZ]);
@@ -238,32 +248,6 @@ function levelDoors(level) {
   return doors;
 }
 
-function levelProps(level) {
-  const m = planMap(level);
-  // posisi perabot = selisih (dx, dz) dari pusat menara pada denah dasar
-  const p = (type, dx, dz) => ({ type, x: m ? m.x(CX + dx) : CX + dx, z: m ? m.z(CZ + dz) : CZ + dz, level });
-  if (isGuestLevel(level)) return guestCells(level).map((c) => ({ type: 'bed', x: c.bed.x, z: c.bed.z, level }));
-  const out = [];
-  if (level === 0) {
-    out.push(p('desk', -14, -24), p('desk', 14, -24), p('sofa', -6, -16), p('sofa', 6, -16));
-    for (const x of [-30, -22, -14]) for (const z of [0, 12]) out.push(p('table', x, z));
-    for (const x of [14, 22, 30]) for (const z of [0, 12]) out.push(p('table', x, z));
-    out.push(p('counter', -3, 22), p('counter', 3, 22));
-  } else if (level === 1) {
-    for (const x of [-24, -12, 0, 12, 24]) for (const z of [-22, -14]) out.push(p('table', x, z));
-  } else if (level === 2) {
-    out.push(p('tub', -22, 12), p('tub', 22, 22));
-  } else if (isSkyLobbyLevel(level)) {
-    out.push(p('sofa', -6, -16), p('sofa', 6, -16), p('table', -14, -20), p('table', 14, -20), p('table', -22, 12), p('table', 22, 12));
-  } else if (level === HOTEL_TOP_LEVEL - 1) {
-    for (const x of [-33, 33]) for (const z of [-24]) out.push(p('bed', x, z));
-    out.push(p('bed', -31, 22), p('bed', 31, 22), p('sofa', -3, -20), p('sofa', 3, -20));
-  } else if (level === HOTEL_TOP_LEVEL) {
-    out.push(p('table', -6, -22), p('table', 6, -22), p('table', 20, 10), p('table', 28, 10), p('lounger', -22, 2), p('lounger', -16, 2));
-  }
-  return out;
-}
-
 const roomsCache = new Map();
 /** Ruang-ruang satu lantai (dibuat sekali, lalu disimpan). Lantai di luar 0..999 mengembalikan daftar kosong. */
 export function hotelRoomsAtLevel(level) {
@@ -289,6 +273,7 @@ export const HOTEL_LEVELS_ROOMS = new Proxy([], {
 export const HOTEL_ZONES = Object.freeze([
   { id: 'hotel_forecourt', name: 'Drop-off & Valet', kind: 'forecourt', rect: HOTEL_FORECOURT },
   { id: 'hotel_parking', name: 'Parkir Tamu Hotel', kind: 'parking', rect: HOTEL_PARKING },
+  { id: 'hotel_lagoon', name: 'Taman Air Terjun & Kolam Lagoon', kind: 'garden', rect: LAGOON_RECT },
 ]);
 
 // Penghalang tetap di halaman: air mancur dan tiang kanopi drop-off (juga digambar hotel-world.js).
@@ -297,6 +282,7 @@ export const HOTEL_CANOPY = Object.freeze({ rect: [-18, 439, 18, 453], height: 6
 const FIXED_COLLIDERS = Object.freeze([
   { minX: HOTEL_FOUNTAIN.x - HOTEL_FOUNTAIN.r, maxX: HOTEL_FOUNTAIN.x + HOTEL_FOUNTAIN.r, minZ: HOTEL_FOUNTAIN.z - HOTEL_FOUNTAIN.r, maxZ: HOTEL_FOUNTAIN.z + HOTEL_FOUNTAIN.r },
   ...HOTEL_CANOPY.pillars.map(([x, z]) => ({ minX: x - 0.5, maxX: x + 0.5, minZ: z - 0.5, maxZ: z + 0.5 })),
+  ...LAGOON_COLLIDERS, // Taman Air Terjun & Kolam Lagoon (hotel-lagoon-data.js): air kolam, tebing, kursi, kabana, palem
 ]);
 
 // Slot parkir tamu (2 baris x 6) dan titik drop-off; dipakai untuk menaruh mobil.
@@ -313,6 +299,7 @@ export function roomAt(x, z, level = 0) {
     if (zone) return { id: zone.id, name: zone.name, kind: zone.kind, indoor: false, level };
     if (surfaceAt(x, z) === 'road') return { id: 'road', name: highwayName(x, z) ?? 'Jalan Raya NIKORA', kind: 'road', indoor: false, level };
   }
+  if (inSkyWalk(SKY_WALK, level, x, z)) return { id: 'sky_walk', name: 'Sky Walk · Dek Kaca', kind: 'terrace', indoor: false, level, floorName: floorName(level) };
   return { id: 'grounds', name: 'Hotel Grounds', kind: 'grounds', indoor: false, level };
 }
 
@@ -322,10 +309,13 @@ export function getHotelWorld() {
   const levelCache = new Map();
   const buildLevel = (level) => {
     const rooms = hotelRoomsAtLevel(level);
-    const doors = levelDoors(level);
-    const walls = buildWallSegments(rooms.filter((r) => r.kind !== 'terrace'), doors);
-    const props = levelProps(level);
-    const colliders = [...walls.map(wallToRect), ...props.map(propToRect), ...(level === 0 ? FIXED_COLLIDERS : [])];
+    const baseDoors = levelDoors(level);
+    // perabot + sekat kamar mandi; sekat ikut menjadi dinding dan pintunya menjadi pintu lantai
+    const furnishing = furnishLevel({ rooms, doors: baseDoors });
+    const doors = [...baseDoors, ...furnishing.doors.map((d) => ({ level, ...d }))];
+    const walls = buildWallSegments([...rooms.filter((r) => r.kind !== 'terrace'), ...furnishing.rooms], doors);
+    const props = furnishing.props.map((p) => ({ ...p, level }));
+    const colliders = [...walls.map(wallToRect), ...props.filter((p) => PROP_DEFS[p.type].solid).map(propRect), ...(level === 0 ? FIXED_COLLIDERS : [])];
     return Object.freeze({ level, rooms, doors, walls, props, colliders });
   };
   // Seribu lantai tidak dibangun sekaligus: tiap lantai dihitung saat pertama kali dipakai.
@@ -343,7 +333,8 @@ export function getHotelWorld() {
       return data;
     },
   });
-  const inBuilding = (level, x, z, r) => { const b = hotelFootprint(level); return x >= b[0] + r && x <= b[2] - r && z >= b[1] + r && z <= b[3] - r; };
+  // Di dalam tapak lantai itu; di Sky Level juga di dek Sky Walk (di luar tapak, hotel-skywalk.js). Di lantai lain tepi bangunan berpagar.
+  const inBuilding = (level, x, z, r) => { const b = hotelFootprint(level); return (x >= b[0] + r && x <= b[2] - r && z >= b[1] + r && z <= b[3] - r) || inSkyWalk(SKY_WALK, level, x, z, r); };
 
   const move = (pos, dx, dz) => {
     let { x, z } = pos;
@@ -361,7 +352,7 @@ export function getHotelWorld() {
 
   cached = Object.freeze({
     name: 'nikora-hotel', site: HOTEL_SITE, building: HOTEL_BUILDING, spawn: HOTEL_SPAWN, levelCount: HOTEL_LEVEL_COUNT,
-    levelHeight: HOTEL_LEVEL_HEIGHT, levels, lifts: LIFTS, zones: HOTEL_ZONES, carSpots: HOTEL_CAR_SPOTS,
+    levelHeight: HOTEL_LEVEL_HEIGHT, levels, lifts: LIFTS, zones: HOTEL_ZONES, carSpots: HOTEL_CAR_SPOTS, skyWalk: SKY_WALK,
     move, rideLift, liftAt, roomAt,
     canStand: (level, x, z) => isWalkable(x, z, PLAYER_RADIUS, levels[level].colliders, HIGHWAY_LIMIT) && (level === 0 || inBuilding(level, x, z, PLAYER_RADIUS)),
   });

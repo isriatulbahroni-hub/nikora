@@ -47,6 +47,7 @@ import { buildVillaWorld } from './villa-world.js';
 import { createVillaSky } from './villa-sky.js';
 import './emoji-reactions.css';
 import { setupEmojiReactions } from './emoji-reactions-ui.js';
+import { createVenueStaffView, venueHourNow } from './venue-staff-view.js';
 
 const PLAYER_SPEED = 5.2; // harus sama dengan server (ROOM_RULES.playerSpeed)
 const SNAP_DISTANCE = 2.5; // jika posisi klien menyimpang dari server lebih dari ini, ikuti server
@@ -359,6 +360,8 @@ async function start() {
   const tvUi = mountRoomTvUi({ tvs, onActive: (id) => tvView.setActive(id) });
   // Siang-malam otomatis (jam asli; ?sky= dan ?tz= untuk mengubahnya). Dibuat sebelum layar dan avatar supaya hanya dunia vila yang diatur.
   const sky = createVillaSky({ scene, renderer, search: window.location.search });
+  // Karyawan villa (venue-staff.js): 120 orang, tiga shift, jam yang sama dengan langit; yang digambar hanya yang dekat pemain.
+  const staffView = createVenueStaffView({ scene, venue: 'villa', hourNow: venueHourNow(window.location.search), groundY: (x, z, level) => levelY(level) });
   if (lowQuality) applyQuality(renderer, scene, quality.settings()); // ?q=low: mulai langsung dengan kualitas hemat
   const court = buildBadmintonCourt(scene); // lapangan bulu tangkis (letak + net penghalang ada di villa-layout.js)
   const camera = new THREE.PerspectiveCamera(48, 1, 0.12, 320);
@@ -946,6 +949,7 @@ async function start() {
     liftUi.update({ show: seat === null && !games.locksInput && inCab(me), level: me.level, busy: !lift.idle });
     built.update(me.x, me.z, delta, actors, camera.position);
     sky.update(me.x, me.z); // sesudah built.update: arah matahari/bulan mengikuti jam menimpa arah tetap dari dunia
+    staffView.update(me, delta, time / 1000); // karyawan villa yang dekat pemain (posisi dihitung dari jam, sama di semua klien)
     const qChange = quality.setFloor(lowQuality ? 2 : screen?.controller?.state?.src ? 1 : 0) ?? quality.tick(performance.now());
     if (qChange) applyQuality(renderer, scene, qChange);
     if (!games.covering) {
@@ -989,6 +993,7 @@ async function start() {
       lift: { riding: liftRide ? liftRide.spot.to : null, idle: lift.idle },
     }),
     sky: () => sky.info(),
+    staff: () => staffView.stats(),
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio(), canvas: [renderer.domElement.width, renderer.domElement.height] }),
     cam: () => ({ yaw: camState.yaw, pitch: camState.pitch, dist: camState.dist, nowYaw: camNow.yaw }),
     remotes: () => (multiplayer ? multiplayer.view.avatarGroups().map((g) => ({ y: g.position.y, rx: g.rotation.x, ry: g.rotation.y })) : []),

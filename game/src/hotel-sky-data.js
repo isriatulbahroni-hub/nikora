@@ -5,6 +5,7 @@ import {
   HOTEL_BUILDING, HOTEL_CANOPY, HOTEL_FOUNTAIN, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_TOP_LEVEL, HOTEL_TOP_Y, PODIUM_LEVELS, TOWER_HALF,
   hotelFootprint, hotelLevelY, isGuestLevel, isSkyLobbyLevel,
 } from './hotel-layout.js';
+import { crownSpec } from './hotel-tower-shape.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -144,13 +145,18 @@ export function buildBeltLights({ shell = 'taper' } = {}) {
 }
 
 // ---------------------------------------------------------------- mahkota atap
-/** Ujung antena bawaan hotel-world.js (dipakai bila antena tidak ditemukan di scene). */
-export const MAST_TIP = Object.freeze({ x: 0, y: HOTEL_TOP_Y + 60, z: 430 });
-/** Lampu peringatan penerbangan: empat tiang sudut atap dan ujung antena. Larik [x, y, z]. */
+/** Ujung jarum bawaan mahkota (hotel-tower-skin.js); dipakai bila jarum tidak ditemukan di scene. */
+const CROWN = crownSpec();
+export const MAST_TIP = Object.freeze({ x: CROWN.needle.x, y: CROWN.tipY, z: CROWN.needle.z });
+/**
+ * Lampu peringatan penerbangan: empat sudut tingkat tengah mahkota (di permukaan kacanya, tengah potongan sudut) dan ujung jarum.
+ * Larik [x, y, z]; yang terakhir = ujung jarum.
+ */
 export function beaconSpots(tip = MAST_TIP) {
-  const B = HOTEL_BUILDING;
-  const y = HOTEL_TOP_Y + 24.8;
-  return [[B[0] + 3, y, B[1] + 3], [B[2] - 3, y, B[1] + 3], [B[0] + 3, y, B[3] - 3], [B[2] - 3, y, B[3] - 3], [tip.x, tip.y, tip.z]];
+  const ring = CROWN.rings[1];
+  const p = ring.pts;
+  const mid = (a, b) => [(a[0] + b[0]) / 2, ring.y + 0.5, (a[1] + b[1]) / 2];
+  return [mid(p[7], p[0]), mid(p[1], p[2]), mid(p[5], p[6]), mid(p[3], p[4]), [tip.x, tip.y, tip.z]];
 }
 /** Lampu pinggir helipad: `n` titik melingkar. Larik datar x,y,z. */
 export function helipadLights(center, radius = 9.6, n = 24) {

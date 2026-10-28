@@ -3,6 +3,8 @@ import * as THREE from 'three';
 // Bintang dan bulan untuk langit malam, dipakai Villa dan Masjid. Bintang = dua lapis titik (berkelip bergantian), bulan = satu bola
 // bertekstur kawah dengan halo cahaya lembut. Titik-titik berada di belahan langit atas pada jarak `radius`;
 // tanah dan bangunan menutupinya lewat depth test.
+// Opsi untuk Hotel: `moon: false` tidak membuat bola bulan dan halonya (bulan digambar di kubah langit, lihat hotel-moon.js), dan
+// `clearCone: { dir, angle }` tidak menaruh bintang dalam kerucut itu (terang bulan menelan bintang di dekatnya). Bawaan tidak berubah.
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const hasDom = () => typeof document !== 'undefined';
@@ -83,21 +85,36 @@ function haloTexture() {
   return tex;
 }
 
-export function createNightDecor({ radius = 400, stars = 600, moonRadius = 14, seed = 1 } = {}) {
+export function createNightDecor({ radius = 400, stars = 600, moonRadius = 14, seed = 1, moon: withMoon = true, clearCone = null } = {}) {
   let s = seed >>> 0 || 1;
   const rand = () => {
     s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
     return s / 4294967296;
   };
+  let clear = null;
+  if (clearCone) {
+    const [cx, cy, cz] = clearCone.dir;
+    const len = Math.hypot(cx, cy, cz) || 1;
+    clear = { x: cx / len, y: cy / len, z: cz / len, cos: Math.cos(clearCone.angle) };
+  }
   const makeStars = (count, size) => {
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      const y = 0.05 + rand() * 0.95; // sebaran seragam pada bola: tinggi acak seragam, sudut acak
-      const a = rand() * Math.PI * 2;
-      const r = Math.sqrt(1 - y * y);
-      positions[i * 3] = Math.cos(a) * r * radius;
-      positions[i * 3 + 1] = y * radius;
-      positions[i * 3 + 2] = Math.sin(a) * r * radius;
+      let nx = 0;
+      let ny = 0;
+      let nz = 0;
+      for (let tries = 0; tries < 12; tries++) {
+        const y = 0.05 + rand() * 0.95; // sebaran seragam pada bola: tinggi acak seragam, sudut acak
+        const a = rand() * Math.PI * 2;
+        const r = Math.sqrt(1 - y * y);
+        nx = Math.cos(a) * r;
+        ny = y;
+        nz = Math.sin(a) * r;
+        if (!clear || nx * clear.x + ny * clear.y + nz * clear.z < clear.cos) break;
+      }
+      positions[i * 3] = nx * radius;
+      positions[i * 3 + 1] = ny * radius;
+      positions[i * 3 + 2] = nz * radius;
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
@@ -110,23 +127,29 @@ export function createNightDecor({ radius = 400, stars = 600, moonRadius = 14, s
   const points = makeStars(stars, 2);
   const bright = makeStars(Math.max(12, Math.round(stars / 14)), 3.4); // bintang terang, berkelip bergantian dengan lapis pertama
 
-  const tex = moonTexture(seed + 99);
-  const moon = new THREE.Mesh(
-    new THREE.SphereGeometry(moonRadius, 40, 28),
-    new THREE.MeshBasicMaterial({ color: tex ? 0xfffaf0 : 0xeef3ff, map: tex, transparent: true, opacity: 0, depthWrite: false, fog: false }),
-  );
-  moon.frustumCulled = false;
+  let moon = null;
+  let halo = null;
+  if (withMoon) {
+    const tex = moonTexture(seed + 99);
+    moon = new THREE.Mesh(
+      new THREE.SphereGeometry(moonRadius, 40, 28),
+      new THREE.MeshBasicMaterial({ color: tex ? 0xfffaf0 : 0xeef3ff, map: tex, transparent: true, opacity: 0, depthWrite: false, fog: false }),
+    );
+    moon.frustumCulled = false;
 
-  const haloMap = haloTexture();
-  const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: haloMap, color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, depthTest: true, fog: false, blending: THREE.AdditiveBlending,
-  }));
-  halo.scale.setScalar(moonRadius * 9);
-  halo.frustumCulled = false;
-  halo.visible = !!haloMap;
+    const haloMap = haloTexture();
+    halo = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: haloMap, color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, depthTest: true, fog: false, blending: THREE.AdditiveBlending,
+    }));
+    halo.scale.setScalar(moonRadius * 9);
+    halo.frustumCulled = false;
+    halo.visible = !!haloMap;
+  }
 
   const group = new THREE.Group();
-  group.add(points, bright, halo, moon);
+  group.add(points, bright);
+  if (halo) group.add(halo);
+  if (moon) group.add(moon);
   group.visible = false;
   let level = 0;
 
@@ -142,9 +165,9 @@ export function createNightDecor({ radius = 400, stars = 600, moonRadius = 14, s
       group.visible = level > 0.01;
       points.material.opacity = level * 0.9;
       bright.material.opacity = level;
-      moon.material.opacity = level;
-      halo.material.opacity = level * 0.7;
-      if (moonDir) {
+      if (moon) moon.material.opacity = level;
+      if (halo) halo.material.opacity = level * 0.7;
+      if (moonDir && moon) {
         moon.position.copy(moonDir).multiplyScalar(radius * 0.93);
         moon.lookAt(0, 0, 0); // wajah bulan selalu menghadap pemain
         halo.position.copy(moonDir).multiplyScalar(radius * 0.94);
@@ -155,7 +178,7 @@ export function createNightDecor({ radius = 400, stars = 600, moonRadius = 14, s
       if (level <= 0.01) return;
       points.material.opacity = level * (0.78 + 0.14 * Math.sin(t * 1.3));
       bright.material.opacity = level * (0.55 + 0.45 * Math.sin(t * 2.1 + 1.7));
-      halo.material.opacity = level * (0.66 + 0.06 * Math.sin(t * 0.5));
+      if (halo) halo.material.opacity = level * (0.66 + 0.06 * Math.sin(t * 0.5));
     },
   };
 }

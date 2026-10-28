@@ -25,7 +25,7 @@ export const CAR_MODELS = freeze({
     circleRadius: 1.0, circleOffset: 1.3,
     seats: freeze([{ fwd: 0.2, side: 0.5 }, { fwd: 0.2, side: -0.5 }]), seatLift: -0.2,
     paint: 0x0b0c10, accent: 0xe0a800, interior: 0x15151a,
-    engine: freeze({ cylinders: 16, idleRpm: 700, maxRpm: 7000, gears: gears(8, 14, 21, 29, 37), timbre: 'deep' }),
+    engine: freeze({ cylinders: 16, idleRpm: 700, maxRpm: 7000, gears: gears(8, 14, 21, 29, 37), timbre: 'deep', turbo: true }),
     doors: freeze({ style: 'swing', open: 1.0 }),
   }),
   argent: freeze({
@@ -35,7 +35,7 @@ export const CAR_MODELS = freeze({
     circleRadius: 1.0, circleOffset: 1.4,
     seats: freeze([{ fwd: 0.1, side: 0.5 }, { fwd: 0.1, side: -0.5 }]), seatLift: -0.36,
     paint: 0x8d9298, accent: 0xc01822, interior: 0x101012,
-    engine: freeze({ cylinders: 12, idleRpm: 900, maxRpm: 8400, gears: gears(8, 15, 22, 30, 39), timbre: 'scream' }),
+    engine: freeze({ cylinders: 12, idleRpm: 900, maxRpm: 8400, gears: gears(8, 15, 22, 30, 39), timbre: 'scream', turbo: false }),
     doors: freeze({ style: 'scissor', open: 1.05 }),
   }),
   rubis: freeze({
@@ -50,8 +50,50 @@ export const CAR_MODELS = freeze({
   }),
 });
 
+// Model yang tubuhnya berasal dari berkas 3D (GLB) buatan sendiri, bukan dari kode (luxury-cars.js). Sengaja dipisah dari CAR_MODELS:
+// armada hotel yang berselang-seling (HOTEL_MODEL_ORDER) dan semua tes katalog prosedural tetap berlaku untuk empat model di atas.
+// NIKORA W16: performa mengikuti kelas hypercar 16 silinder empat-turbo: kecepatan puncak 420 km/j (dibatasi), 0-100 km/j sekitar 2,4 detik,
+// pengereman 100-0 km/j sekitar 31 m (12,5 m/s^2), mesin 16 silinder 700-6700 rpm, tujuh gigi.
+// accelFade = berapa bagian percepatan hilang di kecepatan puncak (tenaga makin sulit menambah laju), dragK = hambatan udara saat gas
+// dilepas (m/s^2 per (m/s)^2), grip = pengali cengkeraman ban.
+// Suara mesin: watak 'w16' (geraman tebal, dua nada turbo, blow-off panjang, letupan knalpot saat gas dilepas). Dulu 'deep', sehingga
+// mobil bergaya Bugatti yang dikendarai pemain di hotel masih bersuara lama; Bugatti Chiron di bawah mewarisi watak yang sama.
+const NIKORA_W16 = freeze({
+  id: 'nikora', name: 'NIKORA W16', kind: 'hypercar',
+  length: 4.55, width: 2.04, height: 1.21, wheelBase: 2.71, wheelRadius: 0.37, tireWidth: 0.32,
+  maxSpeed: 116.7, reverseMax: 6, accel: 11.6, accelFade: 0.9, dragK: 0.0003, brake: 12.5, maxSteer: 0.5, steerRate: 3.8, grip: 1.25,
+  circleRadius: 1.0, circleOffset: 1.3,
+  seats: freeze([{ fwd: 0.1, side: 0.5 }, { fwd: 0.1, side: -0.5 }]), seatLift: -0.36,
+  paint: 0x0a1a3a, accent: 0x0b0c10, interior: 0x15151a,
+  engine: freeze({ cylinders: 16, idleRpm: 700, maxRpm: 6700, gears: gears(21.7, 36.1, 50, 66.7, 83.3, 100, 116.7), timbre: 'w16', turbo: true }),
+  doors: freeze({ style: 'swing', open: 1.0 }),
+  // file = relatif terhadap folder publik; yaw = putaran tambahan (0 atau Math.PI) bila moncong model di berkas menghadap ke belakang
+  glb: freeze({ file: 'models/mobil-hotel.glb', yaw: 0 }),
+});
+
+// Bugatti Chiron: model GLB buatan sendiri dari Blender (game/blender/nikora_bugatti_chiron.blend). Performa dicocokkan dengan data pabrik
+// Chiron (0-100 km/j 2,4 s; 0-200 km/j 6,5 s; 0-300 km/j 13,6 s; kecepatan puncak 420 km/j dibatasi elektronik; 100-0 km/j sekitar 31,3 m;
+// massa 1995 kg; mesin W16 quad-turbo 1479 hp). Tenaga yang sampai ke jalan (powerW) diset lebih rendah dari tenaga pabrik (1103 kW) supaya
+// 0-200 dan 0-300 km/j sesuai: rugi transmisi dan pindah gigi tidak dimodelkan. Bila moncong di berkas menghadap ke belakang, ubah yaw menjadi Math.PI.
+// Mesin (putaran, gigi, turbo, dan watak suara 'w16') diwarisi dari NIKORA W16.
+const BUGATTI_CHIRON = freeze({
+  ...NIKORA_W16,
+  id: 'bugatti', name: 'Bugatti Chiron',
+  mass: 1995, // kg
+  powerW: 650000, // tenaga yang sampai ke jalan (W); pabrik 1103 kW
+  dragK: 0.0002, // hambatan udara (m/s^2 per (m/s)^2)
+  accel: 11.6, // batas percepatan awal (m/s^2)
+  accelFade: 0, // dimatikan: percepatan dibatasi daya, bukan pengurangan linear
+  maxSpeed: 116.7, // 420 km/j
+  brake: 12.5, // 100-0 km/j sekitar 31 m
+  paint: 0x0b2a5c,
+  glb: freeze({ file: 'models/mobil-bugatti-chiron.glb', yaw: 0 }),
+});
+
+export const GLB_MODELS = freeze({ nikora: NIKORA_W16, bugatti: BUGATTI_CHIRON });
+
 export const MODEL_IDS = freeze(Object.keys(CAR_MODELS));
-export const modelOf = (id) => CAR_MODELS[id] ?? null;
+export const modelOf = (id) => CAR_MODELS[id] ?? GLB_MODELS[id] ?? null;
 
 /** Urutan model armada hotel: 8 mobil = tiap model dua kali, berselang-seling supaya parkir terlihat beragam. */
 export const HOTEL_MODEL_ORDER = freeze(['royale', 'noir', 'argent', 'rubis']);

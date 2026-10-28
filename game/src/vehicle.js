@@ -7,6 +7,7 @@
 import { resolveMove, WORLD_LIMIT } from './villa-layout.js';
 import { surfaceAt as defaultSurface } from './hotel-layout.js';
 import { modelOf } from './car-models.js';
+import { TYRE, gripLimit, limitYaw, longSlip, stepTyreTemp } from './tyre-model.js';
 
 export const CAR = Object.freeze({
   length: 4.3, width: 1.82, wheelBase: 2.7,
@@ -16,14 +17,28 @@ export const CAR = Object.freeze({
   seats: 4,
 });
 export const SURFACE_CAP = Object.freeze({ road: 26, compound: 8, ground: 10 });
+// Penanda tambahan "ini aspal" untuk jalan yang tidak dikenal surfaceAt() bawaan hotel: lorong perjalanan (hotel-journey.js) dipasang di luar
+// jalan raya hotel, jadi tanpa ini mobil di sana dianggap di tanah (batas 10 m/s = 36 km/jam). fn(x, z) -> boolean; null = tidak ada.
+let roadProbe = null;
+export const setRoadProbe = (fn) => { roadProbe = typeof fn === 'function' ? fn : null; };
 // Posisi kursi dalam bingkai mobil: fwd (+ ke depan), side (+ ke kanan). Kursi 0 = pengemudi (kanan depan).
 export const SEAT_OFFSETS = Object.freeze([
   { fwd: 0.45, side: 0.46 }, { fwd: 0.45, side: -0.46 }, { fwd: -0.7, side: 0.46 }, { fwd: -0.7, side: -0.46 },
 ]);
 export const SEAT_HEIGHT = 0.35; // avatar duduk sedikit di atas tanah
 export const BOARD_RANGE = 3.2;
+export const DRAG_K = 0.012; // hambatan udara bawaan (m/s^2 per (m/s)^2); model cepat boleh memakai dragK sendiri
+export const FULL_LOCK = 0.6; // sudut roda depan penuh minimum (rad, sekitar 34 derajat): dulu 0,48-0,52, tikungan sempit tidak terbelok
+export const STEER_SPEED_LOSS = 0.3; // sudut setir hanya berkurang paling banyak 30% di kecepatan puncak (dulu 60%)
+export const STEER_RATE_MIN = 4.5; // laju putar roda minimum (rad/dtk): setir penuh tercapai dalam sekitar 0,13 dtk
+export const WET_GRIP_LOSS = 0.15; // jalan basah (hujan) mengurangi grip sampai 15%
+export const GRIP_STEER_MARGIN = 0.9; // model cepat: sudut setir dibatasi agar percepatan samping paling banyak 90% batas cengkeraman ban
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+// Jalan basah 0..1 (diisi rain-boot.js dari cuaca): memperkecil batas grip ban.
+let wetK = 0;
+export const setWetness = (k) => { wetK = clamp(Number(k) || 0, 0, 1); };
+export const wetness = () => wetK;
 export const forward = (h) => ({ x: Math.sin(h), z: Math.cos(h) });
 export const rightOf = (h) => ({ x: -Math.cos(h), z: Math.sin(h) });
 export const wrapAngle = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -38,17 +53,24 @@ export function specOf(model) {
 export function createVehicle({ id, x = 0, z = 0, heading = 0, color = 0xf2f2f0, model = null }) {
   const spec = specOf(model);
   const paint = spec.model && spec.paint != null && color === 0xf2f2f0 ? spec.paint : color;
-  return { id, x, z, heading, speed: 0, steer: 0, engine: false, color: paint, model: spec.model, spec, seats: Array(spec.seatCount).fill(null), hit: 0, braking: false, throttle: 0 };
+  return { id, x, z, heading, speed: 0, steer: 0, engine: false, color: paint, model: spec.model, spec, seats: Array(spec.seatCount).fill(null), hit: 0, braking: false, throttle: 0, slip: 0, tyreTemp: TYRE.ambient };
 }
 
 /**
  * Satu langkah fisika. input = { throttle: -1..1, steer: -1..1 (kanan positif), brake?: bool }.
+ * throttle bersifat ANALOG: 0,5 = setengah gas (percepatan dikali throttle), jadi gas bisa diatur dari pedal layar (car-hud.js).
  * env = { colliders, surfaceAt, limit? } (limit = batas dunia; bawaan WORLD_LIMIT villa, hotel memakai HIGHWAY_LIMIT). Mengubah dan mengembalikan `v`. v.hit = kekuatan benturan langkah ini (0 = tidak ada).
+ * Opsi spesifikasi model: accelFade (0..1, percepatan menyusut mendekati kecepatan puncak), dragK (hambatan udara), dan powerW + mass
+ * (model bertenaga: percepatan dibatasi daya mesin P/(m v), dikurangi hambatan udara). Tanpa opsi ini fisikanya sama seperti semula.
+ * Model cepat (punya powerW atau accelFade, yaitu NIKORA W16 dan Bugatti Chiron): sudut setir juga dibatasi cengkeraman ban (GRIP_STEER_MARGIN),
+ * jadi setir penuh di kecepatan tinggi tidak lagi melewati batas ban dan memotong laju lewat selip.
  */
 export function stepVehicle(v, input, dt, env = {}) {
   const C = v.spec ?? CAR;
-  const surface = (env.surfaceAt ?? defaultSurface)(v.x, v.z);
+  let surface = (env.surfaceAt ?? defaultSurface)(v.x, v.z);
+  if (surface !== 'road' && roadProbe && roadProbe(v.x, v.z)) surface = 'road';
   const cap = surface === 'road' ? C.maxSpeed : (SURFACE_CAP[surface] ?? SURFACE_CAP.ground);
+  const speed0 = v.speed;
   const throttle = v.engine ? clamp(input.throttle ?? 0, -1, 1) : 0;
   const brake = Boolean(input.brake) || !v.engine && Math.abs(v.speed) > 0;
   v.throttle = throttle;
@@ -58,13 +80,22 @@ export function stepVehicle(v, input, dt, env = {}) {
   if (brake) {
     v.speed = Math.abs(v.speed) <= C.brake * dt ? 0 : v.speed - Math.sign(v.speed) * C.brake * dt;
   } else if (throttle > 0) {
-    v.speed += (v.speed < 0 ? C.brake : C.accel) * throttle * dt;
+    const fade = C.accelFade ? 1 - C.accelFade * Math.min(1, (Math.max(0, v.speed) / C.maxSpeed) ** 2) : 1; // tenaga makin sulit menambah laju di kecepatan tinggi
+    if (v.speed < 0) {
+      v.speed += C.brake * throttle * dt;
+    } else if (C.powerW) {
+      // model bertenaga (Bugatti Chiron): percepatan = yang lebih kecil dari batas awal dan daya/(massa x kecepatan), dikurangi hambatan udara
+      const pull = Math.min(C.accel * fade, C.powerW / (C.mass * Math.max(v.speed, 1)));
+      v.speed += (pull - C.dragK * v.speed * v.speed) * throttle * dt;
+    } else {
+      v.speed += C.accel * fade * throttle * dt;
+    }
   } else if (throttle < 0) {
     v.speed -= (v.speed > 0.3 ? C.brake : C.accel * 0.6) * -throttle * dt;
   }
   // hambatan: gesekan + udara
   if (throttle === 0 && !brake) {
-    const drag = (0.9 + 0.012 * v.speed * v.speed) * dt;
+    const drag = (0.9 + (C.dragK ?? DRAG_K) * v.speed * v.speed) * dt;
     v.speed = Math.abs(v.speed) <= drag ? 0 : v.speed - Math.sign(v.speed) * drag;
   }
   v.speed = clamp(v.speed, -C.reverseMax, C.maxSpeed);
@@ -72,13 +103,27 @@ export function stepVehicle(v, input, dt, env = {}) {
   if (v.speed < -cap) v.speed = Math.min(-cap, v.speed + 14 * dt);
 
   // setir: makin cepat makin sempit sudutnya
-  const lock = C.maxSteer * (1 - 0.6 * Math.min(1, Math.abs(v.speed) / C.maxSpeed));
+  const limit = gripLimit(v.tyreTemp ?? TYRE.ambient, surface, C.grip ?? 1) * (1 - WET_GRIP_LOSS * wetK);
+  let lock = Math.max(C.maxSteer, FULL_LOCK) * (1 - STEER_SPEED_LOSS * Math.min(1, Math.abs(v.speed) / C.maxSpeed));
+  if (C.powerW !== undefined || C.accelFade !== undefined) {
+    // model cepat: sudut yang menghasilkan percepatan samping = 90% batas ban (a = v^2 tan(s) / wheelBase), supaya setir penuh tidak membuat selip yang memotong laju
+    lock = Math.min(lock, Math.atan((C.wheelBase * GRIP_STEER_MARGIN * limit) / Math.max(v.speed * v.speed, 1)));
+  }
   const target = clamp(input.steer ?? 0, -1, 1) * lock;
-  const dSteer = clamp(target - v.steer, -C.steerRate * dt, C.steerRate * dt);
+  const rate = Math.max(C.steerRate, STEER_RATE_MIN);
+  const dSteer = clamp(target - v.steer, -rate * dt, rate * dt);
   v.steer += dSteer;
 
+  // grip ban: yaw rate dibatasi percepatan samping yang masih bisa ditahan ban (understeer + selip), dibawa lingkaran gesek
+  const aLong = dt > 0 && (throttle !== 0 || brake) ? (v.speed - speed0) / dt : 0; // hambatan udara/gesekan bukan gaya ban
+  const wantedYaw = (v.speed / C.wheelBase) * Math.tan(v.steer);
+  const lim = limitYaw({ speed: v.speed, wantedYaw, aLong, limit });
+  v.slip = Math.max(lim.slip, longSlip(aLong, limit));
+  if (lim.slip > 0) v.speed -= Math.sign(v.speed) * lim.slip * 6 * dt; // menyelip mengikis laju
+  v.tyreTemp = stepTyreTemp(v.tyreTemp ?? TYRE.ambient, { slip: v.slip, speed: v.speed, dt });
+
   // gerak (sepeda kinematik: pusat = sumbu belakang+setengah wheelBase, disederhanakan ke pusat mobil)
-  v.heading = wrapAngle(v.heading + (v.speed / C.wheelBase) * Math.tan(v.steer) * dt);
+  v.heading = wrapAngle(v.heading + lim.yawRate * dt);
   const f = forward(v.heading);
   v.x += f.x * v.speed * dt;
   v.z += f.z * v.speed * dt;

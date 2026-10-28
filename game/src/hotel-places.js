@@ -1,6 +1,7 @@
 // Data murni untuk halaman hotel: warna peta mini, daftar tempat "Jelajah", dan keterangan lokasi pemain.
 // Tanpa THREE supaya bisa diuji di Node. Geometri 3D ada di hotel-world.js, denah di hotel-layout.js.
-import { HOTEL_LEVEL_COUNT, hotelFootprint, HOTEL_PARKING, HOTEL_SPAWN, HOTEL_TOP_LEVEL, PODIUM_LEVELS, SKY_LOBBY_EVERY, isGuestLevel } from './hotel-layout.js';
+import { LAGOON_VIEW } from './hotel-lagoon-data.js';
+import { HOTEL_LEVEL_COUNT, hotelFootprint, HOTEL_PARKING, HOTEL_SPAWN, HOTEL_TOP_LEVEL, PODIUM_LEVELS, SKY_LOBBY_EVERY, SKY_WALK, isGuestLevel } from './hotel-layout.js';
 
 /** Warna peta mini per jenis ruang (hex). */
 export const FLOOR_COLORS = Object.freeze({
@@ -74,6 +75,7 @@ export function hotelPlaces(world) {
   };
   add('drop_off', 'Drop-off & Valet', GROUPS.yard, 0, HOTEL_SPAWN.x, HOTEL_SPAWN.z);
   add('parkir_tamu', 'Parkir Tamu', GROUPS.yard, 0, (HOTEL_PARKING[0] + HOTEL_PARKING[2]) / 2, (HOTEL_PARKING[1] + HOTEL_PARKING[3]) / 2);
+  add('hotel_lagoon', 'Taman Air Terjun & Kolam Lagoon', GROUPS.yard, 0, LAGOON_VIEW.x, LAGOON_VIEW.z, 'hotel_lagoon');
   for (const level of featuredLevels()) {
     const rooms = world.levels[level].rooms;
     if (isGuestLevel(level)) {
@@ -87,6 +89,8 @@ export function hotelPlaces(world) {
       add(r.id, r.name, group, level, (r.rect[0] + r.rect[2]) / 2, (r.rect[1] + r.rect[3]) / 2, r.id);
     }
   }
+  // Sky Walk: dek kaca di luar menara, langit terbuka (hotel-skywalk.js); titik tengah dek
+  add('sky_walk', 'Sky Walk · Dek Kaca', GROUPS.sky, HOTEL_TOP_LEVEL, SKY_WALK.center.x, SKY_WALK.center.z);
   return out;
 }
 

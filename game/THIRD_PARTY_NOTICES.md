@@ -33,3 +33,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## LibreCorsa (KhazP) dan ICEsim (Agent00PED) — referensi ide
+
+- LibreCorsa: https://github.com/KhazP/librecorsa (MIT). `game/src/tyre-model.js` terinspirasi model ban bersuhu proyek ini; kode ditulis ulang dan disederhanakan, tidak disalin.
+- ICEsim: https://github.com/Agent00PED/ice-simulator (README menyatakan MIT; repo tidak menyertakan berkas LICENSE). Dipakai sebagai acuan lapisan suara mesin/ban; belum ada kode yang disalin.
