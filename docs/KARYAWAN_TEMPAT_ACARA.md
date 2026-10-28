@@ -1,6 +1,6 @@
 # Karyawan tempat acara
 
-Modul: `game/src/venue-staff.js` (tes: `venue-staff.test.js`). Pola sama dengan karyawan hotel (`hotel-staff.js`, docs `HOTEL_KARYAWAN.md`), hotel tidak diubah.
+Modul: `game/src/venue-staff.js` (tes: `venue-staff.test.js`), tampilan: `game/src/venue-staff-view.js`. Pola sama dengan karyawan hotel (`hotel-staff.js`, docs `HOTEL_KARYAWAN.md`), hotel tidak diubah.
 
 ## Jumlah dan peran
 
@@ -22,10 +22,14 @@ Total 470. Jumlah dan peran ada di `VENUE_DEFS`; mengubahnya cukup di sana (tes 
 
 ## Cara kerja
 
-Simulasi jadwal, bukan ratusan avatar sekaligus: posisi karyawan adalah fungsi jam permainan, jadi semua pemain melihat hal yang sama. `staffState`, `staffOnLevel(tempat, lantai, jam)`, `dutySummary`. Yang digambar nanti dibatasi `pickNearby` (radius 40 m, paling banyak 14). Rute masih garis lurus antar titik (belum navmesh), sama seperti hotel. Cleaning service villa naik turun lewat menara tangga sayap tamu.
+Simulasi jadwal, bukan ratusan avatar sekaligus: posisi karyawan adalah fungsi jam (`venueHourNow`: jam asli di zona waktu acara, `?tz=`, sama dengan langit siang-malam), jadi semua pemain melihat hal yang sama. `staffState`, `staffOnLevel(tempat, lantai, jam)`, `dutySummary`. Yang digambar dibatasi `pickNearby` (radius 40 m, paling banyak 14). Rute masih garis lurus antar titik (belum navmesh), sama seperti hotel. Cleaning service villa naik turun lewat menara tangga sayap tamu.
+
+## Sudah terpasang di dunia
+
+`createVenueStaffView` dipasang di `villa-main.js`, `masjid-main.js`, dan `royal-main.js` (di Royal hanya saat pemain di zona utama, bukan di pulau melayang). Tes `venue-staff-wiring.test.js` menjaga agar pemasangannya tidak terlepas. Untuk debug: `window.__villa.staff()`, `window.__masjid.staff()`, `window.__royal.staff()`.
 
 ## Belum ada (tahap berikutnya)
 
-- Menggambar avatar karyawan di dunia (view seperti `hotel-staff-view.js`) dan pemasangan di `villa-main.js`, `royal-main.js`, `masjid-main.js`, `main.js`.
+- Pemasangan di Aula Resepsi (`main.js`).
 - Parkir tamu dan parkir karyawan; sepeda motor karyawan.
 - Mobil dinas villa (6 sedan di depan gerbang) dan bus antar-jemput hotel <-> tempat acara.
