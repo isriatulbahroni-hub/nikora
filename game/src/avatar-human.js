@@ -153,6 +153,14 @@ export function loadHumanModel(id) {
 }
 
 const CLIP_FOR_ACT = { dance: 'samba', walk: 'walk' };
+const POSE_ACTS = ['wave', 'highfive', 'handshake', 'clap', 'bow', 'spin'];
+/** Aksi tangan yang masih boleh ditumpuk di atas klip duduk (bungkuk dan putar tidak masuk akal saat duduk). */
+const SIT_POSE_ACTS = ['wave', 'highfive', 'handshake', 'clap'];
+/**
+ * Semua tempat acara menurunkan avatar duduk 0,3 m dari permukaan tempat duduknya (SEATED_DROP = -0,3, di setiap lantai,
+ * panggung, dan pulau). Klip duduk sudah menurunkan panggul sendiri, jadi penurunan itu diimbangi sebesar ini.
+ */
+export const SEAT_CLIP_LIFT = 0.3;
 
 /** Pengendali animasi satu karakter manusia. */
 export class HumanRig {
@@ -165,6 +173,7 @@ export class HumanRig {
     this.actions = {};
     this.loading = new Set();
     this.forcedClip = null; // klip tambahan yang dipaksakan stiker (emoji-sticker-fx.js); hanya berlaku saat diam dan tidak duduk
+    this.sit = { seated: null, clip: null, t: 0 }; // status duduk: transisi sit_down/stand_up yang sedang diputar
     this.disposed = false;
     this.recolor = attachRecolor(this.root); // warna jaket/rambut/kulit per bagian bila model punya peta area; selain itu null
     this.recolorKey = null;
@@ -217,6 +226,33 @@ export class HumanRig {
     return false;
   }
 
+  /**
+   * Klip duduk yang harus diputar: 'sit_down' sekali saat baru duduk, 'sit_idle' selama duduk, 'stand_up' sekali saat bangun.
+   * Null bila klipnya belum dimuat (avatar memakai pose paha prosedural lama sampai klip siap).
+   */
+  sitClip(seated, act, delta) {
+    const s = this.sit;
+    if (seated) {
+      this.extraReady('sit_down'); // muat lebih dulu supaya transisi pertama tidak terlewat
+      this.extraReady('stand_up');
+    }
+    if (s.seated === null) s.seated = seated; // avatar yang baru muncul langsung duduk/berdiri tanpa transisi
+    else if (seated !== s.seated) {
+      s.seated = seated;
+      s.clip = null;
+      s.t = 0;
+      const id = seated ? 'sit_down' : 'stand_up';
+      if (this.extraReady(id)) s.clip = id;
+    }
+    if (s.clip) {
+      s.t += delta;
+      // sesudah bangun, berjalan langsung memotong transisi
+      if (s.t >= this.actions[s.clip].getClip().duration || (!seated && act === 'walk')) s.clip = null;
+    }
+    if (s.clip) return s.clip;
+    return seated && this.extraReady('sit_idle') ? 'sit_idle' : null;
+  }
+
   play(name, fade = 0.25) {
     if (this.current === name || !this.actions[name]) return;
     const next = this.actions[name];
@@ -228,13 +264,16 @@ export class HumanRig {
 
   update(act, t, delta, seated = false) {
     this.syncColors();
-    const extra = this.forcedClip && !seated && act !== 'walk' && this.extraReady(this.forcedClip) ? this.forcedClip : null;
-    const seat = seated && this.seatKind() === 'car' ? 'car' : seated; // duduk di mobil: pose kaki khusus
-    const wantsPose = seat || (!extra && ['wave', 'highfive', 'handshake', 'clap', 'bow', 'spin'].includes(act));
-    this.play(extra ?? CLIP_FOR_ACT[act] ?? 'idle');
+    const seat = seated && this.seatKind() === 'car' ? 'car' : seated; // duduk di mobil: pose kaki khusus (tanpa klip kursi)
+    const sitting = seat === 'car' ? null : this.sitClip(seated, act, delta);
+    const extra = this.forcedClip && !seated && !sitting && act !== 'walk' && this.extraReady(this.forcedClip) ? this.forcedClip : null;
+    // Duduk dengan klip asli: hanya aksi tangan yang ditumpuk, paha tidak dipaksa lagi.
+    const wantsPose = sitting ? seated && SIT_POSE_ACTS.includes(act) : seat || (!extra && POSE_ACTS.includes(act));
+    this.root.position.y = sitting && seated ? SEAT_CLIP_LIFT : 0;
+    this.play(sitting ?? extra ?? CLIP_FOR_ACT[act] ?? 'idle');
     this.mixer.update(delta);
     if (!wantsPose) return;
-    const delta3 = proceduralPose(act, t, seat);
+    const delta3 = proceduralPose(act, t, sitting ? false : seat);
     for (const [key, dq] of Object.entries(delta3)) {
       const info = this.model.rest.bones.get(key);
       const bone = this.bones.get(key);

@@ -106,10 +106,12 @@ test('HumanRig: klip paksa diabaikan saat berjalan atau duduk, dan berkas hilang
     rig.forcedClip = 'cry';
     rig.update('walk', 0, 1 / 60);
     rig.update(null, 0, 1 / 60, true);
-    assert.equal(calls.length, 0, 'berjalan/duduk: tidak perlu memuat');
+    // klip duduk (sit_down/sit_idle/stand_up) memang dimuat saat duduk; yang dihitung hanya klip paksa 'cry'
+    const cry = () => calls.filter((u) => u.includes('cry'));
+    assert.equal(cry().length, 0, 'berjalan/duduk: klip paksa tidak perlu dimuat');
     for (let i = 0; i < 5; i += 1) { rig.update(null, i / 60, 1 / 60); await flush(); }
     assert.equal(rig.current, 'idle');
-    assert.equal(calls.length, 1, 'berkas hilang hanya dicoba sekali');
+    assert.equal(cry().length, 1, 'berkas hilang hanya dicoba sekali');
   });
 });
 
