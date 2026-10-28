@@ -45,7 +45,7 @@ test('arena dan lapangan: tidak menimpa jalan atau Lingkar, dan tidak saling tum
 test('kota: deterministik, cukup banyak, di dalam batas, tinggi kelipatan dua lantai', () => {
   const a = cityBuildings();
   assert.equal(cityBuildings(), a, 'hasil di-cache dan sama');
-  assert.ok(a.length > 130, `ada ${a.length} gedung`);
+  assert.ok(a.length > 120, `ada ${a.length} gedung`); // sabuk Lingkar makin lebar (42 m jalan): sedikit sel yang lolos
   for (const h of CITY_HEIGHTS) assert.ok(Math.abs(h / TILE_HEIGHT - Math.round(h / TILE_HEIGHT)) < 1e-9, `${h} kelipatan ${TILE_HEIGHT}`);
   for (const b of a) {
     assert.ok(b.x > SURROUND_BOUNDS.minX - 20 && b.x < SURROUND_BOUNDS.maxX + 20 && b.z > SURROUND_BOUNDS.minZ - 20 && b.z < SURROUND_BOUNDS.maxZ + 20);

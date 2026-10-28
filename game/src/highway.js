@@ -7,23 +7,26 @@
 //   - Empat lengan keluar dari lingkar, masing-masing berakhir di sebuah gerbang:
 //       utara -> villa   (gerbang di depan pagar selatan villa; lengan ini juga masuk ke halaman drop-off hotel)
 //       barat -> aula    timur -> royal    selatan -> masjid
-//   - Tiap jalan: 3 lajur per arah + median bertanaman + bahu jalan = 34,5 m (dulu 12 m, dua lajur).
+//   - Tiap jalan: 4 lajur per arah + median bertanaman + bahu jalan = 42 m (dulu 12 m, lalu 34,5 m). Jalan perjalanan menuju tempat acara
+//     (journey-world.js) memakai lebar yang sama persis (HIGHWAY_HALF), jadi tidak ada penyempitan atau sambungan yang tampak ditempel.
 // Tiap tempat acara adalah halaman/dunia sendiri; mengemudi melewati gerbang = pindah ke halaman tempat acara itu
 // (gateUrl). Antar-tempat acara tidak saling tersambung: semua lewat hotel.
 import { BOUNDS as VILLA_BOUNDS } from './villa-layout.js';
 import { VENUES } from './venues.js';
 
 export const LANE_WIDTH = 3.75;
-export const LANES_PER_DIRECTION = 3;
+export const LANES_PER_DIRECTION = 4;
 export const MEDIAN_WIDTH = 5;
 export const SHOULDER_WIDTH = 3.5;
-export const CARRIAGE_HALF = MEDIAN_WIDTH / 2 + LANES_PER_DIRECTION * LANE_WIDTH; // 13,75 dari garis tengah
-export const HIGHWAY_HALF = CARRIAGE_HALF + SHOULDER_WIDTH; // 17,25: setengah lebar aspal termasuk bahu
-export const HIGHWAY_WIDTH = HIGHWAY_HALF * 2; // 34,5 m
+export const CARRIAGE_HALF = MEDIAN_WIDTH / 2 + LANES_PER_DIRECTION * LANE_WIDTH; // 17,5 dari garis tengah
+export const HIGHWAY_HALF = CARRIAGE_HALF + SHOULDER_WIDTH; // 21: setengah lebar aspal termasuk bahu
+export const HIGHWAY_WIDTH = HIGHWAY_HALF * 2; // 42 m
 
 export const HUB = Object.freeze({ x: 0, z: 448 }); // pusat menara hotel
 export const FORECOURT_Z = 380; // tepi utara halaman drop-off (= HOTEL_FORECOURT[1])
-export const RING = Object.freeze({ minX: -170, maxX: 170, minZ: 330, maxZ: 585 }); // garis tengah Lingkar NIKORA
+// Garis tengah Lingkar NIKORA. Digeser keluar 6 m tiap sisi (dulu -170..170, 330..585) supaya tepi dalam aspal (garis tengah +/- 21 m:
+// x = +/-155, z = 345..570) tetap di luar tapak hotel (HOTEL_SITE: x +/-150, z 352..566) walau jalan kini lebih lebar.
+export const RING = Object.freeze({ minX: -176, maxX: 176, minZ: 324, maxZ: 591 });
 /** Pengaman jarak khusus halaman hotel: jaringan jalan jauh lebih luas daripada dunia villa (±600). */
 export const HIGHWAY_LIMIT = Object.freeze({ minX: -700, maxX: 700, minZ: -600, maxZ: 1000 });
 

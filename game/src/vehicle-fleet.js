@@ -6,7 +6,8 @@
 // Naik/turun disiarkan andal. Pendatang baru menerima snapshot dari tiap klien yang mobilnya bergeser atau terisi.
 import { CAR, BOARD_RANGE, SEAT_OFFSETS, boardVehicle, createVehicle, exitPose, findBoardable, forward, leaveVehicle, seatWorld, stepVehicle, wrapAngle } from './vehicle.js';
 import { HOTEL_CAR_SPOTS } from './hotel-layout.js';
-import { SEATED_DROP } from './villa-layout.js';
+import { OWNER_TURNTABLE } from './hotel-parking.js';
+import { carSeatY, seatFit } from './car-seating.js';
 import { CAR_MODELS, GLB_MODELS, hotelModelFor } from './car-models.js';
 
 export const CAR_SIT_BASE = 1000; // id duduk (`sit`) di jaringan: BASE + indeks mobil * 8 + kursi
@@ -27,10 +28,11 @@ const MAX_STEP_M = 0.8; // jarak maksimum per langkah fisika: mobil 420 km/j tid
 const ALT_PAINT = Object.freeze({ royale: 0xe9e4d6, noir: 0x1a2d4a, argent: 0xe8e8ea, rubis: 0x0d0d10 });
 // Mobil NIKORA W16 (model GLB) dipajang di bawah kanopi drop-off, di depan pintu lobi utama; moncong menghadap ke jalan (utara).
 export const NIKORA_SPOT = Object.freeze({ x: 0, z: 446, heading: Math.PI });
-// Bugatti Chiron (model GLB buatan sendiri) di bawah kanopi yang sama, 8 m di barat NIKORA W16 (tiang kanopi di x = -15); moncong juga menghadap ke jalan.
-export const BUGATTI_SPOT = Object.freeze({ x: -8, z: 446, heading: Math.PI });
+// Bugatti Chiron (model GLB buatan sendiri) milik pemilik hotel: diparkir di Royal Garage (hotel-parking.js), di atas panggung putar OWNER-00;
+// moncong menghadap ke pintu depan garasi (utara), siap keluar lewat lajur pribadi pemilik.
+export const BUGATTI_SPOT = Object.freeze({ x: OWNER_TURNTABLE.x, z: OWNER_TURNTABLE.z, heading: Math.PI });
 
-/** Daftar mobil awal: 6 di parkir depan gerbang villa (sedan lama), 8 mobil mewah di drop-off/parkir hotel, NIKORA W16 dan Bugatti Chiron di bawah kanopi lobi. */
+/** Daftar mobil awal: 6 di parkir depan gerbang villa (sedan lama), 8 mobil mewah di drop-off/parkir karyawan hotel, NIKORA W16 di bawah kanopi lobi, dan Bugatti Chiron di Royal Garage. */
 export function defaultCars() {
   const out = [];
   let i = 0;
@@ -271,13 +273,16 @@ export class Fleet {
     }
   }
 
-  /** Pose avatar yang duduk di id duduk jaringan (untuk poseFor). Null bila bukan kursi mobil. */
+  /**
+   * Pose avatar yang duduk di id duduk jaringan (untuk poseFor). Null bila bukan kursi mobil.
+   * fit = { simple, human }: sudut sandaran punggung (rad) agar kepala tidak menembus atap mobil ini (car-seating.js); diterapkan car-seat-pose.js.
+   */
   seatPose(sit) {
     const p = parseCarSit(sit);
     const car = p ? this.cars[p.index] : null;
     if (!car || p.seat >= car.seats.length || p.seat >= (car.spec?.seatOffsets ?? SEAT_OFFSETS).length) return null;
     const w = seatWorld(car, p.seat);
-    return { x: w.x, z: w.z, y: SEATED_DROP + 0.12 + (car.spec?.seatLift ?? 0), rotY: w.facing, tilt: 0, snap: true };
+    return { x: w.x, z: w.z, y: carSeatY(car.spec), rotY: w.facing, tilt: 0, snap: true, fit: seatFit(car.spec) };
   }
 
   exitFor(index, seat) { return exitPose(this.cars[index], seat); }

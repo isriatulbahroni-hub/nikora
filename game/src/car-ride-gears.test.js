@@ -61,7 +61,7 @@ test('urutan: nyalakan mesin -> pilih D -> gas = maju; HUD berpindah ke tahap be
   assert.equal(hud.models.at(-1).controls.engine, false);
 });
 
-test('gigi R: gas = mundur; pindah gigi saat melaju ditolak', () => {
+test('gigi R: gas = mundur; pindah gigi saat melaju diizinkan (tanpa syarat kecepatan)', () => {
   const { ride, hud, car, toasts, me } = mk();
   hud.act('engine');
   run(ride, me, 30, IDLE);
@@ -74,8 +74,8 @@ test('gigi R: gas = mundur; pindah gigi saat melaju ditolak', () => {
   run(ride, me, 60, W);
   assert.ok(car.speed > 3);
   hud.act('gear', 'R');
-  assert.match(toasts.at(-1), /Berhenti dulu/);
-  assert.equal(ride.state().gear, 'D');
+  assert.equal(ride.state().gear, 'R', 'R langsung dipilih walau mobil masih melaju');
+  assert.doesNotMatch(toasts.at(-1), /Berhenti dulu/);
 });
 
 test('keluar hanya setelah berhenti; mesin dan keadaan dibersihkan sesudah turun', () => {

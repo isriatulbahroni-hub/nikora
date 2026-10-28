@@ -19,6 +19,8 @@
          penggeser setir dan pedal, dan tombol Turun mengecil ke kiri atas di bawah lencana kecepatan (tombol fitur ⋯ ada DI BAWAH Turun). */
       body.driving .title, body.driving .place { display: none; }
       body.driving .joy-zone { display: none !important; }
+      /* saat mengemudi pesan singkat tampil di atas (bukan di atas setir dan pedal yang kini lebih tinggi) */
+      body.driving .toast { bottom: auto; top: calc(max(12px, env(safe-area-inset-top)) + 8px); }
       body.driving .act { top: calc(max(12px, env(safe-area-inset-top)) + 40px); left: 14px; right: auto; bottom: auto; width: auto; height: 34px; padding: 0 14px; border-width: 1px; border-radius: 8px; font-size: 12px; letter-spacing: .04em; box-shadow: none; opacity: .85; }
       /* kanan atas saat mengemudi: hanya ikon Kamera dan Peta (tanpa tulisan); Jelajah dan status jaringan disembunyikan; peta mini mengecil */
       body.driving #places-button, body.driving #online { display: none; }
@@ -102,6 +104,7 @@
     <div class="toast" id="toast"></div>
     <div class="joy-zone" id="joy-zone"><div class="joy-base" id="joy-base"><div class="joy-knob" id="joy-knob"></div></div></div>
     <div id="hotel-error"><div><h2>Tidak bisa memulai</h2><p id="hotel-error-text"></p><pre id="hotel-error-detail"></pre></div></div>
+    <script type="module" src="/src/rain-boot.js"></script><!-- hujan acak; dimuat SEBELUM hotel-main.js -->
     <script type="module" src="/src/hotel-main.js"></script>
   </body>
 </html>

@@ -21,8 +21,8 @@ export const ringDistance = (x, z) => Math.hypot(Math.max(RING_OUTER[0] - x, 0, 
 const sat = (id, x, z, radius, height) => Object.freeze({ id, x, z, radius, height, taper: 0.78, sides: 12 });
 /** Lima menara satelit kaca berfaset (12 sisi, meruncing), di keempat sudut luar Lingkar dan di selatan. */
 export const SATELLITES = Object.freeze([
-  sat('sat_barat_laut', -235, 285, 36, 1100),
-  sat('sat_timur_laut', 235, 290, 32, 850),
+  sat('sat_barat_laut', -255, 270, 36, 1100),
+  sat('sat_timur_laut', 250, 290, 32, 850),
   sat('sat_tenggara', 240, 650, 34, 950),
   sat('sat_selatan', 100, 680, 30, 650),
   sat('sat_barat_daya', -130, 700, 32, 780),

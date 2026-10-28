@@ -56,20 +56,21 @@ test('mematikan mesin: hanya saat berhenti; gigi kembali ke P, AC dan sein ikut 
   assert.equal(stopEngine(s, 0).ok, false, 'sudah mati');
 });
 
-test('gigi: butuh mesin; P hanya saat berhenti total; R dan D hanya saat hampir berhenti; N kapan saja', () => {
+test('gigi: butuh mesin; P, R, D, N bisa dipilih kapan saja (tanpa syarat kecepatan)', () => {
   const off = createCarState();
   assert.equal(shift(off, 'D', 0).ok, false);
   assert.match(shift(off, 'D', 0).msg, /mesin/i);
   const s = running('P');
   assert.equal(shift(s, 'D', 0).ok, true);
   assert.equal(s.gear, 'D');
-  assert.equal(shift(s, 'P', 4).ok, false, 'P saat melaju ditolak');
-  assert.equal(shift(s, 'R', 4).ok, false, 'R saat melaju ditolak');
-  assert.equal(s.gear, 'D');
+  assert.equal(shift(s, 'P', 4).ok, true, 'P saat melaju diizinkan (rem menahan mobil)');
+  assert.equal(shift(s, 'D', 4).ok, true, 'D saat melaju diizinkan');
+  assert.equal(shift(s, 'R', 4).ok, true, 'R saat melaju diizinkan');
+  assert.equal(s.gear, 'R');
   assert.equal(shift(s, 'N', 4).ok, true, 'N kapan saja');
   assert.equal(shift(s, 'D', 4).ok, true, 'D saat masih melaju maju');
   assert.equal(shift(s, 'N', 0).ok, true);
-  assert.equal(shift(s, 'D', -3).ok, false, 'D saat mundur ditolak');
+  assert.equal(shift(s, 'D', -3).ok, true, 'D saat mundur diizinkan');
   assert.equal(shift(s, 'X', 0).ok, false, 'gigi tidak dikenal');
   assert.equal(shift(s, 'P', 0.1).ok, true);
   assert.equal(s.gear, 'P');

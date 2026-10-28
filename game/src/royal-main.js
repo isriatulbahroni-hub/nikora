@@ -24,6 +24,7 @@ import { createPiano } from './royal-music.js';
 import { MOODS, classifyMood } from './royal-emotion.js';
 import { SKY_MODES, decodeFx, encodeFx } from './royal-protocol.js';
 import { composeSouvenir, downloadCanvas } from './royal-photo.js';
+import { createVenueStaffView, venueHourNow } from './venue-staff-view.js';
 
 // The Royal Wedding · Istana Cinta: venue baru dengan istana yang bisa dijelajahi luar-dalam, danau kristal, pulau melayang
 // (portal cahaya + penerbangan kamera tanpa layar loading), langit senja→malam, berkat pelaminan, kembang api dari ucapan,
@@ -313,6 +314,8 @@ async function start() {
   camState.yaw = 0;
   camNow.yaw = 0;
   camera.position.set(me.x, 8, me.z + 11);
+  // Karyawan Royal (venue-staff.js): 100 orang, tiga shift, hanya di zona utama (istana, taman, dermaga); yang digambar hanya yang dekat pemain.
+  const staffView = createVenueStaffView({ scene, venue: 'royal', hourNow: venueHourNow(window.location.search), groundY: (x, z) => world.place('main', x, z).y, visible: () => me.zone === 'main' });
 
   // ---------- UI dasar ----------
   const toastEl = $('toast');
@@ -794,6 +797,7 @@ async function start() {
     if (!crowdOnInlay && multiplayer) crowdOnInlay = multiplayer.net.players.some((p) => p.id !== multiplayer.net.id && Math.hypot(p.x - BLESS_ZONE.x, p.z + 40.2) < 3.2 && (p.y ?? 0) < 2);
     built.inlay.setStanding(crowdOnInlay);
     built.update(t, delta, { x: me.x, y: me.y, z: me.z }, here.indoor);
+    staffView.update(me, delta, t); // karyawan Royal yang dekat pemain (posisi dihitung dari jam, sama di semua klien)
     fx.update(delta, t);
     const dPiano = me.zone === 'main' ? Math.hypot(me.x - PIANO.x, me.z - PIANO.z) : 120;
     piano.setVolume(here.id === 'music' ? 0.9 : me.zone === 'main' ? 0.7 * clamp(1 - dPiano / 70, 0, 1) ** 1.6 : 0.12);
@@ -836,6 +840,7 @@ async function start() {
 
   window.__royal = {
     state: () => ({ x: me.x, z: me.z, y: me.y, zone: me.zone, place: roomAt(me.zone, me.x, me.z), seat, flying: !!flight, night, skyMode, online: !!multiplayer }),
+    staff: () => staffView.stats(),
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, pixelRatio: renderer.getPixelRatio() }),
     teleport: (zone, x, z) => {
       Object.assign(me, world.place(zone, x, z));

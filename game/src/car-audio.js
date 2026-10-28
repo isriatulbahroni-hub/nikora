@@ -2,10 +2,16 @@
 // Mesin pemain lain tidak disuarakan (hemat CPU HP); klakson dan pintu mobil mereka terdengar menurut jarak.
 import { firingHz, gearFor, rpmFor } from './car-models.js';
 
-// w16 = watak mesin 16 silinder empat-turbo (NIKORA W16): geraman rendah tebal, harmonik atas lebih terbuka daripada "deep",
+// w16 = watak mesin 16 silinder empat-turbo (NIKORA W16, Bugatti Chiron): geraman rendah tebal, harmonik atas lebih terbuka daripada "deep",
 // desis dua turbo yang berbeda nada, letupan knalpot saat gas dilepas di putaran tinggi, dan blow-off panjang.
+// Frekuensi pembakaran 16 silinder di putaran tinggi 500-900 Hz: bila hanya itu yang dibunyikan, suaranya tipis dan melengking (tanpa energi di bawah
+// 400 Hz, terukur dari rekaman layar). Karena itu watak w16 punya lapisan "geraman" sendiri: dua gergaji sedikit berbeda nada pada seperempat-orde
+// (growlHz), disaring rendah, sehingga 150-400 Hz terisi dan tetap terdengar di speaker HP; lapisan knalpotnya digelapkan dan dikurangi distorsinya.
 const TIMBRE = { smooth: { cutoff: 700, grit: 0.25 }, deep: { cutoff: 900, grit: 0.45 }, scream: { cutoff: 1800, grit: 0.7 }, w16: { cutoff: 1300, grit: 0.55 } };
 const SUB_BOOST = { deep: 1.4, w16: 1.6 };
+const W16_DARK = 0.55; // pengali bukaan filter lapisan knalpot pada watak w16
+const W16_EXHAUST = 0.7; // pengali volume lapisan knalpot pada watak w16 (geraman mengambil alih bagian rendahnya)
+const W16_DRIVE_MAX = 3.2; // distorsi knalpot w16 dibatasi: drive tinggi membuat gelombang persegi yang berdengung
 export const hearGain = (distance, range = 45) => Math.max(0, 1 - distance / range) ** 2;
 
 /** Frekuensi dasar suara mesin (Hz) dan bukaan filter untuk sebuah mobil bermodel pada keadaan tertentu. Murni, diuji. */
@@ -40,7 +46,7 @@ export function harmonicWeights(timbre, cylinders, n = 12) {
  * Semua lapisan suara mobil dari keadaan mobil (murni, diuji; bunyi sungguhan dirakit di createCarAudio).
  * state = { speed (m/s), throttle (-1..1), engineOn, boost (0..1, diratakan pemanggil), cabin (kamera di dalam kabin) }.
  * Lapisan: knalpot (frekuensi pembakaran + subharmonik setengah-orde), gerung gigi, desis intake, turbo (dua nada), angin, pemotong putaran (rev limiter),
- * dan letupan knalpot (crackle) saat gas dilepas di putaran tinggi pada mesin watak w16.
+ * letupan knalpot (crackle) saat gas dilepas di putaran tinggi, dan geraman rendah (growl, seperempat-orde) pada mesin watak w16.
  */
 export function engineLayers(model, state) {
   const e = model.engine;
@@ -62,6 +68,9 @@ export function engineLayers(model, state) {
     exhaustGain: on * (0.05 + 0.1 * (0.35 + 0.65 * load)),
     subGain: on * (0.025 + 0.04 * (1 - rpmFrac)) * (SUB_BOOST[e.timbre] ?? 1),
     cutoff: (cabin ? 0.55 : 1) * t.cutoff * (0.5 + rpmFrac) * (0.6 + 0.4 * (0.35 + 0.65 * load)),
+    growlHz: Math.min(240, Math.max(26, fire / 4)), // geraman: seperempat-orde pembakaran, jauh di bawah nada knalpot
+    growlCut: 260 + 700 * rpmFrac, // bukaan saringan rendah geraman: makin tinggi putaran makin terbuka
+    growlGain: e.timbre === 'w16' ? on * (0.18 + 0.12 * load) * (cabin ? 1.2 : 1) : 0,
     intakeFreq: 450 + 1300 * rpmFrac,
     intakeGain: on * load * rpmFrac * rpmFrac * (cabin ? 0.05 : 0.035),
     whineFreq: Math.min(2400, (rpm / 60) * 3.7),
@@ -151,6 +160,7 @@ export function createCarAudio() {
   function startEngine(model) {
     if (eng || !ensure()) return;
     engModel = model;
+    const isW16 = model.engine.timbre === 'w16';
     const w = harmonicWeights(model.engine.timbre, model.engine.cylinders);
     const real = new Float32Array(w.length + 1);
     const imag = new Float32Array(w.length + 1);
@@ -197,6 +207,34 @@ export function createCarAudio() {
     pipe.connect(exGain);
     exGain.connect(out);
 
+    // geraman rendah (hanya watak w16): dua gergaji berselisih sedikit nada (berdenyut kasar), disaring rendah, tanpa distorsi
+    let growl = null;
+    if (isW16) {
+      const growlGain = ctx.createGain();
+      growlGain.gain.value = 0;
+      const growlLp = ctx.createBiquadFilter();
+      growlLp.type = 'lowpass';
+      growlLp.Q.value = 1;
+      growlLp.frequency.value = 400;
+      const g1 = ctx.createOscillator();
+      g1.type = 'sawtooth';
+      g1.frequency.value = 40;
+      const g2 = ctx.createOscillator();
+      g2.type = 'sawtooth';
+      g2.frequency.value = 40;
+      g2.detune.value = 14; // sekitar 0,8%: denyut halus seperti blok mesin besar
+      const mix = ctx.createGain();
+      mix.gain.value = 0.5;
+      g1.connect(mix);
+      g2.connect(mix);
+      mix.connect(growlLp);
+      growlLp.connect(growlGain);
+      growlGain.connect(out);
+      g1.start();
+      g2.start();
+      growl = { g1, g2, growlLp, growlGain };
+    }
+
     // intake (desis udara), gerung gigi, turbo (dua nada), angin
     const intake = noise();
     const intakeBp = ctx.createBiquadFilter();
@@ -233,7 +271,7 @@ export function createCarAudio() {
     windLp.connect(windGain);
     windGain.connect(out);
 
-    eng = { out, exhaust, sub, jitter, shaper, lowpass, pipe, exGain, subGain, intake, intakeBp, intakeGain, whine, whineGain, turbo, turboGain, turbo2, turboGain2, wind, windLp, windGain, drive: 0, nodes: [exhaust, sub, jitter, intake, whine, turbo, turbo2, wind] };
+    eng = { out, exhaust, sub, jitter, shaper, lowpass, pipe, exGain, subGain, intake, intakeBp, intakeGain, whine, whineGain, turbo, turboGain, turbo2, turboGain2, wind, windLp, windGain, growl, drive: 0, nodes: [exhaust, sub, jitter, intake, whine, turbo, turbo2, wind, ...(growl ? [growl.g1, growl.g2] : [])] };
   }
 
   function stopEngine() {
@@ -310,13 +348,20 @@ export function createCarAudio() {
       }
       if (L.crackle && Math.random() < dt * 7) pop(180 + Math.random() * 260, 0.035 + Math.random() * 0.03, 0.03); // letupan knalpot saat gas dilepas
       const cut = t < duckUntil || L.limiter && Math.sin(t * 60) > 0 ? 0.3 : 1; // potong gas saat pindah gigi / rev limiter
+      const drv = w16 ? Math.min(W16_DRIVE_MAX, L.drive) : L.drive;
       eng.exhaust.frequency.setTargetAtTime(L.fireHz, t, 0.03);
       eng.sub.frequency.setTargetAtTime(L.subHz, t, 0.03);
-      if (Math.abs(L.drive - eng.drive) > 0.3) { eng.shaper.curve = shaperCurve(L.drive); eng.drive = L.drive; }
-      eng.lowpass.frequency.setTargetAtTime(L.cutoff, t, 0.05);
+      if (Math.abs(drv - eng.drive) > 0.3) { eng.shaper.curve = shaperCurve(drv); eng.drive = drv; }
+      eng.lowpass.frequency.setTargetAtTime(L.cutoff * (w16 ? W16_DARK : 1), t, 0.05);
       eng.pipe.gain.setTargetAtTime(6 * L.cabinLow, t, 0.1);
-      eng.exGain.gain.setTargetAtTime(L.exhaustGain * cut, t, 0.03);
+      eng.exGain.gain.setTargetAtTime(L.exhaustGain * cut * (w16 ? W16_EXHAUST : 1), t, 0.03);
       eng.subGain.gain.setTargetAtTime(L.subGain, t, 0.05);
+      if (eng.growl) {
+        eng.growl.g1.frequency.setTargetAtTime(L.growlHz, t, 0.03);
+        eng.growl.g2.frequency.setTargetAtTime(L.growlHz, t, 0.03);
+        eng.growl.growlLp.frequency.setTargetAtTime(L.growlCut, t, 0.05);
+        eng.growl.growlGain.gain.setTargetAtTime(L.growlGain * cut, t, 0.03);
+      }
       eng.intakeBp.frequency.setTargetAtTime(L.intakeFreq, t, 0.05);
       eng.intakeGain.gain.setTargetAtTime(L.intakeGain, t, 0.05);
       eng.whine.frequency.setTargetAtTime(L.whineFreq, t, 0.05);

@@ -7,6 +7,9 @@
 //
 // Akses dari luar (opsi access: true, dipakai hotel): mendekati mobil tidak langsung naik. Pemain membuka pintu di sisi yang didekati
 // (atau bagasi) dulu, baru naik lewat pintu itu (car-access.js). Tanpa opsi itu (vila) board() tetap langsung menaikkan pemain.
+//
+// Efek 4D (tambahan indra, tanpa mengubah fisika): getaran mesin dan sentakan pindah gigi (haptics.js, ?getar=0 mematikan),
+// lampu depan otomatis saat gelap atau hujan (car-auto-lights.js; menekan tombol lampu = pengemudi mengatur sendiri sampai turun).
 
 import { gearFor, rpmFor } from './car-models.js';
 import { mergeControls } from './cockpit.js';
@@ -15,9 +18,12 @@ import {
 } from './car-state.js';
 import { AUTO_CLOSE_M, anyOpen, closeDoorsAndTrunk, createAccess, doorOfSeat, findAccess, tickAccess, toggleAccess } from './car-access.js';
 import { partsFrom, setParts } from './car-parts.js';
+import { createCrashHaptics, createEngineHaptics, engineHapticsEnabled } from './haptics.js';
+import { createAutoLights, envFromGlobals } from './car-auto-lights.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const IDLE_STATE = createCarState(); // keadaan mobil tanpa pengemudi bertahap: lampu padam, mesin mati (hanya dibaca)
+const ENGINE_BUZZ_AFTER_CRASH = 0.45; // detik: getaran mesin ditahan sesudah tabrakan supaya tidak memotong getaran tabrakan
 
 /** Data untuk HUD mobil bermodel: nama, gigi (R/N/1..n), RPM. Mobil tanpa model -> null (HUD hanya menampilkan kecepatan). */
 export function hudInfo(car) {
@@ -67,10 +73,13 @@ export function driveControls(rawInput, hud, speed = 0, state = null) {
  * fleet: Fleet; view: createVehicleView(); hud: mountCarHud() (atau HUD lama); exit({x,z}) -> {x,z} titik turun yang sah (bukan di dalam tembok);
  * camState: { yaw, dist, pitch } kamera orbit; isDragging(): pemain sedang/baru saja memutar kamera sendiri; toast(text).
  * access: true = naik hanya lewat pintu yang dibuka dulu (interact/prompt); false = board() langsung menaikkan pemain.
+ * env: () => ({ phase, rain }) | null; fase langit (-1 siang .. +1 malam) dan hujan (0..1) untuk lampu otomatis. Bawaan membaca halaman hotel
+ * (window.__hotel dan window.__weather); halaman tanpa langit itu (vila) mengembalikan null sehingga lampu tetap manual.
  */
-export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p, camState = null, isDragging = () => false, isCabin = () => false, toast = () => {}, access = false }) {
+export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p, camState = null, isDragging = () => false, isCabin = () => false, toast = () => {}, access = false, env = envFromGlobals }) {
   const geared = typeof hud?.bind === 'function';
   const states = new WeakMap(); // mobil -> keadaan pengemudi (car-state.js); hanya dipakai pada mode bertahap
+  const autoLights = new WeakMap(); // mobil -> pembuat keputusan lampu otomatis; null = pengemudi mengatur lampu sendiri sampai turun
   const stateOf = (car) => {
     let s = states.get(car);
     if (!s) {
@@ -79,7 +88,10 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     }
     return s;
   };
-  const resetState = (car) => states.set(car, createCarState());
+  const resetState = (car) => {
+    states.set(car, createCarState());
+    autoLights.delete(car); // pengemudi berikutnya mulai dengan lampu otomatis lagi
+  };
   const accessStates = new WeakMap(); // mobil -> bukaan (pintu kiri/kanan, atap, bagasi); hanya dipakai pada mode access
   const accessOf = (car) => {
     let o = accessStates.get(car);
@@ -91,6 +103,9 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
   };
   let lastCar = null; // mobil yang dikemudikan pada frame sebelumnya (keadaan dibersihkan saat tidak lagi mengemudi)
   let clock = 0;
+  const crashBuzz = createCrashHaptics();
+  const engineBuzz = createEngineHaptics({ enabled: engineHapticsEnabled(globalThis.location?.search ?? '', globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true) });
+  let lastCrash = -1e9;
   let lastWarn = -1e9;
 
   /** Perintah dari HUD: { type: 'engine'|'gear'|'handbrake'|'lights'|'hazard'|'ac'|'belt'|'indicator', value }. Hanya pengemudi. */
@@ -103,10 +118,26 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     else if (type === 'gear') r = shift(st, value, car.speed);
     else if (type === 'handbrake') r = toggleHandbrake(st);
     else if (type === 'indicator') r = setIndicator(st, value);
-    else r = toggle(st, type);
+    else {
+      if (type === 'lights') autoLights.set(car, null); // pengemudi memilih sendiri: lampu otomatis berhenti untuk mobil ini
+      r = toggle(st, type);
+    }
     if (r?.msg) toast(r.msg);
   }
   hud?.bind?.(act);
+
+  /** Lampu depan otomatis: menyala (mesin hidup) saat langit gelap atau hujan, padam saat terang. Tanpa env (vila) tidak melakukan apa-apa. */
+  function syncAutoLights(car, st) {
+    let auto = autoLights.get(car);
+    if (auto === null) return; // diatur sendiri oleh pengemudi
+    const e = env?.();
+    if (!e) return;
+    if (!auto) {
+      auto = createAutoLights();
+      autoLights.set(car, auto);
+    }
+    st.lights = st.eng === 'on' && auto(e.phase, e.rain);
+  }
 
   /** Sesudah fleet.board berhasil: keadaan pengemudi, kamera, dan pesan. */
   function afterBoard(r) {
@@ -217,6 +248,7 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
     if (driving) {
       if (st) {
         if (tickEngine(st, delta)) toast('Mesin menyala. Pilih gigi D untuk maju atau R untuk mundur.');
+        syncAutoLights(driving, st); // lampu otomatis (car-auto-lights.js)
         const why = wantsGas(rawInput, hud) ? blockedReason(st) : '';
         if (why && clock - lastWarn > 2.5) {
           lastWarn = clock;
@@ -227,6 +259,11 @@ export function createCarRide({ fleet, view, hud, audio = null, exit = (p) => p,
         fleet.drive(driveControls(rawInput, hud, driving.speed), delta);
       }
       if (driving.hit > 6) toast('Tabrakan!');
+      if (crashBuzz(driving.hit, clock)) lastCrash = clock; // HP bergetar saat menabrak (haptics.js)
+      else if (clock - lastCrash > ENGINE_BUZZ_AFTER_CRASH) {
+        const hi = hudInfo(driving);
+        engineBuzz(clock, { on: !st || st.eng === 'on', rpmFrac: hi?.rpmMax ? hi.rpm / hi.rpmMax : 0, gear: hi?.gear ?? null }); // getaran mesin dan pindah gigi
+      }
       if (camState && !isDragging()) {
         // kamera pelan-pelan berputar ke belakang mobil (konvensi kamera: yaw = heading + PI berarti kamera di belakang)
         const diff = Math.atan2(Math.sin(driving.heading + Math.PI - camState.yaw), Math.cos(driving.heading + Math.PI - camState.yaw));

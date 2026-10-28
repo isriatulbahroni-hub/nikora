@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { applyPose, createAvatar } from './avatar.js';
+import { applyCarSeat } from './car-seat-pose.js';
 import { loadConfig, toWire } from './avatar-config.js';
 import { createQualityGovernor } from './quality.js';
 import { chooseCameraPose, forwardLookBlend, resolveCameraDistance } from './villa-camera.js';
@@ -16,7 +17,8 @@ import { createCarRide } from './car-ride.js';
 import { cockpitFov, eyeWorld, cockpitSpec } from './cockpit.js';
 import { mountCabinLook } from './cabin-look-ui.js';
 import { GATES, HIGHWAY_LIMIT, arrivalGate, gateArrival, leftOf, venueUrl } from './highway.js';
-import { FLOOR_COLORS, GROUP_ORDER, cssColor, describePlace, hotelPlaces } from './hotel-places.js';
+import { FLOOR_COLORS, GROUP_ORDER, GROUPS, cssColor, describePlace, hotelPlaces } from './hotel-places.js';
+import { OWNER_GARAGE, PARKING_PLACES, assignValet, guestOccupied, inRect, parkingZoneAt, valetStandPoint } from './hotel-parking.js';
 import { hoursAt, zoneFromSearch } from './day-night.js';
 import { createStaffView } from './hotel-staff-view.js';
 import { SKY_MODE_LABELS, createHotelSky } from './hotel-sky.js';
@@ -25,6 +27,8 @@ import { buildHotelSurroundings } from './hotel-surroundings.js';
 import { VILLA_APPROACH, createHotelVilla } from './hotel-villa.js';
 import { createHotelJourney } from './hotel-journey.js';
 import { alongOf } from './hotel-journey-math.js';
+import { createHotelLife } from './hotel-life.js';
+import { createHotelAmbience } from './hotel-ambience.js';
 
 // NIKORA Grand Hotel sebagai halaman sendiri (/hotel.html): menara 1000 lantai yang dijelajahi dengan avatar (satu pemain).
 // Geometri 3D dari hotel-world.js dan denah dari hotel-layout.js (dipakai bersama dunia villa); halaman ini hanya
@@ -34,9 +38,17 @@ import { alongOf } from './hotel-journey-math.js';
 // Mengemudi melewati gerbang = langsung masuk lorongnya (perjalanan 20+ menit, tanpa tombol, tanpa pindah halaman); villa dipasang di ujung
 // lorongnya (hotel-villa.js). Aula, Royal, dan Masjid: lorongnya sudah di dunia ini, bangunannya masih halaman sendiri (tombol "Masuk" di area
 // penurunan) sampai dipasang di ujung lorongnya seperti villa.
+// Parkir mewah tiga zona (hotel-parking.js): tamu 500 slot, karyawan + motor, Royal Garage pemilik (Bugatti). Zona parkir dihitung sebagai jalan
+// untuk fisika mobil, punya nama sendiri di label lokasi, dan menu Jelajah punya tujuan parkir serta tombol Valet (slot tamu kosong terdekat).
 const SPEED = 5.2;
 const world = getHotelWorld();
-const places = hotelPlaces(world);
+// 'Parkir Tamu' bawaan hotel-places.js (lahan HOTEL_PARKING) kini parkir karyawan; tujuan parkir baru ditambahkan dari hotel-parking.js.
+const places = [
+  ...hotelPlaces(world).map((p) => (p.id === 'parkir_tamu' ? { ...p, name: 'Parkir Karyawan' } : p)),
+  ...PARKING_PLACES.map((p) => ({ ...p, group: GROUPS.yard, level: 0, floor: 1 })),
+];
+// Zona parkir = aspal untuk fisika mobil (hotel-layout.js hanya mengenal lahan HOTEL_PARKING dan halaman drop-off).
+const gameSurfaceAt = (x, z) => (parkingZoneAt(x, z) ? 'road' : surfaceAt(x, z));
 const $ = (id) => document.getElementById(id);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const lowQuality = new URLSearchParams(window.location.search).get('q') === 'low';
@@ -343,8 +355,8 @@ async function start() {
   });
   // Batas dunia mobil: jalan raya hotel; melebar selama perjalanan (journey.syncLimit) karena lorong puluhan menit panjangnya.
   const carLimit = { ...HIGHWAY_LIMIT };
-  // Mobil bersama di drop-off/parkir hotel (8 mobil). Logika naik/turun/setir/jaringan: car-ride.js (sama dengan vila).
-  const fleet = new Fleet({ specs: hotelCars(), selfId: 'lokal', env: { colliders: [...world.levels[0].colliders, ...villa.carColliders], surfaceAt, limit: carLimit } });
+  // Mobil bersama: mobil mewah di drop-off dan parkir karyawan, NIKORA W16 di bawah kanopi, Bugatti di Royal Garage. Logika naik/turun/setir/jaringan: car-ride.js (sama dengan vila).
+  const fleet = new Fleet({ specs: hotelCars(), selfId: 'lokal', env: { colliders: [...world.levels[0].colliders, ...villa.carColliders], surfaceAt: gameSurfaceAt, limit: carLimit } });
   const carAudio = createCarAudio();
   let doorHook = () => {};
   const carView = createVehicleView({ scene, fleet, mirrors: !lowQuality, envMap: buildCarEnvMap(renderer), onDoor: (car, opening) => { if (opening) doorHook(car); } });
@@ -358,6 +370,23 @@ async function start() {
   // Jarak pandang 6,5 km supaya menara 4,2 km dan lampunya terlihat dari jauh (ketepatan kedalaman ditentukan jarak dekat, bukan jauh).
   const camera = new THREE.PerspectiveCamera(48, 1, 0.2, 6500);
   const sky = createHotelSky({ scene, renderer, camera, lights, search: window.location.search, low: lowQuality });
+  // Hotel dan jalan terasa hidup: lalu lintas Lingkar NIKORA, burung (hotel-life.js), dan suara sekitar (hotel-ambience.js). Hanya pemandangan dan suara.
+  // Dibungkus try/catch: bila gagal dibuat atau galat saat berjalan, efek itu dimatikan sendiri dan hotel tetap jalan.
+  // ?lalin=0 mematikan lalu lintas, ?burung=0 burung, ?suara=0 suara sekitar.
+  let life = null;
+  let ambience = null;
+  try {
+    life = createHotelLife({ scene, low: lowQuality, search: window.location.search });
+  } catch (error) {
+    console.warn('[hotel] lalu lintas dan burung dilewati', error);
+    life = null;
+  }
+  try {
+    ambience = createHotelAmbience({ search: window.location.search });
+  } catch (error) {
+    console.warn('[hotel] suara sekitar dilewati', error);
+    ambience = null;
+  }
   const indoorLight = new THREE.PointLight(0xffe2b8, 0, 26, 1.3);
   scene.add(indoorLight);
   let indoorK = 0;
@@ -512,6 +541,32 @@ async function start() {
       list.appendChild(b);
     }
   }
+  // Valet digital (hotel-parking.js): slot tamu kosong terdekat dari titik masuk. Keterisian sama dengan yang digambar (lampu hijau = kosong),
+  // jadi tamu diantar ke slot yang memang terlihat kosong. Mengantar pejalan kaki ke depan slot; belum memarkirkan mobil sendiri.
+  const valet = () => {
+    const slot = assignValet(guestOccupied());
+    if (!slot) return null;
+    return { slot, stand: valetStandPoint(slot) };
+  };
+  const valetHeading = document.createElement('div');
+  valetHeading.className = 'place-group';
+  valetHeading.textContent = 'Valet digital';
+  list.appendChild(valetHeading);
+  const valetBtn = document.createElement('button');
+  valetBtn.type = 'button';
+  valetBtn.className = 'place-btn';
+  valetBtn.textContent = 'Valet · slot tamu kosong terdekat';
+  valetBtn.addEventListener('click', () => {
+    const v = valet();
+    if (!v) {
+      toast('Parkir tamu penuh');
+      return;
+    }
+    teleport(0, v.stand.x, v.stand.z);
+    panel.hidden = true;
+    toast(`Valet · Blok ${v.slot.block} · slot ${v.slot.id}${v.slot.ev ? ' (pengisian daya)' : ''}`, 3800);
+  });
+  list.appendChild(valetBtn);
   hooks.places = () => {
     panel.hidden = !panel.hidden;
   };
@@ -556,7 +611,7 @@ async function start() {
     if (fleet.mine) {
       const c = fleet.driving ?? me;
       if (journey.arrived && !villa.active({ x: c.x, z: c.z, level: 0, villa: null })) {
-        toast('Tekan "Masuk" untuk ke tempat acara, atau "Kembali ke hotel".', 3200);
+        toast('Tekan "Masuk" untuk ke tempat acara.', 3200);
         return;
       }
       carRide.leave(me);
@@ -632,8 +687,6 @@ async function start() {
       if (a.s < -3 || a.s > 40 || Math.abs(a.lateral) > 20) continue; // belum sampai garis gerbang, sudah jauh melewatinya, atau di luar badan jalan
       if (!journey.start(g, car).ok) continue; // mobil tidak searah gerbang: tidak masuk
       enteredGate = g;
-      cockpitOn = false;
-      camState.dist = Math.max(camState.dist, 9);
       toast(`Menuju ${g.label} · ± 20 menit`, 3500);
       return;
     }
@@ -704,17 +757,10 @@ async function start() {
     avatar.position.y = seatPose ? seatPose.y : me.y + (moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0);
     avatar.rotation.y = shownFacing;
     avatar.userData.seated = !!seatPose;
+    avatar.userData.seatKind = seatPose ? 'car' : null; // kursi mobil: kaki avatar manusia maju ke bawah dasbor, bukan menjuntai seperti di kursi biasa (avatar-human.js)
     applyPose(avatar, moving ? 'walk' : null, time / 1000, delta);
-    if (seatPose) {
-      // duduk di mobil: paha hampir mendatar dan betis maju ke bawah dasbor. Pose kursi biasa (betis tegak ke lantai) membuat kaki
-      // menembus lantai mobil dan terlihat menjuntai di bawah pintu.
-      const legs = avatar.userData.legs;
-      if (legs) for (const [side, spread] of [['r', 0.06], ['l', -0.06]]) {
-        legs[side].hip.rotation.x = 1.45;
-        legs[side].hip.rotation.z = spread;
-        legs[side].knee.rotation.x = -0.5;
-      }
-    }
+    // duduk di mobil: kaki ke depan dan punggung bersandar sesuai tinggi atap supaya kepala tidak menembus atap; avatar sederhana dan manusia (car-seat-pose.js)
+    if (seatPose) applyCarSeat(avatar, seatPose.fit);
     const others = multiplayer ? multiplayer.net.players.filter((p) => p.id !== multiplayer.net.id) : [];
     if (multiplayer) {
       multiplayer.view.update(delta, time / 1000); // pemain lain
@@ -786,11 +832,16 @@ async function start() {
     // di dalam ruangan beratap: cahaya langit diredam halus dan lampu ruangan menyala mengikuti pemain
     const villaPlace = villa.place(me); // keterangan lokasi bila di kompleks villa, selain itu null
     const journeyPlace = villaPlace ? null : journey.place(me); // selama perjalanan atau di area penurunan
+    // zona parkir (tamu, karyawan, motor, Royal Garage) punya nama sendiri; Royal Garage beratap kaca, jadi dihitung ruang dalam
+    const parkZone = !villaPlace && !journeyPlace && me.level === 0 && !me.villa ? parkingZoneAt(me.x, me.z) : null;
+    const inGarage = parkZone?.id === 'owner' && inRect(OWNER_GARAGE, me.x, me.z);
     const info = villaPlace
       ? { id: villaPlace.id, name: villaPlace.name, indoor: villaPlace.indoor, inside: true }
       : journeyPlace
         ? { id: journeyPlace.id, name: journeyPlace.name, indoor: false, inside: false }
-        : describePlace(world, me.x, me.z, me.level);
+        : parkZone
+          ? { id: `parking_${parkZone.id}`, name: parkZone.name, indoor: inGarage, inside: inGarage }
+          : describePlace(world, me.x, me.z, me.level);
     const indoor = info.indoor && info.inside;
     indoorK += ((indoor ? 1 : 0) - indoorK) * (1 - Math.exp(-3 * delta));
     sky.applyLights(indoorK); // intensitas dasar siang 1,0 dan 1,3 seperti semula; malam lebih redup dan kebiruan
@@ -815,7 +866,36 @@ async function start() {
     sky.update(time); // langit, awan, bintang, dan lampu mengikuti kamera yang sudah final
     journey.applyFog(me); // kabut dekat di luar gerbang (sesudah langit memperbarui kabutnya)
     journey.syncGround(grassMesh.material); // rumput hotel tidak berimpit dengan tanah perjalanan
-    surroundings.setNight(nightLevel(sky.phase())); // jendela kota dan menara satelit menyala di malam hari
+    const nightK = nightLevel(sky.phase());
+    surroundings.setNight(nightK); // jendela kota dan menara satelit menyala di malam hari
+    journey.setNight(nightK); // lampu jalan lorong menyala satu per satu saat senja (night-lamps.js)
+    // hotel dan jalan hidup: lalu lintas, burung, suara sekitar (hotel-life.js, hotel-ambience.js); efek yang galat dimatikan sendiri, hotel tetap jalan
+    const rainK = (() => {
+      try {
+        const r = window.__weather?.intensity?.();
+        return Number.isFinite(r) ? r : 0;
+      } catch {
+        return 0;
+      }
+    })();
+    if (life) {
+      try {
+        life.update({ time: time / 1000, me, night: nightK, rain: rainK, active: journey.state === 'idle' }); // disembunyikan selama lorong (dunia lain)
+      } catch (error) {
+        console.warn('[hotel] lalu lintas dan burung dimatikan karena galat', error);
+        try { life.dispose(); } catch { /* sudah dibuang */ }
+        life = null;
+      }
+    }
+    if (ambience) {
+      try {
+        ambience.update({ time: time / 1000, night: nightK, rain: rainK, indoor: indoorK, cabin: inCabin });
+      } catch (error) {
+        console.warn('[hotel] suara sekitar dimatikan karena galat', error);
+        try { ambience.dispose(); } catch { /* sudah ditutup */ }
+        ambience = null;
+      }
+    }
     const qChange = quality.tick(performance.now());
     if (qChange) renderer.setPixelRatio(qChange.ratio);
     if (inCabin) carView.renderMirrors(renderer, scene);
@@ -836,6 +916,8 @@ async function start() {
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio() }),
     places: () => places,
     staff: () => staffView.stats(), // petugas yang sedang digambar (pengujian)
+    life: () => life?.info() ?? null, // lalu lintas dan burung (pengujian); null bila dimatikan
+    ambience: () => ambience?.info() ?? null, // suara sekitar (pengujian); null bila dimatikan
     sky: () => sky.info(), // langit dan lampu saat ini (pengujian)
     surroundings: () => surroundings.info(), // satelit, kota, pohon (pengujian)
     villa: () => villa.state(), // villa di dalam dunia hotel: sudah dimuat? gagal? (pengujian)
@@ -849,6 +931,7 @@ async function start() {
     cycleCamera: () => hooks.camera(), // sama dengan tombol kamera (pengujian)
     driving: () => (fleet.driving ? { model: fleet.driving.model, speed: fleet.driving.speed, engine: fleet.driving.engine, steer: fleet.driving.steer, slip: fleet.driving.slip, tyreTemp: fleet.driving.tyreTemp } : null),
     teleport, // hanya untuk pengujian dan menu Jelajah
+    valet: () => { const v = valet(); return v ? { id: v.slot.id, block: v.slot.block, ev: v.slot.ev, stand: v.stand } : null; }, // slot pilihan valet (pengujian)
     gatePrompt: () => null, // tombol gerbang sudah tidak ada: lorong dimasuki otomatis saat melewati gerbang
     leavingTo: () => enteredGate?.id ?? null, // lorong yang sedang dijalani (pengujian)
     ride,
