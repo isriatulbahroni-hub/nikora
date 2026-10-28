@@ -5,9 +5,9 @@
 //   melaju                  : sama, tanpa tombol mesin; tombol aksi halaman (#act-button, Turun) disembunyikan sampai berhenti.
 // Pedal GAS ANALOG: posisi jempol di pedal menentukan besar gas. Ujung bawah pedal = gas tipis (10%), ujung atas = gas penuh; geser jempol naik/turun
 // tanpa melepas untuk menambah/mengurangi gas, isian emas di pedal menunjukkan besar gas. Pedal rem tetap tekan-tahan (on/off).
-// Susunan layar (rapi, tidak saling menutupi): kolom kiri atas = lencana (gigi, km/j, sein/hazard berkedip, REM saat rem tangan), tombol Turun,
-// lalu tombol ⋯ (panel fitur) DI BAWAH Turun; kiri bawah = klakson dan setir; tengah bawah = tombol mesin kecil di celah antara setir dan pedal;
-// kanan bawah = pemilih gigi dan pedal. Panel fitur (lampu, hazard, rem tangan, AC, sabuk, sein kiri/kanan) plus pengaturan
+// Susunan layar (rapi, tidak saling menutupi; ukurannya dihitung ulang tiap layar berputar, lihat relayout): kolom kiri atas = lencana (gigi, km/j,
+// sein/hazard berkedip, REM saat rem tangan), tombol Turun, lalu tombol ⋯ (panel fitur) DI BAWAH Turun; kiri bawah = setir (potret: klakson di atasnya,
+// mendatar: klakson di sampingnya); tengah bawah = tombol mesin; kanan bawah = pemilih gigi dan pedal. Panel fitur (lampu, hazard, rem tangan, AC, sabuk, sein kiri/kanan) plus pengaturan
 // (mode setir bulat/geser, sensitivitas) disimpan di perangkat.
 // Setir bulat: putar dengan satu jempol, kembali halus ke tengah saat dilepas. Warna mengikuti panel hotel (emas #c9a24b).
 // Papan ketik: I = mesin, B = rem tangan, L = lampu, X = hazard, 1-4 = gigi P R N D, koma/titik = sein kiri/kanan.
@@ -28,7 +28,8 @@ const KNOB = 44; // kenop penggeser setir (mode geser)
 const GAS_MIN = 0.1; // gas terkecil saat jempol menyentuh pedal gas (ujung bawah)
 const GAS_REACH = 1.12; // jempol di 89% tinggi pedal ke atas sudah gas penuh (tidak perlu menjangkau ujung atas)
 // Putaran setir (rad) dari tengah sampai kunci penuh: makin kecil makin peka.
-const SENS = Object.freeze([{ id: 'low', label: 'Rendah', lock: 1.9 }, { id: 'mid', label: 'Normal', lock: 1.4 }, { id: 'high', label: 'Tinggi', lock: 1.0 }]);
+const SENS = Object.freeze([{ id: 'low', label: 'Rendah', lock: 1.5 }, { id: 'mid', label: 'Normal', lock: 1.05 }, { id: 'high', label: 'Tinggi', lock: 0.75 }]);
+const FULL_AT = 0.88; // setir penuh sudah tercapai pada 88% putaran maksimum: kunci penuh tidak perlu memutar sampai mentok
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -258,10 +259,47 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
     ['Sabuk', () => emit('belt'), (m) => m.belt],
     ['Sein ◀', () => emit('indicator', -1), (m) => m.indicator === -1],
     ['Sein ▶', () => emit('indicator', 1), (m) => m.indicator === 1],
+    ['Hujan', () => window.__weather?.toggle?.(), () => !!window.__weather?.active?.()],
   ].map(([label, run, on]) => ({ btn: tile(label, run), on }));
   const modeTile = tile('', () => { settings.mode = settings.mode === 'wheel' ? 'slider' : 'wheel'; saveSettings(settings); wheelRot = 0; steerValue = 0; steerTarget = 0; paint(); });
   const sensTile = tile('', () => { settings.sens = SENS[(SENS.findIndex((s) => s.id === settings.sens) + 1) % SENS.length].id; saveSettings(settings); paint(); });
   document.body.appendChild(panel);
+
+  // ---------- tata letak mengikuti ukuran dan arah layar ----------
+  // Potret: setir dan pedal dinaikkan ke zona jempol (sekitar 14% tinggi layar dari bawah, dulu menempel di tepi bawah sehingga tangan kaku),
+  // klakson di atas setir, tombol mesin di bawah di tengah (tidak lagi menimpa pedal rem).
+  // Mendatar: layar pendek (bilah peramban memakan tinggi), jadi setir dikecilkan dan klakson ditaruh di SAMPING setir, bukan di atasnya,
+  // supaya tidak menimpa tombol Turun dan ⋯ di kolom kiri atas.
+  const brakeBtn = pedalBox.children[0];
+  const gasBtn = pedalBox.children[1];
+  function relayout() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const land = w > h;
+    const S = Math.round(land ? clamp(h * 0.42, 90, 122) : clamp(w * 0.4, 130, 170));
+    const lift = land ? Math.max(12, Math.round(h * 0.05)) : Math.max(88, Math.round(h * 0.14));
+    const safe = 'env(safe-area-inset-bottom,0px)';
+    const padX = land ? 'max(14px,env(safe-area-inset-left,0px))' : '16px';
+    const padR = land ? 'max(14px,env(safe-area-inset-right,0px))' : '16px';
+    const base = `calc(${lift}px + ${safe})`;
+    const gasH = land ? Math.round(clamp(h * 0.4, 96, 118)) : 138;
+    const hornSize = 46;
+    Object.assign(wheel.style, { left: padX, bottom: base, width: `${S}px`, height: `${S}px` });
+    Object.assign(slider.style, { left: padX, bottom: base });
+    Object.assign(horn.style, land
+      ? { left: `calc(${padX} + ${S + 10}px)`, bottom: `calc(${lift + Math.round((S - hornSize) / 2)}px + ${safe})` }
+      : { left: padX, bottom: `calc(${lift + S + 12}px + ${safe})` });
+    Object.assign(pedalBox.style, { right: padR, bottom: base });
+    Object.assign(brakeBtn.style, { width: `${land ? 62 : 72}px`, height: `${Math.round(gasH * 0.72)}px` });
+    Object.assign(gasBtn.style, { width: `${land ? 48 : 56}px`, height: `${gasH}px` });
+    Object.assign(gearRow.style, { right: padR, bottom: `calc(${lift + gasH + 10}px + ${safe})` });
+    for (const [, b] of gearBtns) Object.assign(b.style, { width: `${land ? 34 : 40}px`, height: `${land ? 34 : 40}px` });
+    Object.assign(engineBtn.style, { bottom: land ? base : `calc(14px + ${safe})` });
+    panel.style.maxHeight = `${Math.max(110, h - (land ? 150 : 280))}px`;
+  }
+  relayout();
+  addEventListener('resize', relayout);
+  addEventListener('orientationchange', relayout);
 
   // papan ketik (perangkat dengan keyboard)
   const KEYMAP = { i: ['engine'], b: ['handbrake'], l: ['lights'], x: ['hazard'], 1: ['gear', 'P'], 2: ['gear', 'R'], 3: ['gear', 'N'], 4: ['gear', 'D'], ',': ['indicator', -1], '.': ['indicator', 1] };
@@ -358,9 +396,11 @@ export function mountCarHud({ onHorn = () => {} } = {}) {
     /** Keadaan pedal layar { gas (0..1 analog), brake (0/1), reverse }. */
     pedals: () => pedals,
     /** Setir -1..1 (kanan = +). 0 bila tidak disentuh. */
-    steer: () => (settings.mode === 'wheel' ? clamp(wheelRot / lockNow(), -1, 1) : steerValue),
+    steer: () => (settings.mode === 'wheel' ? clamp(wheelRot / (lockNow() * FULL_AT), -1, 1) : steerValue),
     dispose: () => {
       removeEventListener('keydown', onKey);
+      removeEventListener('resize', relayout);
+      removeEventListener('orientationchange', relayout);
       for (const n of [badge, horn, wheel, slider, pedalBox, gearRow, engineBtn, panelBtn, panel, style]) n.remove();
       document.body.classList.remove('driving', 'car-moving');
     },
