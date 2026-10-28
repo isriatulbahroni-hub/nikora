@@ -2,25 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ambienceLevels, createHotelAmbience } from './hotel-ambience.js';
 
-test('siang cerah: burung dan angin, tanpa jangkrik', () => {
+test('siang cerah: burung dan angin', () => {
   const l = ambienceLevels({ night: 0, rain: 0 });
   assert.equal(l.birds, 1);
-  assert.equal(l.crickets, 0);
   assert.ok(l.wind > 0 && l.traffic > 0);
 });
 
-test('malam: jangkrik, tanpa burung', () => {
+test('malam: tanpa burung dan tanpa jangkrik (lapisan jangkrik sudah dihapus)', () => {
   const l = ambienceLevels({ night: 1, rain: 0 });
   assert.equal(l.birds, 0);
-  assert.equal(l.crickets, 1);
+  assert.equal('crickets' in l, false);
+  assert.deepEqual(Object.keys(l).sort(), ['birds', 'traffic', 'wind']);
 });
 
-test('hujan lebat: burung dan jangkrik diam, angin menguat', () => {
+test('hujan lebat: burung diam, angin menguat', () => {
   const clear = ambienceLevels({ night: 0, rain: 0 });
   const rain = ambienceLevels({ night: 0, rain: 0.9 });
   assert.equal(rain.birds, 0);
   assert.ok(rain.wind > clear.wind);
-  assert.equal(ambienceLevels({ night: 1, rain: 0.9 }).crickets, 0);
 });
 
 test('di dalam ruangan dan kabin mobil suara meredup', () => {
