@@ -8,6 +8,7 @@ import { buildMasjidWorld } from './masjid-world.js';
 import { createPostureController } from './masjid-posture-data.js';
 import { applyPosture } from './masjid-posture.js';
 import { exhibitById, nearestExhibit } from './masjid-exhibits.js';
+import { createVenueStaffView, venueHourNow } from './venue-staff-view.js';
 
 // Masjid Agung NIKORA: kompleks sangat luas yang dijelajahi dengan avatar (mode offline, satu pemain).
 // Berjalan 5,2 m/s seperti di vila; tombol Lari (Shift / R) menaikkannya supaya jarak ratusan meter tetap nyaman.
@@ -270,6 +271,8 @@ async function start() {
 
   const scene = new THREE.Scene();
   const built = buildMasjidWorld(scene, world, { renderer });
+  // Karyawan masjid (venue-staff.js): 200 orang, tiga shift, jam yang sama dengan langit; yang digambar hanya yang dekat pemain.
+  const staffView = createVenueStaffView({ scene, venue: 'masjid', hourNow: venueHourNow(window.location.search) });
   const camera = new THREE.PerspectiveCamera(48, 1, 0.4, 1800);
   const indoorLight = new THREE.PointLight(0xffe2b8, 0, 60, 1.2);
   scene.add(indoorLight);
@@ -554,6 +557,7 @@ async function start() {
     built.setIndoor(indoorK, { x: me.x, z: me.z, camera });
     indoorLight.intensity = 60 * indoorK;
     indoorLight.position.set(me.x, 3, me.z);
+    staffView.update(me, delta, time / 1000); // karyawan masjid yang dekat pemain (posisi dihitung dari jam, sama di semua klien)
 
     const qChange = quality.tick(performance.now());
     if (qChange) renderer.setPixelRatio(qChange.ratio);
@@ -584,6 +588,7 @@ async function start() {
   window.__masjid = {
     state: () => ({ x: me.x, z: me.z, facing, place: world.roomAt(me.x, me.z), running: shiftHeld || runToggle, posture: posture.pose() }),
     cam: () => ({ yaw: camState.yaw, pitch: camState.pitch, dist: camState.dist }),
+    staff: () => staffView.stats(),
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio() }),
     teleport, // hanya untuk pengujian dan tombol Jelajah
   };

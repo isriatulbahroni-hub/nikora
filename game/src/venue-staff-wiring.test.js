@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 // Penjaga sambungan: karyawan tempat acara hanya muncul bila halaman dunianya memasang dan memanggil tampilannya tiap frame.
 // (Modul hotel-life dulu ada tetapi tidak dipakai siapa pun, jadi tidak ada perubahan di game.)
-const WIRED = { villa: 'villa-main.js' };
+const WIRED = { villa: 'villa-main.js', masjid: 'masjid-main.js' };
 
 for (const [venue, file] of Object.entries(WIRED)) {
   test(`${file} memasang dan memperbarui karyawan ${venue}`, () => {
