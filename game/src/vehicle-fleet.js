@@ -7,7 +7,7 @@
 import { CAR, BOARD_RANGE, SEAT_OFFSETS, boardVehicle, createVehicle, exitPose, findBoardable, forward, leaveVehicle, seatWorld, stepVehicle, wrapAngle } from './vehicle.js';
 import { HOTEL_CAR_SPOTS } from './hotel-layout.js';
 import { OWNER_TURNTABLE } from './hotel-parking.js';
-import { SEATED_DROP } from './villa-layout.js';
+import { carSeatY, seatFit } from './car-seating.js';
 import { CAR_MODELS, GLB_MODELS, hotelModelFor } from './car-models.js';
 
 export const CAR_SIT_BASE = 1000; // id duduk (`sit`) di jaringan: BASE + indeks mobil * 8 + kursi
@@ -273,13 +273,16 @@ export class Fleet {
     }
   }
 
-  /** Pose avatar yang duduk di id duduk jaringan (untuk poseFor). Null bila bukan kursi mobil. */
+  /**
+   * Pose avatar yang duduk di id duduk jaringan (untuk poseFor). Null bila bukan kursi mobil.
+   * fit = { simple, human }: sudut sandaran punggung (rad) agar kepala tidak menembus atap mobil ini (car-seating.js); diterapkan car-seat-pose.js.
+   */
   seatPose(sit) {
     const p = parseCarSit(sit);
     const car = p ? this.cars[p.index] : null;
     if (!car || p.seat >= car.seats.length || p.seat >= (car.spec?.seatOffsets ?? SEAT_OFFSETS).length) return null;
     const w = seatWorld(car, p.seat);
-    return { x: w.x, z: w.z, y: SEATED_DROP + 0.12 + (car.spec?.seatLift ?? 0), rotY: w.facing, tilt: 0, snap: true };
+    return { x: w.x, z: w.z, y: carSeatY(car.spec), rotY: w.facing, tilt: 0, snap: true, fit: seatFit(car.spec) };
   }
 
   exitFor(index, seat) { return exitPose(this.cars[index], seat); }
