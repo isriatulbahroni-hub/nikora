@@ -8,6 +8,7 @@
 //  - kamar tamu memakai kerangka lokal (u = menyamping, v = masuk dari pintu) sehingga empat arah kamar
 //    (utara, selatan, barat, timur) mendapat tata letak yang sama.
 import { PROP_DEFS, propRect } from './hotel-props.js';
+import { cinemaSeatPlan } from './cinema-5d-data.js';
 
 const EPS = 1e-6;
 /** Arah hadap (ry): depan perabot = +z lokal; 0 = selatan (+z), PI = utara (-z), PI/2 = timur (+x), -PI/2 = barat (-x). */
@@ -308,14 +309,16 @@ const GEN = {
     L.place('chair', L.east(0.35) - 0.9, L.cz, FACE.E);
     plants(L);
   },
+  // Bioskop 5D (cinema-5d-data.js): layar lebar, kursi dalam blok dengan lorong, satu kursi dikosongkan untuk adegan hantu (dibuat oleh
+  // cinema-5d-fx.js), dan foyer di belakang: kelompok duduk di sepanjang dinding timur dan tanaman.
   cinema(L) {
-    L.place('screen', L.x1 + 0.12, L.cz, FACE.E, { w: Math.max(4, Math.min(14, L.d - 4)) });
-    for (const x of rowsOf(L.x1 + 5, L.x2 - 2.5, 1.4)) {
-      for (const z of rowsOf(L.z1 + 3, L.z2 - 3, 0.7)) {
-        if (Math.abs(z - L.cz) < 0.9) continue;
-        L.place('cinema_seat', x, z, FACE.W);
-      }
-    }
+    const plan = cinemaSeatPlan([L.x1, L.z1, L.x2, L.z2]);
+    L.place('screen', plan.screen.x, plan.screen.z, FACE.E, { w: plan.screen.w });
+    for (const s of plan.seats) L.place('cinema_seat', s.x, s.z, FACE.W);
+    for (const z of [L.cz - 18, L.cz + 18]) cluster(L, L.x2 - 4, z, FACE.W);
+    L.place('counter', plan.foyerX + 2, L.z1 + 1.2, FACE.S);
+    L.place('counter', plan.foyerX + 5, L.z1 + 1.2, FACE.S);
+    plants(L);
   },
   game_zone(L) {
     for (const z of rowsOf(L.z1 + 2.5, L.z2 - 2.5, 1.0)) L.place('arcade', L.east(0.4), z, FACE.W);
