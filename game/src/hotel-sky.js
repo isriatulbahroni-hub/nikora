@@ -10,6 +10,7 @@ import { createTowerGlow } from './hotel-tower-glow.js';
 import { MOON_DOME_FUNCS, MOON_DOME_UNIFORMS, createHotelMoon } from './hotel-moon.js';
 import { MOON, moonDirection } from './hotel-moon-data.js';
 import { approach, bathLevel, coldLevel, createMoonBath, createMoonHaptics, gazeLevel, moonHapticsEnabled } from './hotel-moon-4d.js';
+import { gazeEase, isGazeCancelKey, isGazeToggleKey, isTypingTarget, mountMoonButton, needsNight } from './hotel-moon-gaze.js';
 
 // Langit, cahaya, dan lampu NIKORA Grand Hotel yang berganti otomatis mengikuti jam asli (siang, senja, malam).
 // ?sky=auto|day|sunset|night|cycle dan ?tz=WIB|WITA|WIT mengatur mode dan zona waktu (sama dengan villa, masjid, dan aula); tombol N berganti mode.
@@ -24,6 +25,9 @@ import { approach, bathLevel, coldLevel, createMoonBath, createMoonHaptics, gaze
 // memantulkannya, awan berpinggir perak di dekatnya, dan terang bulan menaikkan cahaya malam. ?moon=real mengikuti fase bulan sesungguhnya (bawaan: purnama).
 // Efek 4D bulan (hotel-moon-4d.js): menatap bulan di malam hari memandikan layar dengan cahaya perak dan membuat HP bergetar pelan seperti napas; di lantai tinggi
 // tepi layar ditutupi udara dingin. ?bulan4d=0 mematikan semuanya, ?getar=0 hanya getarannya.
+// Lihat bulan (hotel-moon-gaze.js): kamera orbit hotel tidak bisa menengadah (bagian atas layar hanya menjangkau sekitar 8 sampai 27 derajat), sedangkan bulan ada di
+// sekitar 54 derajat. Tombol Bulan (kanan atas) atau B mengayun kamera ke bulan; bila saat itu siang, langit dipindah ke malam dan dikembalikan saat selesai.
+// Berjalan (WASD, panah), Esc, atau menyentuh layar/joystick mengakhirinya.
 
 export const SKY_MODE_LABELS = Object.freeze({ auto: 'otomatis (jam asli)', day: 'siang', sunset: 'senja', night: 'malam', cycle: 'demo satu hari 20 menit' });
 
@@ -351,6 +355,34 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
   const moonBuzz = createMoonHaptics({ enabled: moonHapticsEnabled(search, motion === 0) });
   const fx4d = { indoor: 0, level: 0, cold: 0, last: 0, fwd: new THREE.Vector3(), proj: new THREE.Vector3() };
 
+  // lihat bulan: kamera orbit hotel tidak bisa menengadah, jadi tombol Bulan / B mengayun kamera ke bulan (hotel-moon-gaze.js)
+  const gaze = { on: false, k: 0, prevMode: null, m4: new THREE.Matrix4(), q: new THREE.Quaternion(), zero: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0) };
+  const setGaze = (on) => {
+    if (on === gaze.on) return;
+    gaze.on = on;
+    if (on) {
+      if (needsNight(moon.uniforms.uMoonVis.value)) { // siang atau bulan belum terbit: pindah ke malam sementara supaya ada yang dilihat
+        gaze.prevMode = tracker.mode;
+        tracker.setMode('night');
+      }
+    } else if (gaze.prevMode) {
+      tracker.setMode(gaze.prevMode);
+      gaze.prevMode = null;
+    }
+    moonButton.setOn(on);
+  };
+  const moonButton = mountMoonButton({ onToggle: () => setGaze(!gaze.on) });
+  const onGazeKey = (e) => {
+    if (e.repeat || isTypingTarget(e.target)) return;
+    if (isGazeToggleKey(e.key)) setGaze(!gaze.on);
+    else if (gaze.on && isGazeCancelKey(e.key)) setGaze(false);
+  };
+  const endGaze = () => setGaze(false);
+  const joyZone = typeof document !== 'undefined' ? document.getElementById('joy-zone') : null;
+  if (typeof addEventListener === 'function') addEventListener('keydown', onGazeKey);
+  renderer.domElement?.addEventListener?.('pointerdown', endGaze);
+  joyZone?.addEventListener('pointerdown', endGaze);
+
   // kubah langit
   const domeU = {
     uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uZenith: { value: new THREE.Vector3() }, uMid: { value: new THREE.Vector3() }, uHorizon: { value: new THREE.Vector3() },
@@ -567,6 +599,8 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
       tracker.setMode(next);
       return next;
     },
+    /** Mengayun kamera ke bulan (true) atau melepasnya (false); sama dengan tombol Bulan dan tombol B. */
+    gazeMoon: (on = !gaze.on) => setGaze(!!on),
     /** Intensitas dasar cahaya langit dan matahari saat ini (sebelum diredam di dalam ruangan). */
     base: () => ({ ...base }),
     applyLights(indoorK = 0) {
@@ -578,7 +612,7 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
       phase: tracker.phase, mode: tracker.mode, shell, windows: win.count, streetLamps: hw.bulbs.length / 3, pylons: hw.caps.length / 3, groundLamps: ground.length,
       lampMaterials: lampMats.size, beacons: beacons.length, mast: crown.mast, helipad: crown.helipad, farClip: camera.far, motion,
       visibleLayers: layers.filter((l) => l.points.visible).map((l) => l.points.name), towerGlow: towerGlow.info(), moon: moon.info(),
-      moon4d: { level: fx4d.level, cold: fx4d.cold, ...moonBath.info() },
+      moon4d: { level: fx4d.level, cold: fx4d.cold, ...moonBath.info() }, moonGaze: { on: gaze.on, k: gaze.k, button: moonButton.mounted },
     }),
     update(perfMs = performance.now()) {
       const t = perfMs / 1000;
@@ -594,9 +628,18 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
       cloudU.uCam.value.copy(cp);
       moon.update({ time: t });
 
-      // efek 4D bulan: tatapan ke bulan -> mandi cahaya di layar + getaran napas; ketinggian -> udara dingin
+      // lihat bulan: sesudah hotel-main.js menaruh kamera, ayunkan arah pandang ke bulan dengan halus (naik cepat, lepas sedang)
       const dt = Math.min(0.1, Math.max(0, t - fx4d.last));
       fx4d.last = t;
+      gaze.k = approach(gaze.k, gaze.on ? 1 : 0, dt, 3.5);
+      if (!gaze.on && gaze.k < 0.002) gaze.k = 0;
+      if (gaze.k > 0.002) {
+        gaze.m4.lookAt(gaze.zero, moonDir, gaze.up);
+        gaze.q.setFromRotationMatrix(gaze.m4);
+        camera.quaternion.slerp(gaze.q, gazeEase(gaze.k));
+      }
+
+      // efek 4D bulan: tatapan ke bulan -> mandi cahaya di layar + getaran napas; ketinggian -> udara dingin
       camera.getWorldDirection(fx4d.fwd);
       const alt = altitudeLevel(cp.y);
       const moonVis = moon.uniforms.uMoonVis.value;
@@ -622,6 +665,10 @@ export function createHotelSky({ scene, renderer, camera, lights = {}, search = 
       towerGlow.update({ phase: tracker.phase, time: t, altitude: altitudeLevel(cp.y) });
     },
     dispose() {
+      if (typeof removeEventListener === 'function') removeEventListener('keydown', onGazeKey);
+      renderer.domElement?.removeEventListener?.('pointerdown', endGaze);
+      joyZone?.removeEventListener?.('pointerdown', endGaze);
+      moonButton.dispose();
       moonBath.dispose();
       towerGlow.dispose();
       scene.remove(root);
