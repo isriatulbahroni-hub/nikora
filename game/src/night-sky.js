@@ -4,7 +4,8 @@ import * as THREE from 'three';
 // bertekstur kawah dengan halo cahaya lembut. Titik-titik berada di belahan langit atas pada jarak `radius`;
 // tanah dan bangunan menutupinya lewat depth test.
 // Opsi untuk Hotel: `moon: false` tidak membuat bola bulan dan halonya (bulan digambar di kubah langit, lihat hotel-moon.js), dan
-// `clearCone: { dir, angle }` tidak menaruh bintang dalam kerucut itu (terang bulan menelan bintang di dekatnya). Bawaan tidak berubah.
+// `fade: { dir, inner, outer }` memudarkan bintang di sekitar arah `dir` (THREE.Vector3 hidup, boleh bergerak): hilang total dalam sudut `inner`, penuh di luar sudut `outer`
+// (radian), karena terang bulan menelan bintang di dekatnya. Bawaan tidak berubah.
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const hasDom = () => typeof document !== 'undefined';
@@ -85,42 +86,50 @@ function haloTexture() {
   return tex;
 }
 
-export function createNightDecor({ radius = 400, stars = 600, moonRadius = 14, seed = 1, moon: withMoon = true, clearCone = null } = {}) {
+/**
+ * Memudarkan bintang di dekat arah `fade.dir` lewat sedikit tambahan pada shader PointsMaterial. Bila bentuk shader bawaan three tidak dikenali
+ * (versi berbeda), tidak ada yang diubah dan bintang tampil seperti biasa.
+ */
+function installFade(material, { dir, inner, outer }) {
+  const uniforms = { uFadeDir: { value: dir }, uFadeCos: { value: new THREE.Vector2(Math.cos(outer), Math.cos(inner)) } };
+  material.onBeforeCompile = (shader) => {
+    const v = shader.vertexShader;
+    const f = shader.fragmentShader;
+    if (!v.includes('#include <common>') || !v.includes('#include <begin_vertex>') || !f.includes('#include <common>') || !f.includes('#include <opaque_fragment>')) return;
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = v
+      .replace('#include <common>', '#include <common>\nuniform vec3 uFadeDir;\nuniform vec2 uFadeCos;\nvarying float vStarFade;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvStarFade = 1.0 - smoothstep(uFadeCos.x, uFadeCos.y, dot(normalize(position), uFadeDir));');
+    shader.fragmentShader = f
+      .replace('#include <common>', '#include <common>\nvarying float vStarFade;')
+      .replace('#include <opaque_fragment>', 'diffuseColor.a *= vStarFade;\n#include <opaque_fragment>');
+  };
+  material.customProgramCacheKey = () => 'night-star-fade';
+}
+
+export function createNightDecor({ radius = 400, stars = 600, moonRadius = 14, seed = 1, moon: withMoon = true, fade = null } = {}) {
   let s = seed >>> 0 || 1;
   const rand = () => {
     s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
     return s / 4294967296;
   };
-  let clear = null;
-  if (clearCone) {
-    const [cx, cy, cz] = clearCone.dir;
-    const len = Math.hypot(cx, cy, cz) || 1;
-    clear = { x: cx / len, y: cy / len, z: cz / len, cos: Math.cos(clearCone.angle) };
-  }
   const makeStars = (count, size) => {
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      let nx = 0;
-      let ny = 0;
-      let nz = 0;
-      for (let tries = 0; tries < 12; tries++) {
-        const y = 0.05 + rand() * 0.95; // sebaran seragam pada bola: tinggi acak seragam, sudut acak
-        const a = rand() * Math.PI * 2;
-        const r = Math.sqrt(1 - y * y);
-        nx = Math.cos(a) * r;
-        ny = y;
-        nz = Math.sin(a) * r;
-        if (!clear || nx * clear.x + ny * clear.y + nz * clear.z < clear.cos) break;
-      }
-      positions[i * 3] = nx * radius;
-      positions[i * 3 + 1] = ny * radius;
-      positions[i * 3 + 2] = nz * radius;
+      const y = 0.05 + rand() * 0.95; // sebaran seragam pada bola: tinggi acak seragam, sudut acak
+      const a = rand() * Math.PI * 2;
+      const r = Math.sqrt(1 - y * y);
+      positions[i * 3] = Math.cos(a) * r * radius;
+      positions[i * 3 + 1] = y * radius;
+      positions[i * 3 + 2] = Math.sin(a) * r * radius;
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    const pts = new THREE.Points(geometry, new THREE.PointsMaterial({
+    const material = new THREE.PointsMaterial({
       color: 0xffffff, size, sizeAttenuation: false, transparent: true, opacity: 0, depthWrite: false, fog: false,
-    }));
+    });
+    if (fade) installFade(material, fade);
+    const pts = new THREE.Points(geometry, material);
     pts.frustumCulled = false;
     return pts;
   };

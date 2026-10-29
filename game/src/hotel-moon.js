@@ -1,17 +1,23 @@
 import * as THREE from 'three';
 import {
-  MOON, earthshine, libration, moonDirection, moonGlowK, moonHemiGain, moonLevel, moonModeFromSearch, moonPhaseState, moonSunGain, moonTint,
+  MOON, earthshine, libration, moonApparentRadius, moonDirection, moonDiscVisibility, moonExtinction, moonGlowFade, moonGlowK, moonHemiGain, moonHorizonMask, moonLevel,
+  moonModeFromSearch, moonSunGain, moonTint, moonUpFactor,
 } from './hotel-moon-data.js';
+import { clockDate, locationFromSearch, moonEvents, moonState } from './hotel-moon-ephemeris.js';
 
-// Bulan Purnama Agung NIKORA Grand Hotel. Bulan digambar LANGSUNG di kubah langit (hotel-sky.js) lewat potongan GLSL di bawah, bukan sebagai bola terpisah,
-// sehingga kaca menara ikut memantulkannya (kubah langit sudah dipakai hotel-tower-glow.js untuk peta pantulan kaca).
-// Isinya: cakram bulan prosedural (dataran gelap, tiga lapis kawah dengan relief mengikuti arah cahaya, kawah Tycho dengan sinar terangnya, goyangan libration,
-// cahaya bumi di sisi gelap), pendar tiga lapis, cincin es 22 derajat berwarna pelangi tipis, dan berkas cahaya radial yang berputar pelan.
-// Fase bawaan purnama; ?moon=real mengikuti fase bulan sesungguhnya menurut tanggal.
+// Bulan Purnama Agung NIKORA Grand Hotel, sekarang bergerak seperti bulan sungguhan (dimensi keempat: waktu). Bulan digambar LANGSUNG di kubah langit
+// (hotel-sky.js) lewat potongan GLSL di bawah, bukan sebagai bola terpisah, sehingga kaca menara ikut memantulkannya.
+// Posisi, fase, dan arah sisi terang dihitung tiap frame dari tanggal, jam, dan tempat (hotel-moon-ephemeris.js): terbit di timur, melintas, terbenam di barat,
+// rendah = lebih besar, lebih jingga, dan lebih redup. Mode bawaan 'full' = purnama ideal (terbit saat matahari terbenam, terbenam saat matahari terbit);
+// ?moon=real = posisi dan fase sungguhan menurut tanggal. ?lat= dan ?lon= mengganti tempat; bawaan kota acuan zona waktu (WIB = Jakarta).
+// Isi cakram: dataran gelap, tiga lapis kawah dengan relief mengikuti arah cahaya, kawah Tycho dengan sinar terangnya, goyangan libration, kemiringan menurut
+// sudut paralaktik, cahaya bumi di sisi gelap; di sekelilingnya pendar tiga lapis, cincin es 22 derajat berwarna pelangi tipis, dan berkas cahaya radial.
 
 /** Deklarasi uniform untuk fragment shader kubah langit. */
 export const MOON_DOME_UNIFORMS = /* glsl */ `
 uniform vec3 uMoonDir;
+uniform vec3 uMoonX;
+uniform vec3 uMoonY;
 uniform vec3 uMoonLight;
 uniform vec3 uMoonTint;
 uniform float uMoonR;
@@ -19,6 +25,7 @@ uniform float uMoonVis;
 uniform float uMoonGlow;
 uniform float uMoonEarth;
 uniform vec2 uMoonLib;
+uniform float uMoonRoll;
 uniform float uMoonRing;
 uniform float uMoonTime;
 `;
@@ -73,8 +80,11 @@ float mHeight(vec3 sp) {
   float h = mCraters(sp, 6.0, 0.55) + 0.7 * mCraters(sp, 15.0, 0.5) + 0.4 * mCraters(sp, 36.0, 0.45);
   return h * 0.5 + 0.12 * (mFbm(sp * 6.0) - 0.5);
 }
-// Goyangan tepi bulan: memutar titik permukaan sedikit pada dua sumbu.
+// Kemiringan wajah bulan (sudut paralaktik) dan goyangan tepi (libration): memutar titik permukaan.
 vec3 mLib(vec3 v) {
+  float cz = cos(uMoonRoll);
+  float sz = sin(uMoonRoll);
+  v = vec3(cz * v.x - sz * v.y, sz * v.x + cz * v.y, v.z);
   float cx = cos(uMoonLib.x);
   float sx = sin(uMoonLib.x);
   v = vec3(cx * v.x + sx * v.z, v.y, -sx * v.x + cx * v.z);
@@ -122,15 +132,15 @@ vec3 moonDisc(vec3 n) {
   return c * uMoonTint;
 }
 // d = arah pandang satuan (dunia), h = tinggi di atas horizon sebenarnya. Mengembalikan warna langit dengan bulan dan pendarnya.
+// Pendar memakai uMoonGlow (nol di siang hari), cakram memakai uMoonVis (pucat tapi tampak di siang hari).
 vec3 moonLayer(vec3 col, vec3 d, float h) {
   float cosA = dot(d, uMoonDir);
-  if (uMoonVis < 0.002 || cosA < 0.0) return col;
-  float vis = uMoonVis * smoothstep(-0.03, 0.02, h);
-  float k = uMoonGlow * vis;
+  if (cosA < 0.0 || (uMoonVis < 0.002 && uMoonGlow < 0.002)) return col;
+  float hv = smoothstep(-0.03, 0.02, h);
+  float k = uMoonGlow * hv;
+  float vis = uMoonVis * hv;
   float rr = uMoonR;
-  vec3 mrt = normalize(cross(uMoonDir, vec3(0.0, 1.0, 0.0))); // kanan penonton saat menghadap bulan
-  vec3 mup = cross(mrt, uMoonDir);
-  vec2 q = vec2(dot(d, mrt), dot(d, mup));
+  vec2 q = vec2(dot(d, uMoonX), dot(d, uMoonY));
   float ang = acos(clamp(cosA, -1.0, 1.0));
 
   // pendar tiga lapis: rapat, sedang, lebar
@@ -166,59 +176,127 @@ const srgbToLinear = (hex) => {
   return new THREE.Vector3(c.r, c.g, c.b);
 };
 
-/** Uniform bulan untuk bahan kubah langit (dan awan, yang berbagi arah, warna, dan tingkat bulan). */
+/** Uniform bulan untuk bahan kubah langit (dan awan, yang berbagi arah, warna, dan pendar bulan). */
 export function createMoonUniforms() {
   return {
     uMoonDir: { value: new THREE.Vector3(...moonDirection()) },
+    uMoonX: { value: new THREE.Vector3(1, 0, 0) },
+    uMoonY: { value: new THREE.Vector3(0, 1, 0) },
     uMoonLight: { value: new THREE.Vector3(0, 0, 1) },
     uMoonTint: { value: srgbToLinear(0xe6f2ff) },
     uMoonR: { value: Math.sin(MOON.angularRadius) },
     uMoonVis: { value: 0 },
-    uMoonGlow: { value: 1 },
+    uMoonGlow: { value: 0 },
     uMoonEarth: { value: 0 },
     uMoonLib: { value: new THREE.Vector2() },
+    uMoonRoll: { value: 0 },
     uMoonRing: { value: MOON.ringAngle },
     uMoonTime: { value: 0 },
   };
 }
 
+const WORLD_UP = new THREE.Vector3(0, 1, 0);
+const bearingDeg = (azimuth) => (((azimuth * 180) / Math.PI + 180) % 360 + 360) % 360; // arah mata angin dari utara searah jarum jam
+
 /**
- * Mengembalikan { uniforms, mode, state(), apply(phase), gains(phase), update({ time }), info() }.
- * apply(phase) dipanggil tiap fase langit berubah; update dipanggil tiap frame sebelum render; gains(phase) = pengali terang bulan untuk cahaya malam.
+ * Mengembalikan { uniforms, mode, location, dirVector, state(), upFactor(), visible(), gains(phase), update({ time, skyMode, phase }), info() }.
+ * update dipanggil tiap frame sebelum render: ia menghitung posisi dan fase bulan untuk waktu mode langit saat ini dan menulis semua uniform.
+ * dirVector adalah arah bulan yang hidup (dimutakhirkan di tempat): dipakai bintang, tatapan kamera, dan efek 4D.
  */
-export function createHotelMoon({ search = '', motion = 1, now = () => Date.now() } = {}) {
+export function createHotelMoon({ search = '', motion = 1, zone, now = () => Date.now() } = {}) {
   const mode = moonModeFromSearch(search);
+  const location = locationFromSearch(search, zone);
   const uniforms = createMoonUniforms();
   const tint = new THREE.Color();
-  let state = moonPhaseState({ mode, date: new Date(now()) });
-  let stamp = 0;
-  const writePhase = () => {
-    uniforms.uMoonLight.value.set(state.lightDir[0], state.lightDir[1], state.lightDir[2]);
-    uniforms.uMoonGlow.value = moonGlowK(state.illumination);
+  const dirV = new THREE.Vector3(...moonDirection());
+  const target = new THREE.Vector3();
+  const sunV = new THREE.Vector3();
+  const right = new THREE.Vector3();
+  const upV = new THREE.Vector3();
+  let state = null;
+  let first = true;
+  let lastTime = 0;
+  let events = null;
+  let eventsAt = -Infinity;
+
+  const compute = (skyMode) => moonState({ date: clockDate({ skyMode, now: now(), zone }), lat: location.lat, lon: location.lon, mode });
+
+  const refresh = (time, skyMode, phase) => {
+    state = compute(skyMode);
+    target.set(state.dir[0], state.dir[1], state.dir[2]);
+    const dt = Math.max(0, time - lastTime);
+    lastTime = time;
+    if (first) {
+      dirV.copy(target);
+      first = false;
+    } else {
+      // bulan mengikuti posisi barunya paling cepat followRate rad/detik: pindah mode langit tidak membuatnya melompat
+      const angle = Math.acos(Math.min(1, Math.max(-1, dirV.dot(target))));
+      const step = MOON.followRate * dt;
+      if (angle <= step || angle < 1e-6) dirV.copy(target);
+      else {
+        dirV.lerp(target, step / angle);
+        if (dirV.lengthSq() < 1e-8) dirV.copy(target);
+        else dirV.normalize();
+      }
+    }
+    uniforms.uMoonDir.value.copy(dirV);
+    right.crossVectors(dirV, WORLD_UP);
+    if (right.lengthSq() < 1e-6) right.set(1, 0, 0); // bulan tepat di zenit: arah kanan bebas
+    right.normalize();
+    upV.crossVectors(right, dirV);
+    uniforms.uMoonX.value.copy(right);
+    uniforms.uMoonY.value.copy(upV);
+    // sisi terang cakram: arah matahari dalam bingkai penonton (x kanan, y atas, z ke penonton = -arah bulan)
+    sunV.set(state.sunDir[0], state.sunDir[1], state.sunDir[2]);
+    const lx = sunV.dot(right);
+    const ly = sunV.dot(upV);
+    const lz = -sunV.dot(dirV);
+    const len = Math.hypot(lx, ly, lz);
+    if (len > 1e-6) uniforms.uMoonLight.value.set(lx / len, ly / len, lz / len);
+    else uniforms.uMoonLight.value.set(0, 0, 1);
+    uniforms.uMoonRoll.value = state.roll;
+    const sinAlt = dirV.y;
+    const ext = moonExtinction(sinAlt);
+    uniforms.uMoonR.value = Math.sin(moonApparentRadius(sinAlt));
+    uniforms.uMoonGlow.value = moonGlowK(state.illumination) * moonLevel(phase) * moonGlowFade(sinAlt);
+    uniforms.uMoonVis.value = moonDiscVisibility(phase, state.illumination);
     uniforms.uMoonEarth.value = earthshine(state.illumination);
+    const [r, g, b] = moonTint(phase, ext.warm, ext.dim);
+    tint.setRGB(r, g, b, THREE.SRGBColorSpace);
+    uniforms.uMoonTint.value.set(tint.r, tint.g, tint.b);
   };
-  writePhase();
+  refresh(0, 'auto', 1);
+
   return {
     uniforms,
     mode,
+    location,
+    dirVector: dirV,
     state: () => state,
-    apply(phase) {
-      uniforms.uMoonVis.value = moonLevel(phase);
-      const [r, g, b] = moonTint(phase);
-      tint.setRGB(r, g, b, THREE.SRGBColorSpace);
-      uniforms.uMoonTint.value.set(tint.r, tint.g, tint.b);
-    },
-    gains: (phase) => ({ sun: moonSunGain(phase, state.illumination), hemi: moonHemiGain(phase, state.illumination) }),
-    update({ time }) {
+    /** 0 di bawah horizon, 1 saat cukup tinggi: pengali cahaya bulan. */
+    upFactor: () => moonUpFactor(dirV.y),
+    /** Keterlihatan cakram bulan 0..1 saat ini (memperhitungkan fase langit dan horizon). */
+    visible: () => uniforms.uMoonVis.value * moonHorizonMask(dirV.y),
+    /** Pengali cahaya matahari/bulan dan cahaya langit akibat terang bulan, untuk fase langit tertentu. */
+    gains: (phase) => ({ sun: moonSunGain(phase, state.illumination, moonUpFactor(dirV.y)), hemi: moonHemiGain(phase, state.illumination, moonUpFactor(dirV.y)) }),
+    update({ time, skyMode = 'auto', phase = 1 }) {
       uniforms.uMoonTime.value = time * motion;
       const [lx, ly] = libration(time, motion);
       uniforms.uMoonLib.value.set(lx, ly);
-      if (mode === 'real' && time - stamp > 30) {
-        stamp = time;
-        state = moonPhaseState({ mode, date: new Date(now()) });
-        writePhase();
-      }
+      refresh(time, skyMode, phase);
     },
-    info: () => ({ mode, fraction: state.fraction, illumination: state.illumination, waxing: state.waxing, visible: uniforms.uMoonVis.value }),
+    info() {
+      const nowMs = now();
+      if (nowMs - eventsAt > 600000) {
+        eventsAt = nowMs;
+        events = moonEvents({ date: nowMs, lat: location.lat, lon: location.lon, mode });
+      }
+      const iso = (ms) => (ms === null ? null : new Date(ms).toISOString());
+      return {
+        mode, location, altitudeDeg: (Math.asin(Math.min(1, Math.max(-1, dirV.y))) * 180) / Math.PI, bearingDeg: bearingDeg(state.azimuth),
+        illumination: state.illumination, cycle: state.cycle, waxing: state.waxing, visible: this.visible(), rise: iso(events.rise), set: iso(events.set),
+      };
+    },
   };
 }
