@@ -19,13 +19,18 @@ export const NEAR_RING_LIMITS = Object.freeze([{ within: 150, maxBucket: 2 }, { 
 export const ringDistance = (x, z) => Math.hypot(Math.max(RING_OUTER[0] - x, 0, x - RING_OUTER[2]), Math.max(RING_OUTER[1] - z, 0, z - RING_OUTER[3]));
 
 const sat = (id, x, z, radius, height) => Object.freeze({ id, x, z, radius, height, taper: 0.78, sides: 12 });
-/** Lima menara satelit kaca berfaset (12 sisi, meruncing), di keempat sudut luar Lingkar dan di selatan. */
+/**
+ * Lima menara satelit kaca berfaset (12 sisi, meruncing): menara pendamping seperti pada gambar acuan (menara utama dikelilingi menara
+ * yang sekitar separuh tingginya). Ruang di dalam Lingkar penuh (tapak hotel, parkir, lagoon, Royal Garage), jadi menara berdiri tepat
+ * di luar Lingkar, di antara lengan jalan ke aula/royal (z 427..469) dan masjid (x -21..21): dua di sisi timur, satu di barat laut,
+ * dua di selatan. Tinggi 1500..2300 m = 35..55% menara utama (4195 m); jarak ke tengah hotel 190..290 m.
+ */
 export const SATELLITES = Object.freeze([
-  sat('sat_barat_laut', -255, 270, 36, 1100),
-  sat('sat_timur_laut', 250, 290, 32, 850),
-  sat('sat_tenggara', 240, 650, 34, 950),
-  sat('sat_selatan', 100, 680, 30, 650),
-  sat('sat_barat_daya', -130, 700, 32, 780),
+  sat('sat_barat_laut', -255, 365, 38, 2300),
+  sat('sat_timur_laut', 255, 365, 36, 1900),
+  sat('sat_tenggara', 255, 545, 38, 2100),
+  sat('sat_selatan', 110, 665, 34, 1500),
+  sat('sat_barat_daya', -120, 665, 36, 1700),
 ]);
 /** Arena berkubah di barat daya hotel; `plaza` = jari-jari paving di sekelilingnya. */
 export const ARENA = Object.freeze({ x: -290, z: 640, radius: 52, wallHeight: 14, domeHeight: 22, plaza: 70 });
