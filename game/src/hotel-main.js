@@ -29,6 +29,7 @@ import { createHotelJourney } from './hotel-journey.js';
 import { alongOf } from './hotel-journey-math.js';
 import { createHotelLife } from './hotel-life.js';
 import { createHotelAmbience } from './hotel-ambience.js';
+import { findNearestSpot, isSpotId, poseOfSpot, seatLabel, spotById, spotsInRoom, standPoint } from './hotel-seating.js';
 
 // NIKORA Grand Hotel sebagai halaman sendiri (/hotel.html): menara 1000 lantai yang dijelajahi dengan avatar (satu pemain).
 // Geometri 3D dari hotel-world.js dan denah dari hotel-layout.js (dipakai bersama dunia villa); halaman ini hanya
@@ -498,6 +499,7 @@ async function start() {
   const fade = $('lift-fade');
   const teleport = (level, x, z) => {
     if (journey.state !== 'idle') returnToHotel(journey.gate); // menu Jelajah selalu membawa ke hotel: akhiri perjalanan dulu
+    spot = null; // bangun dari kursi/kasur (hotel-seating.js)
     riding = null;
     fade.classList.remove('on');
     me.level = level;
@@ -604,6 +606,7 @@ async function start() {
   doorHook = (car) => carAudio.door(Math.hypot(car.x - me.x, car.z - me.z));
   hooks.action = () => {
     if (riding) return; // sedang di dalam lift
+    if (seatAction()) return; // duduk, tidur, atau berdiri dari perabot hotel (hotel-seating.js)
     if (journey.riding) {
       toast('Perjalanan sedang berlangsung. Nikmati pemandangannya, atau tekan Lewati.', 3000);
       return;
@@ -618,12 +621,59 @@ async function start() {
     } else if (me.level === 0 && !me.villa) carRide.interact(me); // buka/tutup pintu atau bagasi, atau naik lewat pintu yang sudah terbuka
   };
   hooks.horn = (down) => carRide.horn(down);
+
+  // ---------- duduk dan tidur di perabot hotel (hotel-seating.js) ----------
+  // Tombol aksi di dekat sofa, kursi, bangku, kasur, dsb. = Duduk atau Tidur; saat memakainya = Berdiri. Tiap perabot punya ukuran sendiri
+  // (panggul tepat di permukaan, kaki menapak lantai, kepala di bantal). Pemain lain melihatnya lewat id titik di kolom `sit` (id >= 100000).
+  let spot = null; // id titik duduk/tidur yang sedang dipakai, atau null
+  let spotSince = 0;
+  const spotOf = (id) => spotById(id, (level) => world.levels[level]);
+  const seatPoseOf = (id) => {
+    const s = isSpotId(id) ? spotOf(id) : null;
+    return s ? poseOfSpot(s) : null;
+  };
+  const occupiedSpots = () => {
+    const set = new Set();
+    if (multiplayer) for (const p of multiplayer.net.players) if (p.id !== multiplayer.net.id && isSpotId(p.sit)) set.add(p.sit);
+    return set;
+  };
+  const reachableSpot = () => {
+    if (spot !== null || riding || journey.state !== 'idle' || me.villa || fleet.mine) return null;
+    const room = world.roomAt(me.x, me.z, me.level);
+    return findNearestSpot({ x: me.x, z: me.z, level: me.level, room: room.id }, spotsInRoom(world.levels[me.level], room.id), occupiedSpots());
+  };
+  const seatPrompt = () => {
+    const s = reachableSpot();
+    return s ? seatLabel(s) : '';
+  };
+  const standUp = () => {
+    const s = spot === null ? null : spotOf(spot);
+    spot = null;
+    if (!s) return;
+    const p = standPoint(s, (x, z) => world.canStand(s.level, x, z) && world.roomAt(x, z, s.level).id === s.room); // tempat berdiri yang bebas di ruang yang sama
+    me.x = p.x;
+    me.z = p.z;
+  };
+  const seatAction = () => {
+    if (spot !== null) {
+      standUp();
+      return true;
+    }
+    const s = reachableSpot();
+    if (!s) return false;
+    spot = s.id;
+    spotSince = performance.now();
+    me.x = s.x;
+    me.z = s.z;
+    facing = s.pose.rotY;
+    return true;
+  };
   actBtn.addEventListener('click', () => hooks.action());
   let multiplayer = null;
   let netStatus = 'Menyambung…';
   // Multiplayer lewat LiveKit (ruang "hotel" terpisah dari vila). Dimuat belakangan: tanpa jaringan hotel tetap bisa dijelajahi sendiri.
   import('./multiplayer-view.js')
-    .then(({ startMultiplayer }) => startMultiplayer({ scene, search: window.location.search, name, world: 'hotel', poseFor: (id) => fleet.seatPose(id), useVideoCall: false, onError: (m) => { netStatus = `Offline · ${m}`; } }))
+    .then(({ startMultiplayer }) => startMultiplayer({ scene, search: window.location.search, name, world: 'hotel', poseFor: (id) => seatPoseOf(id) ?? fleet.seatPose(id), useVideoCall: false, onError: (m) => { netStatus = `Offline · ${m}`; } }))
     .then((session) => {
       multiplayer = session;
       if (!session) {
@@ -700,7 +750,8 @@ async function start() {
     const rawInput = riding || journey.riding ? { x: 0, z: 0 } : readInput();
     let move = { x: 0, z: 0 };
     const inVilla = villa.active(me); // di kompleks villa (dunia yang sama): dinding, pintu, tangga memakai fisika villa
-    if (!riding && !fleet.mine) { // di dalam mobil joystick = gas dan setir, bukan berjalan
+    if (spot !== null && Math.hypot(rawInput.x, rawInput.z) > 0.35) standUp(); // bergerak = berdiri
+    if (!riding && !fleet.mine && spot === null) { // di dalam mobil joystick = gas dan setir, bukan berjalan; di kursi/kasur diam
       move = cameraRelative(rawInput, camNow.yaw);
       move = inVilla ? villa.assist(me, move) : doorAssist(me, move, world.levels[me.level].doors);
     }
@@ -752,19 +803,36 @@ async function start() {
     }
     if (car.riding) facing = car.facing;
     shownFacing = seatPose ? seatPose.rotY : turnToward(shownFacing, facing, delta);
-    avatar.position.x = me.x;
-    avatar.position.z = me.z;
-    avatar.position.y = seatPose ? seatPose.y : me.y + (moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0);
-    avatar.rotation.y = shownFacing;
-    avatar.userData.seated = !!seatPose;
+    const sp = spot !== null ? seatPoseOf(spot) : null; // duduk atau berbaring di perabot hotel (hotel-seating.js)
+    if (sp) {
+      const ks = 1 - Math.exp(-14 * delta);
+      avatar.position.x += (sp.x - avatar.position.x) * ks;
+      avatar.position.z += (sp.z - avatar.position.z) * ks;
+      avatar.position.y += (sp.y - avatar.position.y) * ks;
+      avatar.userData.tilt = (avatar.userData.tilt ?? 0) + (sp.tilt - (avatar.userData.tilt ?? 0)) * ks;
+      avatar.rotation.y = sp.rotY;
+      shownFacing = sp.rotY;
+    } else {
+      avatar.position.x = me.x;
+      avatar.position.z = me.z;
+      avatar.position.y = seatPose ? seatPose.y : me.y + (moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0);
+      avatar.rotation.y = shownFacing;
+      avatar.userData.tilt = (avatar.userData.tilt ?? 0) * Math.exp(-14 * delta);
+    }
+    avatar.userData.seated = !!seatPose || (sp ? sp.tilt === 0 : false);
+    avatar.userData.seatHip = sp?.legs?.hip ?? null; // sudut paha menyesuaikan tinggi dudukan (avatar.js)
+    avatar.userData.seatLift = sp?.lift ?? 0;
     avatar.userData.seatKind = seatPose ? 'car' : null; // kursi mobil: kaki avatar manusia maju ke bawah dasbor, bukan menjuntai seperti di kursi biasa (avatar-human.js)
     applyPose(avatar, moving ? 'walk' : null, time / 1000, delta);
+    avatar.rotation.x += avatar.userData.tilt ?? 0; // applyPose menulis rotation.x: tambahkan kemiringan tidur sesudahnya
     // duduk di mobil: kaki ke depan dan punggung bersandar sesuai tinggi atap supaya kepala tidak menembus atap; avatar sederhana dan manusia (car-seat-pose.js)
     if (seatPose) applyCarSeat(avatar, seatPose.fit);
     const others = multiplayer ? multiplayer.net.players.filter((p) => p.id !== multiplayer.net.id) : [];
     if (multiplayer) {
       multiplayer.view.update(delta, time / 1000); // pemain lain
-      multiplayer.sendInput(move.x, move.z, facing, time, fleet.sitId, { x: me.x, z: me.z, y: me.y }); // sit = kursi mobil (id >= 1000) atau null
+      multiplayer.sendInput(move.x, move.z, facing, time, fleet.sitId ?? spot, { x: me.x, z: me.z, y: me.y }); // sit = kursi mobil (id >= 1000), titik duduk/tidur hotel (id >= 100000), atau null
+      const mineNet = multiplayer.net.players.find((p) => p.id === multiplayer.net.id);
+      if (mineNet && spot !== null && time - spotSince > 800 && mineNet.sit !== spot) standUp(); // titik sudah dipakai orang lain: berdiri
     }
     const online = multiplayer ? (multiplayer.net.status === 'reconnecting' ? 'Menyambung ulang…' : `Online: ${others.length + 1}`) : netStatus;
     if ($('online').textContent !== online) $('online').textContent = online;
@@ -852,7 +920,8 @@ async function start() {
     liftPanel.update(!riding && !fleet.mine && !inVilla && journey.state === 'idle' && !!world.liftAt(me.x, me.z), me.level);
     // tombol aksi: Turun saat di mobil; berjalan kaki di dekat mobil = aksi bagian yang didekati (Buka pintu kanan, Naik, Buka bagasi, ...)
     const carPrompt = !riding && !fleet.mine && me.level === 0 && !me.villa ? carRide.prompt(me) : '';
-    const actText = riding || journey.riding ? '' : fleet.mine ? 'Turun' : carPrompt;
+    const seatText = riding || journey.riding || fleet.mine ? '' : spot !== null ? 'Berdiri' : seatPrompt();
+    const actText = riding || journey.riding ? '' : fleet.mine ? 'Turun' : seatText || carPrompt;
     if (actText && actBtn.textContent !== actText) {
       actBtn.textContent = actText;
       const long = actText.length > 6; // tulisan panjang ("Buka pintu kanan") dikecilkan dan dibungkus supaya muat di tombol bulat
@@ -930,6 +999,8 @@ async function start() {
     cockpit: () => cockpitOn, // kamera kabin aktif (pengujian)
     cycleCamera: () => hooks.camera(), // sama dengan tombol kamera (pengujian)
     driving: () => (fleet.driving ? { model: fleet.driving.model, speed: fleet.driving.speed, engine: fleet.driving.engine, steer: fleet.driving.steer, slip: fleet.driving.slip, tyreTemp: fleet.driving.tyreTemp } : null),
+    seat: () => ({ spot, pose: spot === null ? null : seatPoseOf(spot), prompt: seatPrompt() }), // pengujian: titik duduk/tidur saat ini
+    sit: () => seatAction(), // sama dengan tombol aksi saat berjalan kaki (pengujian)
     teleport, // hanya untuk pengujian dan menu Jelajah
     valet: () => { const v = valet(); return v ? { id: v.slot.id, block: v.slot.block, ev: v.slot.ev, stand: v.stand } : null; }, // slot pilihan valet (pengujian)
     gatePrompt: () => null, // tombol gerbang sudah tidak ada: lorong dimasuki otomatis saat melewati gerbang
