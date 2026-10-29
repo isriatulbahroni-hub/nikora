@@ -10,7 +10,7 @@ import { DOOR_HEIGHT, wallToRect } from './villa-layout.js';
 import { bedGeometries } from './villa-props.js';
 import { LAMP_COLOR, propParts } from './hotel-props.js';
 import {
-  HOTEL_BUILDING, HOTEL_CANOPY, HOTEL_CORE, HOTEL_FORECOURT, HOTEL_FOUNTAIN, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_PARKING, HOTEL_SITE,
+  HOTEL_BUILDING, HOTEL_CANOPY, HOTEL_FORECOURT, HOTEL_FOUNTAIN, HOTEL_LEVEL_COUNT, HOTEL_LEVEL_HEIGHT, HOTEL_PARKING, HOTEL_SITE,
   HOTEL_TOP_LEVEL, HOTEL_TOP_Y, HOTEL_WALL_HEIGHT, LIFTS, PODIUM_LEVELS, SKY_WALK, TOWER_CENTER, TOWER_ZONE_LEVELS, getHotelWorld, hotelFootprint, hotelLevelY, isGuestLevel, isSkyLobbyLevel,
 } from './hotel-layout.js';
 import { HIGHWAY_HALF } from './highway.js';
@@ -27,7 +27,6 @@ const BOX = new THREE.BoxGeometry(1, 1, 1);
 const GOLD = 0xc9a24b;
 const CREAM = 0xf1e9d6;
 const INTERIOR_WINDOW = 1; // lantai di atas dan di bawah pemain yang interiornya ikut dibangun (selain podium)
-const FLOOR_COLORS = { lobby: 0xe9e2d2, restaurant: 0xc7b394, kitchen: 0xbcc2c5, hall: 0xd2b27a, bridal: 0xeed9d4, meeting: 0x9aa3ad, spa: 0xd9d0bf, pool: 0x4aa7c9, gym: 0x4b4f55, shop: 0xded6c6, prayer: 0x2e6b4f, kids: 0xf0c75e, cinema: 0x3a1f2e, games: 0x2b2f4a, library: 0x7a5a3c, guest: 0xb89a72, lounge: 0xa98e6a, suite: 0xcdb28a, terrace: 0xc9bda3, core: 0xd9d3c4 };
 
 function instancedBoxes(parent, items, material, { cast = false, receive = false } = {}) {
   if (!items.length) return null;
@@ -114,7 +113,7 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     asphalt: std(0x2c2e33, { roughness: 0.95 }), line: std(0xf2f0e4, { roughness: 0.7 }), curb: std(0xcfcfc8), stone: std(0xd9d2c3, { roughness: 0.85 }),
     gold: std(GOLD, { roughness: 0.35, metalness: 0.75 }), wall: std(CREAM, { roughness: 0.9 }), slab: std(0xe3dccb), dark: std(0x1a1b1f),
     glass: new THREE.MeshStandardMaterial({ color: 0x9fd0e6, roughness: 0.06, metalness: 0.25, transparent: true, opacity: 0.3, depthWrite: false }),
-    floor: std(0xffffff, { roughness: 0.55 }), light: new THREE.MeshBasicMaterial({ color: 0xfff0c8 }), water: std(0x35a7d9, { roughness: 0.1, emissive: 0x0a3550, emissiveIntensity: 0.6 }),
+    light: new THREE.MeshBasicMaterial({ color: 0xfff0c8 }), water: std(0x35a7d9, { roughness: 0.1, emissive: 0x0a3550, emissiveIntensity: 0.6 }),
     leaf: std(0x2f6f3a), trunk: std(0x6b4a2f), prop: std(0xffffff, { roughness: 0.7 }), vertex: std(0xffffff, { vertexColors: true, roughness: 0.7 }),
   };
 
@@ -225,7 +224,6 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     const L = world.levels[l];
     const y0 = hotelLevelY(l);
     const F = hotelFootprint(l); // tapak lantai ini: menyempit ke atas
-    const floors = [];
     const walls = [];
     const glass = [];
     const mullions = [];
@@ -239,9 +237,8 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     const liftDoors = [];
     const perimeterGlass = l < PODIUM_LEVELS || l >= HOTEL_TOP_LEVEL; // di antara itu, kulit kaca meruncing yang dipakai
 
-    floors.push(rectBox(F, y0 + 0.02, 0.04, { color: isGuestLevel(l) ? 0x6b2330 : 0xe7e0d0 }));
-    for (const r of L.rooms) if (r.kind !== 'core') floors.push(rectBox(r.rect, y0 + 0.045, 0.03, { color: FLOOR_COLORS[r.kind] ?? 0xddd5c3 }));
-    floors.push(rectBox(HOTEL_CORE, y0 + 0.045, 0.03, { color: FLOOR_COLORS.core }));
+    // Lantai digambar hotel-luxe.js (satu lapis marmer/parket/karpet). Jangan menggambar lantai lain setinggi y0..y0+0.07: lapisan hampir sejajar
+    // saling berebut kedalaman di HP dan muncul sebagai garis berkedip di lantai.
     for (const w of L.walls) {
       const len = w.b - w.a;
       const mid = (w.a + w.b) / 2;
@@ -294,7 +291,6 @@ export function buildHotelWorld(scene, { anisotropy = 8 } = {}) {
     }
     for (const lift of LIFTS) liftDoors.push({ x: (lift.rect[0] + lift.rect[2]) / 2, y: y0 + 1.5, z: lift.rect[1] + 0.05, sx: 2.6, sy: 3.0, sz: 0.08 });
 
-    instancedBoxes(group, floors, M.floor, { receive: true });
     instancedBoxes(group, walls, M.wall, { cast: true, receive: true });
     instancedBoxes(group, lintels, M.wall, { cast: true });
     instancedBoxes(group, mullions, M.gold, { cast: true });
