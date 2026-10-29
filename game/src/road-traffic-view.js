@@ -1,13 +1,14 @@
-// Menggambar lalu lintas karyawan villa di jalan perjalanan (villa-road-traffic.js) di dalam grup dunia perjalanan (bingkai rute: tinggi jalan = frameAt.y).
+// Menggambar lalu lintas di jalan perjalanan (villa-road-traffic.js untuk villa, road-ambient-traffic.js untuk tempat acara lain) di dalam grup dunia perjalanan (bingkai rute: tinggi jalan = frameAt.y).
 // Satu InstancedMesh per bagian kendaraan (bentuk dari hotel-vehicle-parts.js, bahan sendiri), jadi motor, mobil, dan bus hanya beberapa draw call berapa pun
 // jumlahnya. Hanya kendaraan dalam jarak DRAW_R dari kamera yang digambar; sisanya cuma dihitung. Kendaraan hanya tampilan (tidak ikut fisika mobil pemain).
-// Arah 'out' (menuju villa) memakai lajur kiri, arah 'back' lajur seberangnya, masing-masing di sisi median; muncul dan hilang halus di kedua ujung rute.
+// Arah 'out' (menuju tempat acara) memakai lajur kiri, arah 'back' lajur seberangnya, masing-masing di sisi median; muncul dan hilang halus di kedua ujung rute.
 import * as THREE from 'three';
 import { clamp, frameAt } from './journey.js';
 import { MEDIAN_WIDTH } from './highway.js';
 import { flareHalf } from './journey-world.js';
 import { VEHICLE_KINDS } from './hotel-vehicle-parts.js';
 import { journeyProfile, trafficAt } from './villa-road-traffic.js';
+import { ambientProfile, ambientTrafficAt } from './road-ambient-traffic.js';
 
 export const DRAW_R = 320; // m dari kamera
 export const CAPS = Object.freeze({ motor: 28, car: 12, bus: 6 });
@@ -91,22 +92,21 @@ function createSet({ parent, mats, kind, capacity, riders = false }) {
 }
 
 /**
- * group = world.group dunia perjalanan villa (bingkai rute); j = rute (buildJourney); secondsNow() = detik dalam sehari (jam asli di zona acara).
+ * Inti tampilan: length = panjang rute (m); trafficFn(detikDalamSehari, buf) mengisi dan mengembalikan daftar { kind, dir, s, color } kendaraan di jalan.
  * Panggil update({ x, z }) tiap frame dengan posisi kamera di bingkai rute (worldToLocal).
  */
-export function createRoadTrafficView({ group, j, secondsNow }) {
+function createTrafficView({ group, j, secondsNow, length: L, trafficFn }) {
   const mats = makeMaterials();
   const sets = {
     motor: createSet({ parent: group, mats, kind: 'motor', capacity: CAPS.motor, riders: true }),
     car: createSet({ parent: group, mats, kind: 'car', capacity: CAPS.car }),
     bus: createSet({ parent: group, mats, kind: 'bus', capacity: CAPS.bus }),
   };
-  const L = journeyProfile().length;
   const buf = [];
   let last = { active: 0, drawn: 0 };
   return {
     update(cam) {
-      const list = trafficAt(secondsNow(), buf);
+      const list = trafficFn(secondsNow(), buf);
       const used = { motor: 0, car: 0, bus: 0 };
       for (const v of list) {
         const s = clamp(v.s, 0, L);
@@ -133,4 +133,20 @@ export function createRoadTrafficView({ group, j, secondsNow }) {
       for (const m of Object.values(mats)) m.dispose();
     },
   };
+}
+
+/**
+ * Villa: karyawan pulang-pergi (villa-road-traffic.js).
+ * group = world.group dunia perjalanan villa (bingkai rute); j = rute (buildJourney); secondsNow() = detik dalam sehari (jam asli di zona acara).
+ */
+export function createRoadTrafficView({ group, j, secondsNow }) {
+  return createTrafficView({ group, j, secondsNow, length: journeyProfile().length, trafficFn: trafficAt });
+}
+
+/**
+ * Tempat acara lain (hall, royal, masjid): lalu lintas umum menurut jam (road-ambient-traffic.js). venue = id gerbang.
+ * Parameter lain sama dengan createRoadTrafficView.
+ */
+export function createAmbientTrafficView({ group, j, secondsNow, venue }) {
+  return createTrafficView({ group, j, secondsNow, length: ambientProfile(venue, j).length, trafficFn: (t, out) => ambientTrafficAt(venue, t, out, j) });
 }
