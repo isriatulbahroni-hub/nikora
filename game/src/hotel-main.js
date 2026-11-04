@@ -28,6 +28,7 @@ import { VILLA_APPROACH, createHotelVilla } from './hotel-villa.js';
 import { createHotelJourney } from './hotel-journey.js';
 import { alongOf } from './hotel-journey-math.js';
 import { createHotelLife } from './hotel-life.js';
+import { KNOCKDOWN, knockDistance, knockdownPose } from './hotel-life-data.js';
 import { createHotelAmbience } from './hotel-ambience.js';
 import { findNearestSpot, isSpotId, poseOfSpot, seatLabel, spotById, spotsInRoom, standPoint } from './hotel-seating.js';
 
@@ -375,6 +376,14 @@ async function start() {
   // Dibungkus try/catch: bila gagal dibuat atau galat saat berjalan, efek itu dimatikan sendiri dan hotel tetap jalan.
   // ?lalin=0 mematikan lalu lintas, ?burung=0 burung, ?suara=0 suara sekitar.
   let life = null;
+  // Tertabrak lalu lintas (hotel-life.js melaporkan { hit }): terlempar searah laju kendaraan, terbaring, bangun, lalu kebal sebentar.
+  let down = null;
+  let immuneUntil = 0;
+  const KIND_LABEL = { car: 'mobil', motor: 'motor', bus: 'bus', truck: 'truk' };
+  const startKnockdown = (h, now) => {
+    down = { t0: now, dirX: h.dirX, dirZ: h.dirZ, distance: knockDistance(h.speed), slid: 0, lie: 0 };
+    toast(`Kamu tertabrak ${KIND_LABEL[h.kind] ?? 'kendaraan'}!`, 2800);
+  };
   let ambience = null;
   try {
     life = createHotelLife({ scene, low: lowQuality, search: window.location.search });
@@ -747,7 +756,7 @@ async function start() {
     const delta = Math.min((time - last) / 1000, 0.05);
     last = time;
 
-    const rawInput = riding || journey.riding ? { x: 0, z: 0 } : readInput();
+    const rawInput = down || riding || journey.riding ? { x: 0, z: 0 } : readInput(); // tertabrak: tidak bisa bergerak sampai bangun
     let move = { x: 0, z: 0 };
     const inVilla = villa.active(me); // di kompleks villa (dunia yang sama): dinding, pintu, tangga memakai fisika villa
     if (spot !== null && Math.hypot(rawInput.x, rawInput.z) > 0.35) standUp(); // bergerak = berdiri
@@ -773,6 +782,24 @@ async function start() {
       }
       facing = Math.atan2(-move.x, -move.z);
       walkClock += delta;
+    }
+
+    if (down) { // terlempar searah laju kendaraan (menabrak dinding berhenti), terbaring, lalu bangun (knockdownPose)
+      const kp = knockdownPose((time - down.t0) / 1000);
+      if (kp.phase === 'done') {
+        down = null;
+        immuneUntil = time + KNOCKDOWN.immune * 1000;
+      } else {
+        const want = kp.slide * down.distance;
+        const step = want - down.slid;
+        if (step > 0 && !inVilla && journey.state === 'idle') {
+          const next = world.move(me, down.dirX * step, down.dirZ * step);
+          me.x = next.x;
+          me.z = next.z;
+        }
+        down.slid = want;
+        down.lie = kp.lie;
+      }
     }
 
     // perjalanan lift: tinggi berubah halus, lantai tujuan menjadi nyata di akhir
@@ -818,6 +845,10 @@ async function start() {
       avatar.position.y = seatPose ? seatPose.y : me.y + (moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0);
       avatar.rotation.y = shownFacing;
       avatar.userData.tilt = (avatar.userData.tilt ?? 0) * Math.exp(-14 * delta);
+    }
+    if (down) { // terbaring telentang menurut tahap tertabrak; sedikit diturunkan supaya badan rebah di aspal
+      avatar.userData.tilt = down.lie * (Math.PI / 2);
+      avatar.position.y -= down.lie * 0.15;
     }
     avatar.userData.seated = !!seatPose || (sp ? sp.tilt === 0 : false);
     avatar.userData.seatHip = sp?.legs?.hip ?? null; // sudut paha menyesuaikan tinggi dudukan (avatar.js)
@@ -949,7 +980,11 @@ async function start() {
     })();
     if (life) {
       try {
-        life.update({ time: time / 1000, me, night: nightK, rain: rainK, active: journey.state === 'idle' }); // disembunyikan selama lorong (dunia lain)
+        const lifeNow = life.update({
+          time: time / 1000, me, night: nightK, rain: rainK, active: journey.state === 'idle', // disembunyikan selama lorong (dunia lain)
+          hittable: !down && time >= immuneUntil && !riding && !fleet.mine && fleet.sitId == null && spot === null && !inVilla && journey.state === 'idle' && me.level === 0,
+        });
+        if (lifeNow?.hit) startKnockdown(lifeNow.hit, time);
       } catch (error) {
         console.warn('[hotel] lalu lintas dan burung dimatikan karena galat', error);
         try { life.dispose(); } catch { /* sudah dibuang */ }
@@ -985,6 +1020,7 @@ async function start() {
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio() }),
     places: () => places,
     staff: () => staffView.stats(), // petugas yang sedang digambar (pengujian)
+    knocked: () => !!down, // sedang terlempar atau terbaring setelah tertabrak (pengujian)
     life: () => life?.info() ?? null, // lalu lintas dan burung (pengujian); null bila dimatikan
     ambience: () => ambience?.info() ?? null, // suara sekitar (pengujian); null bila dimatikan
     sky: () => sky.info(), // langit dan lampu saat ini (pengujian)

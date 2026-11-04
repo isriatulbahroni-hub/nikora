@@ -1,6 +1,7 @@
 // Data murni untuk lalu lintas dan burung di sekitar hotel (tanpa THREE, diuji di hotel-life-data.test.js). Gambar 3D: hotel-life.js.
 // Lalu lintas berjalan di Lingkar NIKORA (RING di highway.js): persegi bersudut membulat, empat lajur per arah, lalu lintas di sisi KIRI
-// (sama dengan highway.js). Hanya pemandangan: tidak ada tabrakan dengan pemain, jadi kendaraan lalu lintas mengecil halus bila terlalu dekat.
+// (sama dengan highway.js). Kendaraan selalu tampil utuh dan tetap melaju: bila pemain berada di badannya (hitVehicle) pemain tertabrak,
+// terlempar, terbaring sebentar, lalu bangun (knockdownPose).
 import { HUB, LANES_PER_DIRECTION, LANE_WIDTH, MEDIAN_WIDTH, RING } from './highway.js';
 
 const TAU = Math.PI * 2;
@@ -156,8 +157,54 @@ export function mixedTrafficSpecs({ lanes = LANES_PER_DIRECTION, perLane = 9, sk
 /** Pose { x, z, heading } sebuah kendaraan lalu lintas pada waktu t (detik). */
 export const trafficPose = (spec, t) => lanePath(spec.lane, spec.ccw).at(spec.u0 + spec.speed * t);
 
-/** Skala 0..1 kendaraan lalu lintas menurut jarak ke pemain: penuh di >= far, hilang di <= near (tidak ada tabrakan, jadi menyingkir halus). */
-export const proximityScale = (dist, near = 34, far = 60) => smooth(near, far, dist);
+/**
+ * Kotak badan kendaraan (m) di sumbu kendaraan: front/back = jarak dari titik pose ke ujung depan/belakang, half = setengah lebar.
+ * Mengikuti bentuk di hotel-vehicle-parts.js (mobil 4,7 x 1,95; motor 1,7 x 0,4 dengan pengendara; bus 11,5 x 2,5; truk dengan kabin di depan).
+ */
+export const VEHICLE_HITBOX = Object.freeze({
+  car: Object.freeze({ front: 2.35, back: 2.35, half: 0.98 }),
+  motor: Object.freeze({ front: 0.95, back: 0.95, half: 0.3 }),
+  bus: Object.freeze({ front: 5.75, back: 5.75, half: 1.27 }),
+  truck: Object.freeze({ front: 3.7, back: 4.1, half: 1.2 }),
+});
+/** Jari-jari badan pemain (m) untuk uji tabrakan. */
+export const PLAYER_RADIUS = 0.35;
+
+/**
+ * Apakah titik `point` {x, z} (pemain) menyentuh badan kendaraan berpose `pose` {x, z, heading}? heading seperti vehicle.js: maju = (sin h, cos h).
+ * Mengembalikan null bila tidak kena, atau arah dorong kendaraan { dirX, dirZ } (searah laju kendaraan) bila kena.
+ */
+export function hitVehicle(pose, kind, point, radius = PLAYER_RADIUS) {
+  const box = VEHICLE_HITBOX[kind] ?? VEHICLE_HITBOX.car;
+  const dx = point.x - pose.x;
+  const dz = point.z - pose.z;
+  const sin = Math.sin(pose.heading);
+  const cos = Math.cos(pose.heading);
+  const along = dx * sin + dz * cos; // + = di depan titik pose
+  const side = dx * cos - dz * sin; // + = sisi kanan kendaraan
+  if (along < -box.back - radius || along > box.front + radius || Math.abs(side) > box.half + radius) return null;
+  return { dirX: sin, dirZ: cos };
+}
+
+/** Lama tiap tahap tertabrak (detik): terlempar, terbaring, bangun; lalu kebal sebentar supaya tidak tertabrak berulang. */
+export const KNOCKDOWN = Object.freeze({ fly: 0.8, lie: 1.8, rise: 0.9, immune: 2.5 });
+/** Jarak lemparan (m) menurut laju kendaraan (m/s): kendaraan cepat melempar lebih jauh. */
+export const knockDistance = (speed) => clamp(speed * 0.3, 3, 8);
+
+/**
+ * Pose pemain yang tertabrak pada detik ke-`elapsed`: slide 0..1 (bagian lemparan yang sudah ditempuh, melambat), lie 0..1 (0 berdiri, 1 terbaring),
+ * phase = 'fly' | 'lie' | 'rise' | 'done'.
+ */
+export function knockdownPose(elapsed) {
+  const { fly, lie, rise } = KNOCKDOWN;
+  if (elapsed < fly) {
+    const t = clamp(elapsed / fly, 0, 1);
+    return { phase: 'fly', slide: 1 - (1 - t) * (1 - t), lie: smooth(0, 0.5, t) };
+  }
+  if (elapsed < fly + lie) return { phase: 'lie', slide: 1, lie: 1 };
+  if (elapsed < fly + lie + rise) return { phase: 'rise', slide: 1, lie: 1 - smooth(0, 1, (elapsed - fly - lie) / rise) };
+  return { phase: 'done', slide: 1, lie: 0 };
+}
 
 /** Kekuatan lampu kendaraan lalu lintas 0..1: menyala saat gelap atau hujan lebat. night 0..1 (nightLevel), rain 0..1. */
 export const lightLevel = (night, rain) => clamp(Math.max(smooth(0.12, 0.5, night), smooth(0.25, 0.6, rain) * 0.9), 0, 1);

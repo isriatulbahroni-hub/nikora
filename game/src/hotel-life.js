@@ -1,20 +1,19 @@
 import * as THREE from 'three';
 import { LANES_PER_DIRECTION } from './highway.js';
-import { birdPose, birdSpecs, birdVisibility, lightLevel, mixedTrafficSpecs, proximityScale, trafficPose } from './hotel-life-data.js';
+import { birdPose, birdSpecs, birdVisibility, lightLevel, hitVehicle, mixedTrafficSpecs, trafficPose } from './hotel-life-data.js';
 import { createVehicleSet, setVehicleLights } from './hotel-vehicle-parts.js';
 import { buildAircraft } from './hotel-aircraft.js';
 
 // Hotel dan jalan terasa hidup (THREE): lalu lintas campuran (mobil, motor, bus, truk; lampu menyala saat gelap dan hujan) di Lingkar NIKORA
 // dan burung yang mengitari tapak di siang hari, serta helikopter dan pesawat yang mengorbit menara (hotel-aircraft.js, dipasang di sini karena
 // modul ini sudah dipanggil tiap frame oleh hotel-main.js). Data dan matematikanya di hotel-life-data.js (diuji); bentuk kendaraan di
-// hotel-vehicle-parts.js (dipakai bersama hotel-commute.js). Hanya pemandangan: tidak ada tabrakan; kendaraan lalu lintas mengecil halus bila
-// terlalu dekat pemain. ?lalin=0 mematikan lalu lintas, ?burung=0 burung, ?pesawat=0 helikopter dan pesawat. Lajur dalam sisi utara dikosongkan
+// hotel-vehicle-parts.js (dipakai bersama hotel-commute.js). Kendaraan selalu tampil utuh dan tetap melaju; bila pemain berada di badan
+// kendaraan, update() melaporkan tabrakan ({ hit }) dan hotel-main.js melempar pemain. ?lalin=0 mematikan lalu lintas, ?burung=0 burung, ?pesawat=0 helikopter dan pesawat. Lajur dalam sisi utara dikosongkan
 // untuk kendaraan karyawan (COMMUTE_LANE).
 // Yang SUDAH ada dan tidak diulang: petugas (hotel-staff-view.js), karyawan pulang-pergi (hotel-commute.js), langit dan lampu (hotel-sky.js),
 // hujan (rain-boot.js). Suara sekitar ada di hotel-ambience.js.
 
-const NEAR = 7; // m: lebih dekat dari ini kendaraan lalu lintas menghilang (tanpa tabrakan); jalan tetap terasa ramai di sekitar pemain
-const FAR = 18;
+const HIT_RANGE = 14; // m: hanya kendaraan yang sedekat ini ke pemain yang diperiksa tabrakannya (badan terpanjang: bus 11,5 m)
 
 export function createHotelLife({ scene, low = false, search = '' } = {}) {
   const q = new URLSearchParams(search);
@@ -70,17 +69,26 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
   return {
     root,
     info: () => ({ cars: specs.length, kinds: Object.fromEntries(sets.map(({ list, set }) => [set.kind, list.length])), birds: birdList.length, aircraft: aircraft?.info() ?? null, lights: level }),
-    /** Tiap frame: time detik, me = pemain {x, z}, night 0..1 (nightLevel), rain 0..1, active = false selama perjalanan lorong (dunia berbeda). */
-    update({ time, me, night = 0, rain = 0, active = true }) {
+    /**
+     * Tiap frame: time detik, me = pemain {x, z}, night 0..1 (nightLevel), rain 0..1, active = false selama perjalanan lorong (dunia berbeda).
+     * hittable = pemain boleh tertabrak sekarang (berjalan kaki di luar, tidak sedang terbaring/kebal/di kendaraan). Mengembalikan
+     * { hit: { id, kind, speed, dirX, dirZ } } untuk kendaraan pertama yang mengenai pemain, atau { hit: null }.
+     */
+    update({ time, me, night = 0, rain = 0, active = true, hittable = false }) {
       root.visible = active;
-      if (!active) return;
+      let hit = null;
+      if (!active) return { hit };
       if (sets.length) {
         level = lightLevel(night, rain);
         setVehicleLights(level);
         for (const { list, set } of sets) {
           for (let i = 0; i < list.length; i++) {
             const p = trafficPose(list[i], time);
-            set.place(i, p.x, p.z, p.heading, proximityScale(Math.hypot(p.x - me.x, p.z - me.z), NEAR, FAR), list[i].color);
+            set.place(i, p.x, p.z, p.heading, 1, list[i].color);
+            if (hittable && !hit && Math.abs(p.x - me.x) < HIT_RANGE && Math.abs(p.z - me.z) < HIT_RANGE) {
+              const h = hitVehicle(p, list[i].kind, me);
+              if (h) hit = { id: list[i].id, kind: list[i].kind, speed: list[i].speed, dirX: h.dirX, dirZ: h.dirZ };
+            }
           }
           set.commit(list.length);
         }
@@ -116,6 +124,7 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
           aircraft = null;
         }
       }
+      return { hit };
     },
     dispose() {
       scene.remove(root);
