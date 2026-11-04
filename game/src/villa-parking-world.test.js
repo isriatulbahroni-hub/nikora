@@ -69,9 +69,15 @@ test('parkir villa: villa-world.js memasang parkir 3D, memanggil update tiap bin
   const world = source('villa-world.js');
   assert.match(world, /import \{ buildVillaParking \} from '\.\/villa-parking-world\.js';/);
   assert.match(world, /import \{ inParkingKeepOut \} from '\.\/villa-parking\.js';/);
-  assert.match(world, /const parking = buildVillaParking\(root\);/);
-  assert.match(world, /parking\.update\(delta\);/);
+  // parkir bisa dimatikan lewat { parking: false } (dunia hotel memakai halaman depan sendiri, lihat hotel-villa.js)
+  assert.match(world, /const parking = withParking \? buildVillaParking\(root\) : null;/);
+  assert.match(world, /parking\?\.update\(delta\);/);
   assert.match(world, /if \(!inParkingKeepOut\(bush\.x, bush\.z, 1\.5\)\) bushes\.push\(bush\);/);
+});
+
+test('parkir villa: dunia hotel mematikan parkir luas villa (parking: false), villa mandiri tetap memasangnya', () => {
+  assert.match(source('hotel-villa.js'), /buildVillaWorld\(staging, noTrees, \{ parking: false \}\)/);
+  assert.match(source('villa-world.js'), /parking: withParking = true/);
 });
 
 test('parkir villa: villa-layout.js menolak pohon di lahan parkir; modul 3D hanya bergantung pada three dan villa-parking.js', () => {
