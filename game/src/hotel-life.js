@@ -11,13 +11,13 @@ import { createRain3D } from './rain-3d.js';
 // hotel-vehicle-parts.js (dipakai bersama hotel-commute.js). Kendaraan selalu tampil utuh dan tetap melaju; bila pemain berada di badan
 // kendaraan, update() melaporkan tabrakan ({ hit }) dan hotel-main.js melempar pemain. ?lalin=0 mematikan lalu lintas, ?burung=0 burung, ?pesawat=0 helikopter dan pesawat. Lajur dalam sisi utara dikosongkan
 // untuk kendaraan karyawan (COMMUTE_LANE).
-// update() juga melaporkan kendaraan yang cukup dekat untuk terdengar ({ sources }); hotel-main.js meneruskannya ke hotel-traffic-audio.js (suara mesin).
 // Hujan 3D (rain-3d.js: tetes di dunia yang terhalang kanopi, percikan, genangan, dunia basah) juga dipasang dan dilangkahkan dari sini, sebelum
 // pemeriksaan `active`, jadi tetap turun selama lorong perjalanan. ?hujan3d=0 mematikannya. Galat di dalamnya hanya mematikan hujan 3D.
 // Yang SUDAH ada dan tidak diulang: petugas (hotel-staff-view.js), karyawan pulang-pergi (hotel-commute.js), langit dan lampu (hotel-sky.js),
 // jadwal, kilat, suara, dan getar hujan (rain-boot.js). Suara sekitar ada di hotel-ambience.js.
 
 const HIT_RANGE = 14; // m: hanya kendaraan yang sedekat ini ke pemain yang diperiksa tabrakannya (badan terpanjang: bus 11,5 m)
+// update() juga melaporkan kendaraan yang cukup dekat untuk terdengar ({ sources }); hotel-main.js meneruskannya ke hotel-traffic-audio.js (suara mesin).
 const SOUND_RANGE = 120; // m: kendaraan yang lebih jauh dari ini tidak mungkin terdengar (jangkauan terjauh di hotel-traffic-audio.js: bus dan truk)
 const NO_SOURCES = Object.freeze([]);
 
