@@ -14,8 +14,8 @@ export const LAGOON_POOL = Object.freeze({
   rect: Object.freeze([100, 512, 138, 558]),
   x: 119, z: 535, width: 38, depth: 46,
   waterY: -0.12, // 18 cm di bawah dek, seperti pool-demo-main.js
-  floorY: -1.6,
-  shelfY: -0.55, // "tanning ledge": bagian dangkal di sisi barat
+  floorY: -2.6, // dasar kolam (kedalaman air 2,48 m): cukup dalam untuk berenang dan menyelam (swim.js)
+  shelfY: -0.55, // "tanning ledge": bagian dangkal di sisi barat (kedalaman air 0,43 m: berjalan di air)
   design: 'lagoon', // pool-water-logic.js
 });
 
@@ -46,12 +46,14 @@ export const FALLS = Object.freeze([
 const rectToCollider = (r) => Object.freeze({ minX: r[0], maxX: r[2], minZ: r[1], maxZ: r[3] });
 const box = (x, z, hx, hz) => rectToCollider([x - hx, z - hz, x + hx, z + hz]);
 
-// Kolam tidak bisa dimasuki: seluruh persegi air tertutup kecuali dermaga dan peron.
-export const WATER_BLOCKS = Object.freeze([
-  [100, 512, 129, 533], [129, 512, 138, 531.5], // utara dermaga
-  [100, 537, 129, 558], [129, 538.5, 138, 558], // selatan dermaga
-  [133, 531.5, 138, 538.5], // ujung peron sampai kaki air terjun
-].map(Object.freeze));
+// Dua "tanning ledge" dangkal di sisi barat kolam (dasar di shelfY); selebihnya dasar kolam di floorY. Dipakai renderer dan swim.js.
+export const LAGOON_SHELVES = Object.freeze([[100, 514, 110, 531], [100, 539, 110, 556]].map(Object.freeze));
+/** Tinggi dasar kolam di (x, z). */
+export const lagoonFloorY = (x, z) => (LAGOON_SHELVES.some((r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3]) ? LAGOON_POOL.shelfY : LAGOON_POOL.floorY);
+
+// Kolam bisa dimasuki dan dipakai berenang (swim.js). Tidak ada penghalang air lagi: tepi kolam di timur adalah tebing (CLIFF_COLLIDERS),
+// dan dermaga tetap bisa dijalani. Daftar kosong dipertahankan supaya pemanggil lama tidak patah.
+export const WATER_BLOCKS = Object.freeze([]);
 
 /** Titik (x, z) di atas dermaga atau peron. */
 export const onPier = (x, z) => PIER_WALK.some((r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3]);
@@ -124,7 +126,7 @@ export function cliffBlocks() {
   CLIFF.profile.forEach(([z0, z1, h], i) => {
     const fall = FALLS.find((f) => f.z > z0 && f.z < z1); // air terjun yang jatuh di jalur ini (bila ada)
     const jitter = fall ? 0 : rand() * 0.5;
-    out.push({ minX: CLIFF.faceX - jitter, maxX: CLIFF.backX, minY: -1.6, maxY: h, minZ: z0, maxZ: z1, color: ROCK_COLORS[i % ROCK_COLORS.length] });
+    out.push({ minX: CLIFF.faceX - jitter, maxX: CLIFF.backX, minY: LAGOON_POOL.floorY, maxY: h, minZ: z0, maxZ: z1, color: ROCK_COLORS[i % ROCK_COLORS.length] });
     // pita lapisan batu hanya di bagian yang tidak dilewati air
     const parts = fall ? [[z0, fall.z - fall.width / 2 - 0.4], [fall.z + fall.width / 2 + 0.4, z1]] : [[z0, z1]];
     for (let y = 1.7; y < h - 0.4; y += 1.7) {

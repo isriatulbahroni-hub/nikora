@@ -30,12 +30,17 @@ function applyHuman(rig, p) {
   set('Neck', rx(-p.headComp * B * 0.5));
   set('Head', mul(rx(-p.headComp * B * 0.5), ry(p.headTurn)));
   for (const [side, sgn] of [['Right', 1], ['Left', -1]]) {
+    const o = side === 'Right' ? 'R' : 'L'; // gerak renang: tiap sisi boleh beda (armFwdR, hipFlexL, ...); tanpa override = simetris
+    const armFwd = p[`armFwd${o}`] ?? p.armFwd;
+    const armHang = p[`armHang${o}`] ?? p.armHang;
+    const hipFlex = p[`hipFlex${o}`] ?? p.hipFlex;
+    const knee = p[`knee${o}`] ?? p.knee;
     // lengan: turun dari T-pose, ayun ke depan, silang ke tengah; dikurangi bungkuk badan agar tetap menggantung di dunia
-    set(`${side}Arm`, mul(rx(-B), ry(sgn * p.armYaw), rx(-p.armFwd), rz(sgn * p.armHang)));
+    set(`${side}Arm`, mul(rx(-B), ry(sgn * p.armYaw), rx(-armFwd), rz(sgn * armHang)));
     set(`${side}ForeArm`, ry(sgn * p.elbow));
     // kaki: dikurangi miring panggul agar paha tetap sesuai sudut dunia; paha membuka ke luar lewat putaran vertikal
-    set(`${side}UpLeg`, mul(rx(-p.hipTilt), ry(-sgn * p.spread), rx(-p.hipFlex)));
-    set(`${side}Leg`, rx(p.knee));
+    set(`${side}UpLeg`, mul(rx(-p.hipTilt), ry(-sgn * p.spread), rx(-hipFlex)));
+    set(`${side}Leg`, rx(knee));
   }
 }
 
@@ -52,15 +57,19 @@ function applySimple(avatar, p) {
     ud.pivot.position.z = HIP_Y * Math.sin(B);
   }
   for (const [side, sgn] of [['r', 1], ['l', -1]]) {
+    const o = side.toUpperCase();
+    const armFwd = p[`armFwd${o}`] ?? p.armFwd;
+    const hipFlex = p[`hipFlex${o}`] ?? p.hipFlex;
+    const knee = p[`knee${o}`] ?? p.knee;
     const leg = ud.legs?.[side];
     if (leg) {
-      leg.hip.rotation.x = p.hipFlex + B;
+      leg.hip.rotation.x = hipFlex + B;
       leg.hip.rotation.z = sgn * p.spread;
-      leg.knee.rotation.x = -p.knee;
+      leg.knee.rotation.x = -knee;
     }
     const arm = ud.arms?.[side];
     if (arm) {
-      arm.rotation.x = p.armFwd + 0.6 * p.elbow + B; // lengan sederhana tanpa siku: siku dihitung sebagian sebagai ayunan
+      arm.rotation.x = armFwd + 0.6 * p.elbow + B; // lengan sederhana tanpa siku: siku dihitung sebagian sebagai ayunan
       arm.rotation.z = -sgn * (0.08 + 0.6 * p.armYaw);
     }
   }
@@ -93,4 +102,22 @@ export function applyPosture(avatar, poseName, delta) {
   if (human) applyHuman(human, st.cur);
   else applySimple(avatar, st.cur);
   return -st.cur.sink * hipH;
+}
+
+/**
+ * Terapkan satu set parameter langsung (tanpa perpindahan halus; pemanggil yang menghaluskan). `p` memakai kunci POSE_KEYS dan boleh
+ * menambah override per sisi (armFwdR/L, armHangR/L, hipFlexR/L, kneeR/L). Mengembalikan tinggi panggul avatar saat berdiri (m).
+ * Dipakai gerak renang (swim-pose.js) supaya avatar sederhana dan model manusia memakai satu jalur yang sama dengan gerak masjid.
+ */
+export function applyPoseParams(avatar, p) {
+  const human = avatar.userData.human;
+  if (human) applyHuman(human, p);
+  else applySimple(avatar, p);
+  return human ? human.model.rest.hipsHeight : HIP_Y;
+}
+
+/** Lepaskan avatar sederhana dari miring badan (pivot kembali tegak). Model manusia kembali ke animasi biasa saat tidak ditimpa lagi. */
+export function releasePoseParams(avatar) {
+  release(avatar);
+  if (avatar.userData.pivot) avatar.userData.pivot.position.y = 0; // applySimple menaikkan pivot saat badan miring; kembalikan
 }
