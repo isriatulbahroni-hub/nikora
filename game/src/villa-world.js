@@ -1045,8 +1045,12 @@ function skyAndLight(scene, root, renderer) {
   return { sun, sky };
 }
 
-/** Membangun seluruh vila ke dalam scene. Mengembalikan fungsi update (bayangan, air, percikan). */
-export function buildVillaWorld(scene, world, { renderer } = {}) {
+/**
+ * Membangun seluruh vila ke dalam scene. Mengembalikan fungsi update (bayangan, air, percikan).
+ * `parking: false` = tanpa parkir luas di luar gerbang (villa-parking-world.js): di dunia hotel (hotel-villa.js) bagian selatan gerbang
+ * adalah halaman depan dan tanjakan jalan perjalanan sendiri, jadi parkir tidak ikut dibangun di sana.
+ */
+export function buildVillaWorld(scene, world, { renderer, parking: withParking = true } = {}) {
   const root = new THREE.Group();
   scene.add(root);
   const rand = rng(2026);
@@ -1181,7 +1185,7 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
   buildProps(groundLevel.props, root, mats, rand);
   buildLanterns(root, mats);
   buildCountryside(world, root, mats, rand);
-  const parking = buildVillaParking(root); // parkir luas di luar gerbang: 300 slot tamu, karyawan, bus (villa-parking.js)
+  const parking = withParking ? buildVillaParking(root) : null; // parkir luas di luar gerbang: 300 slot tamu, karyawan, bus (villa-parking.js)
   buildStairs(STAIRS.filter((s) => s.from === 0), root, mats);
   for (let level = 1; level < world.levels.length; level++) {
     const group = new THREE.Group();
@@ -1203,7 +1207,7 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
       tex.waterNormal.offset.x += delta * 0.018;
       tex.waterNormal.offset.y += delta * 0.011;
       for (const fn of anim) fn(clock);
-      parking.update(delta); // lampu slot, panah LED, mobil datang/pergi
+      parking?.update(delta); // lampu slot, panah LED, mobil datang/pergi
       sky.position.set(px, 0, pz); // langit mengikuti pemain agar horizon tidak pernah terkejar
       // bukit latar diam saat pemain di dalam vila, lalu ikut bergerak penuh setelah keluar (tidak pernah bisa dimasuki)
       const follow = Math.min(1, Math.max(0, (Math.hypot(px, pz) - 40) / 25));
