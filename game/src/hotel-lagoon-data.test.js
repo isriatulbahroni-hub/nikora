@@ -50,19 +50,24 @@ test('lagoon: kolam, dermaga, tebing, dan air terjun saling cocok', () => {
   assert.ok(CLIFF.profile[0][0] >= LAGOON_RECT[1] && CLIFF.profile.at(-1)[1] <= pool[3]);
 });
 
-test('lagoon: seluruh air kolam tertutup penghalang kecuali dermaga dan peron', () => {
+test('lagoon: seluruh air kolam bisa dimasuki dan dipakai berenang; dermaga dan peron tetap darat', () => {
+  assert.equal(WATER_BLOCKS.length, 0, 'tidak ada penghalang air lagi (swim.js)');
   const [x0, z0, x1, z1] = LAGOON_POOL.rect;
   let cells = 0;
   for (let x = x0 + 0.125; x < x1; x += 0.25) {
     for (let z = z0 + 0.125; z < z1; z += 0.25) {
-      const blocked = WATER_BLOCKS.some((r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3]);
-      assert.equal(blocked, !onPier(x, z), `(${x}, ${z})`);
-      assert.equal(inPoolWater(x, z), !onPier(x, z));
+      assert.equal(inPoolWater(x, z), !onPier(x, z), `(${x}, ${z})`);
       cells++;
     }
   }
   assert.ok(cells > 10000);
   for (const r of PIER_WALK) assert.ok(insideRect(r, LAGOON_POOL.rect));
+  // tidak ada penghalang di dalam kolam sampai kaki air terjun (tepi timur = tebing)
+  const inside = [x0 + 0.1, z0 + 0.1, CLIFF.faceX - 0.1, z1 - 0.1];
+  for (const c of LAGOON_COLLIDERS) assert.ok(!overlap(toRect(c), inside), `penghalang di dalam kolam ${JSON.stringify(c)}`);
+  // kolam cukup dalam untuk berenang dan menyelam; ledge dangkal di sisi barat
+  assert.ok(LAGOON_POOL.waterY - LAGOON_POOL.floorY >= 2, 'kedalaman >= 2 m');
+  assert.ok(LAGOON_POOL.waterY - LAGOON_POOL.shelfY < 1, 'ledge dangkal');
 });
 
 test('lagoon: semua benda berada di dalam taman, tidak saling menimpa, dan jalur dermaga tetap lapang', () => {
@@ -97,13 +102,13 @@ test('lagoon: batu dan tebing deterministik', () => {
   assert.ok(CLIFF_COLLIDERS.length === CLIFF.profile.length);
 });
 
-test('lagoon: dunia hotel memasang zona, menghalangi air dan tebing, dan dermaga bisa dijalani sampai ujung peron', () => {
+test('lagoon: dunia hotel memasang zona, air bisa dimasuki, tebing menghalang, dan dermaga bisa dijalani', () => {
   assert.equal(roomAt(LAGOON_VIEW.x, LAGOON_VIEW.z, 0).id, 'hotel_lagoon');
   assert.equal(roomAt(LAGOON_VIEW.x, LAGOON_VIEW.z, 0).name, 'Taman Air Terjun & Kolam Lagoon');
   assert.ok(onPier(LAGOON_VIEW.x, LAGOON_VIEW.z));
   assert.ok(world.canStand(0, LAGOON_VIEW.x, LAGOON_VIEW.z), 'titik Jelajah bisa diinjak');
   assert.ok(world.canStand(0, 92, 535), 'dek di depan dermaga');
-  assert.ok(!world.canStand(0, 119, 520), 'air kolam');
+  assert.ok(world.canStand(0, 119, 520), 'air kolam bisa dimasuki (berenang)');
   assert.ok(!world.canStand(0, 143, 535), 'di dalam tebing');
   assert.ok(!world.canStand(0, 96.8, 521), 'kursi berjemur');
   const spot = hotelPlaces(world).find((p) => p.id === 'hotel_lagoon');
@@ -111,15 +116,15 @@ test('lagoon: dunia hotel memasang zona, menghalangi air dan tebing, dan dermaga
   // berjalan dari tepi barat taman ke arah timur sepanjang dermaga: sampai ujung peron, tidak jatuh ke air, tidak menembus tebing
   let pos = { x: LAGOON_RECT[0] + 1, z: 535, level: 0 };
   for (let i = 0; i < 700; i++) pos = world.move(pos, 0.1, 0);
-  assert.ok(pos.x > PIER.x1 - 1 && pos.x < CLIFF.faceX - 0.3, `berhenti di ujung peron, x=${pos.x}`);
-  // mencoba melangkah ke air dari dermaga: tertahan di tepi dermaga
+  assert.ok(pos.x > PIER.x1 - 1 && pos.x < CLIFF.faceX - 0.3, `lewat ujung peron lalu berhenti di muka tebing, x=${pos.x}`);
+  // melangkah dari dermaga ke samping: masuk ke air (berenang)
   let side = { x: 110, z: 535, level: 0 };
   for (let i = 0; i < 100; i++) side = world.move(side, 0, -0.1);
-  assert.ok(side.z >= PIER.z0 + 0.3, `tidak masuk ke air, z=${side.z}`);
-  // dari dek utara ke kolam: tepi kolam menahan
+  assert.ok(side.z < PIER.z0 - 3, `masuk ke air, z=${side.z}`);
+  // dari dek utara ke kolam: tepi kolam tidak menahan lagi, pemain masuk air
   let north = { x: 120, z: 510.2, level: 0 };
   for (let i = 0; i < 60; i++) north = world.move(north, 0, 0.1);
-  assert.ok(north.z < LAGOON_POOL.rect[1], `tidak masuk ke kolam, z=${north.z}`);
+  assert.ok(north.z > LAGOON_POOL.rect[1] + 3, `masuk ke kolam, z=${north.z}`);
 });
 
 test('lagoon: volume suara air terjun turun menurut jarak, hening jauh, redam di dalam ruangan', () => {

@@ -56,6 +56,8 @@
       .lift-fade { position: fixed; z-index: 25; inset: 0; display: grid; place-items: center; background: rgba(10,8,5,.55); opacity: 0; pointer-events: none; transition: opacity .35s; }
       .lift-fade.on { opacity: 1; pointer-events: auto; }
       .lift-fade span { padding: 10px 20px; border-radius: 12px; border: 1px solid #c9a24b; background: rgba(20,17,13,.85); color: #e7c76a; font: 600 15px ui-sans-serif, sans-serif; letter-spacing: .04em; text-align: center; max-width: 86vw; }
+      .act.dive { right: 122px; width: 72px; height: 72px; bottom: calc(max(28px, env(safe-area-inset-bottom)) + 36px); border-color: #bfeaf2; background: radial-gradient(circle at 35% 30%, #9fe3ee, #2f8fb0); color: #06303a; font-size: 13px; -webkit-touch-callout: none; }
+      .act.dive:active { filter: brightness(1.15); transform: scale(.96); }
       .joy-zone { position: fixed; z-index: 6; left: 0; bottom: 0; width: 55%; height: 45%; touch-action: none; display: none; }
       @media (pointer: coarse) { .joy-zone { display: block; } .hint { display: none; } .toast { bottom: calc(max(28px, env(safe-area-inset-bottom)) + 150px); } }
       @media (max-width: 460px) {
@@ -101,6 +103,7 @@
     <div class="lift-fade" id="lift-fade"><span id="lift-msg"></span></div>
     <div class="hud hint">WASD: jalan · masuk kabin lift (inti bangunan) lalu pilih lantai · seret: putar kamera · scroll: zoom · V: mode kamera (1–7) · C: jarak/sasaran · kamera bebas: R/F naik-turun, Shift cepat · M: peta · J: jelajah · E: naik/turun mobil</div>
     <button id="act-button" class="act" type="button" hidden>Naik</button>
+    <button id="dive-button" class="act dive" type="button" aria-label="Menyelam (tahan)" title="Tahan untuk menyelam (Z)" hidden>Selam</button>
     <div class="toast" id="toast"></div>
     <div class="joy-zone" id="joy-zone"><div class="joy-base" id="joy-base"><div class="joy-knob" id="joy-knob"></div></div></div>
     <div id="hotel-error"><div><h2>Tidak bisa memulai</h2><p id="hotel-error-text"></p><pre id="hotel-error-detail"></pre></div></div>

@@ -31,6 +31,9 @@ import { createHotelLife } from './hotel-life.js';
 import { KNOCKDOWN, knockDistance, knockdownPose } from './hotel-life-data.js';
 import { createHotelAmbience } from './hotel-ambience.js';
 import { findNearestSpot, isSpotId, poseOfSpot, seatLabel, spotById, spotsInRoom, standPoint } from './hotel-seating.js';
+import { WADE_DEPTH, actionLabel, createSwimmer, isSwimPose, poolAt, stepSwimmer, toggleAction } from './swim.js'; // berenang di Kolam Lagoon
+import { applySwimPose } from './swim-pose.js';
+import { createSwimFx } from './swim-fx.js';
 
 // NIKORA Grand Hotel sebagai halaman sendiri (/hotel.html): menara 1000 lantai yang dijelajahi dengan avatar (satu pemain).
 // Geometri 3D dari hotel-world.js dan denah dari hotel-layout.js (dipakai bersama dunia villa); halaman ini hanya
@@ -89,7 +92,7 @@ function hasWebGL2() {
 const held = new Set();
 const joystick = { x: 0, z: 0 };
 const KEYS = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
-const hooks = { map: () => {}, camera: () => {}, places: () => {}, action: () => {}, sky: () => {}, horn: () => {} };
+const hooks = { map: () => {}, camera: () => {}, places: () => {}, action: () => {}, sky: () => {}, horn: () => {}, dive: () => {} };
 // lastDrag: kapan pemain terakhir memutar kamera (kamera mobil tidak melawan putaran itu).
 // cabinDrag(dx, dy): dipasang start(); mengembalikan true bila geseran satu jari dipakai untuk menoleh di kamera kabin (bukan memutar kamera orbit).
 const camInput = { lastDrag: -1e9, cabinDrag: null };
@@ -128,6 +131,7 @@ function setupInput(canvas, camState) {
     else if (!e.repeat && k === 'j') hooks.places();
     else if (!e.repeat && k === 'n') hooks.sky(); // ganti mode langit: otomatis, siang, senja, malam, demo
     else if (!e.repeat && k === 'h') hooks.horn(true);
+    else if (!e.repeat && k === 'z') hooks.dive(true); // tahan = menyelam (hanya berarti di air dalam)
     else if (!e.repeat && (k === 'e' || k === ' ')) {
       hooks.action(); // buka pintu/bagasi, naik, atau turun mobil
       e.preventDefault();
@@ -137,7 +141,7 @@ function setupInput(canvas, camState) {
     else if (k === '-') camState.dist = clamp(camState.dist * 1.1, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
     else if (k === '=' || k === '+') camState.dist = clamp(camState.dist * 0.9, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
   });
-  addEventListener('keyup', (e) => { held.delete(e.key.toLowerCase()); if (e.key.toLowerCase() === 'h') hooks.horn(false); });
+  addEventListener('keyup', (e) => { held.delete(e.key.toLowerCase()); if (e.key.toLowerCase() === 'h') hooks.horn(false); if (e.key.toLowerCase() === 'z') hooks.dive(false); });
   addEventListener('blur', () => held.clear());
   canvas.addEventListener('wheel', (e) => {
     camState.dist = clamp(camState.dist * (e.deltaY > 0 ? 1.1 : 0.9), CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
@@ -456,6 +460,26 @@ async function start() {
   blob.rotation.x = -Math.PI / 2;
   scene.add(blob);
 
+  // ---------- berenang di Kolam Lagoon (swim.js, swim-pose.js, swim-fx.js) ----------
+  // Masuk air dari tepi kolam atau dermaga: air dangkal = berjalan di air; air dalam = berenang, tegak mengayuh, mengapung (tombol Apung),
+  // menyelam (tahan Selam atau tombol Z); air dangkal diam = Mandi. Pose disiarkan lewat kolom pose jaringan; pemain lain melihatnya (multiplayer-view.js).
+  const swim = createSwimmer();
+  const swimFx = createSwimFx(scene);
+  const diveBtn = $('dive-button');
+  let diveHeld = false;
+  let swimOut = null; // hasil stepSwimmer frame terakhir (null = tidak sedang di air)
+  let swimMul = 1; // pengali kecepatan jalan dari frame lalu
+  let lastMoving = false;
+  let swimTipShown = false;
+  const remoteRipple = new Map(); // id pemain lain -> waktu riak terakhir (detik)
+  const setDive = (on) => { diveHeld = on && swimOut?.active === true; };
+  hooks.dive = setDive;
+  if (diveBtn) {
+    diveBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); setDive(true); });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) diveBtn.addEventListener(ev, () => setDive(false));
+    diveBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
   // Tamu yang datang dari tempat acara (?from=villa|hall|royal|masjid) muncul di gerbangnya, menghadap hotel; selain itu di drop-off.
   const arrival = arrivalGate(params.get('from'));
   const arrivalPose = arrival ? gateArrival(arrival) : null;
@@ -615,6 +639,7 @@ async function start() {
   doorHook = (car) => carAudio.door(Math.hypot(car.x - me.x, car.z - me.z));
   hooks.action = () => {
     if (riding) return; // sedang di dalam lift
+    if (swimOut?.active && toggleAction(swim, { x: me.x, z: me.z, moving: lastMoving })) return; // mandi (air dangkal) atau mengapung (air dalam)
     if (seatAction()) return; // duduk, tidur, atau berdiri dari perabot hotel (hotel-seating.js)
     if (journey.riding) {
       toast('Perjalanan sedang berlangsung. Nikmati pemandangannya, atau tekan Lewati.', 3000);
@@ -766,8 +791,8 @@ async function start() {
     }
     const moving = move.x !== 0 || move.z !== 0;
     if (moving) {
-      const sx = move.x * SPEED * delta;
-      const sz = move.z * SPEED * delta;
+      const sx = move.x * SPEED * swimMul * delta; // swimMul < 1 di air (swim.js)
+      const sz = move.z * SPEED * swimMul * delta;
       if (inVilla) {
         villa.walk(me, sx, sz); // mengubah me.x, me.z, me.y, me.villa
       } else if (journey.state !== 'idle') {
@@ -802,6 +827,30 @@ async function start() {
       }
     }
 
+    // berenang: hanya di lantai dasar hotel, berjalan kaki (bukan di villa, mobil, lift, lorong perjalanan, atau kursi)
+    lastMoving = moving;
+    const swimOk = !inVilla && !riding && !fleet.mine && spot === null && journey.state === 'idle' && me.level === 0;
+    if (swimOk) {
+      const sw = stepSwimmer(swim, { x: me.x, z: me.z, groundY: hotelLevelY(0), moving, dive: diveHeld, dt: delta });
+      swimOut = sw.active ? sw : null;
+      swimMul = sw.speedMul;
+      if (sw.active) me.y = sw.y;
+      if (sw.splash) swimFx.splash(sw.splash.x, sw.waterY, sw.splash.z, sw.splash.strength);
+      if (sw.ripple) swimFx.ripple(me.x, sw.waterY, me.z, moving ? 1 : 0.7);
+      if (sw.entered && !swimTipShown && sw.depth > WADE_DEPTH) {
+        swimTipShown = true;
+        toast('Berenang: gerak untuk berenang · tahan Selam (Z) untuk menyelam · Apung untuk mengapung', 4200);
+      }
+    } else if (swim.active || swimOut) {
+      Object.assign(swim, createSwimmer());
+      swimOut = null;
+      swimMul = 1;
+    }
+    if (!swimOut) diveHeld = false;
+    const inDeep = swimOut?.active === true && swimOut.depth > WADE_DEPTH;
+    if (diveBtn && diveBtn.hidden === inDeep) diveBtn.hidden = !inDeep;
+    swimFx.update(delta);
+
     // perjalanan lift: tinggi berubah halus, lantai tujuan menjadi nyata di akhir
     if (riding) {
       const t = clamp((performance.now() - riding.t0) / riding.ms, 0, 1);
@@ -822,7 +871,7 @@ async function start() {
     const car = carRide.step(me, { delta, rawInput });
     // lorong perjalanan 20+ menit: autopilot menggeser mobil di sepanjang rute (satu dunia, tidak pindah halaman)
     journey.update({ delta, camera, me, driving: fleet.driving });
-    enterCorridor(); // melewati gerbang jalan raya = masuk lorongnya
+    enterCorridor(); // melewati gerbang = masuk lorongnya
     const seatPose = car.riding ? fleet.seatPose(car.sit) : null;
     if (seatPose && journey.state !== 'idle') {
       me.x = seatPose.x; // pose kursi dihitung ulang sesudah autopilot menggeser mobil (tanpa tertinggal satu frame)
@@ -831,6 +880,7 @@ async function start() {
     if (car.riding) facing = car.facing;
     shownFacing = seatPose ? seatPose.rotY : turnToward(shownFacing, facing, delta);
     const sp = spot !== null ? seatPoseOf(spot) : null; // duduk atau berbaring di perabot hotel (hotel-seating.js)
+    const swimPoseName = swimOut?.active && !seatPose && !sp ? swimOut.pose : null; // gerak renang (null di darat dan saat berjalan di air dangkal)
     if (sp) {
       const ks = 1 - Math.exp(-14 * delta);
       avatar.position.x += (sp.x - avatar.position.x) * ks;
@@ -842,7 +892,7 @@ async function start() {
     } else {
       avatar.position.x = me.x;
       avatar.position.z = me.z;
-      avatar.position.y = seatPose ? seatPose.y : me.y + (moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0);
+      avatar.position.y = seatPose ? seatPose.y : me.y + (moving && !swimPoseName ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0); // berenang: tanpa loncatan langkah
       avatar.rotation.y = shownFacing;
       avatar.userData.tilt = (avatar.userData.tilt ?? 0) * Math.exp(-14 * delta);
     }
@@ -854,11 +904,20 @@ async function start() {
     avatar.userData.seatHip = sp?.legs?.hip ?? null; // sudut paha menyesuaikan tinggi dudukan (avatar.js)
     avatar.userData.seatLift = sp?.lift ?? 0;
     avatar.userData.seatKind = seatPose ? 'car' : null; // kursi mobil: kaki avatar manusia maju ke bawah dasbor, bukan menjuntai seperti di kursi biasa (avatar-human.js)
-    applyPose(avatar, moving ? 'walk' : null, time / 1000, delta);
+    applyPose(avatar, moving && !swimPoseName ? 'walk' : null, time / 1000, delta);
     avatar.rotation.x += avatar.userData.tilt ?? 0; // applyPose menulis rotation.x: tambahkan kemiringan tidur sesudahnya
+    avatar.position.y += applySwimPose(avatar, swimPoseName, time / 1000, delta); // berenang: tengkurap, tegak mengayuh, telentang, menyelam (swim-pose.js); model manusia dikoreksi ke tinggi panggul
     // duduk di mobil: kaki ke depan dan punggung bersandar sesuai tinggi atap supaya kepala tidak menembus atap; avatar sederhana dan manusia (car-seat-pose.js)
     if (seatPose) applyCarSeat(avatar, seatPose.fit);
     const others = multiplayer ? multiplayer.net.players.filter((p) => p.id !== multiplayer.net.id) : [];
+    for (const o of others) { // pemain lain yang berenang: riak di permukaan (tanpa percikan; posisi dan gerak dari multiplayer-view.js)
+      if (!isSwimPose(o.pose) || o.pose === 'selam') continue;
+      const pool = poolAt(o.x, o.z);
+      if (!pool || time / 1000 - (remoteRipple.get(o.id) ?? 0) < 0.6) continue;
+      remoteRipple.set(o.id, time / 1000);
+      swimFx.ripple(o.x, pool.waterY, o.z, 0.8);
+    }
+    multiplayer?.net.setPose?.(swimPoseName); // kolom pose jaringan (null = tidak berenang)
     if (multiplayer) {
       multiplayer.view.update(delta, time / 1000); // pemain lain
       multiplayer.sendInput(move.x, move.z, facing, time, fleet.sitId ?? spot, { x: me.x, z: me.z, y: me.y }); // sit = kursi mobil (id >= 1000), titik duduk/tidur hotel (id >= 100000), atau null
@@ -901,7 +960,7 @@ async function start() {
     const lookY = me.y + 1.2;
     camera.lookAt(me.x + (ahead.x - me.x) * look, lookY + (ahead.y - lookY) * look, me.z + (ahead.z - me.z) * look);
     avatar.visible = camArm > 0.95;
-    blob.visible = avatar.visible;
+    blob.visible = avatar.visible && !swimOut?.active; // bayangan bulat tidak berarti di atas air
 
     // kamera kabin: mata di kepala pengemudi, menghadap ke depan mobil (atau ke arah pandangan: menoleh ke teman/belakang, cabin-look.js),
     // sedikit mengintip ke arah belokan saat menatap lurus; avatar disembunyikan
@@ -952,7 +1011,8 @@ async function start() {
     // tombol aksi: Turun saat di mobil; berjalan kaki di dekat mobil = aksi bagian yang didekati (Buka pintu kanan, Naik, Buka bagasi, ...)
     const carPrompt = !riding && !fleet.mine && me.level === 0 && !me.villa ? carRide.prompt(me) : '';
     const seatText = riding || journey.riding || fleet.mine ? '' : spot !== null ? 'Berdiri' : seatPrompt();
-    const actText = riding || journey.riding ? '' : fleet.mine ? 'Turun' : seatText || carPrompt;
+    const swimText = swimOut?.active ? actionLabel(swim, { x: me.x, z: me.z, moving }) : ''; // Mandi (air dangkal) atau Apung (air dalam)
+    const actText = riding || journey.riding ? '' : fleet.mine ? 'Turun' : swimText || seatText || carPrompt;
     if (actText && actBtn.textContent !== actText) {
       actBtn.textContent = actText;
       const long = actText.length > 6; // tulisan panjang ("Buka pintu kanan") dikecilkan dan dibungkus supaya muat di tombol bulat

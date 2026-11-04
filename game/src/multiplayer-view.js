@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { applyPose, auraSpecFor, createAvatar, setAvatarAura, setAvatarConfig } from './avatar.js';
 import { applyCarSeat } from './car-seat-pose.js';
+import { applySwimPose } from './swim-pose.js';
+import { isSwimPose } from './swim.js';
 import { configFromId, sameConfig } from './avatar-config.js';
 import { HALL } from './hall-layout.js';
 import { NetClient } from './net-client.js';
@@ -42,7 +44,7 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
     group.position.set(p.x, (p.y ?? 0) + (p.sit == null ? 0 : HALL.seatedDrop), p.z);
     group.rotation.y = p.rot;
     scene.add(group);
-    return { group, config, aura: p.au ?? null, act: p.act ?? null, target: { x: p.x, z: p.z, y: p.y ?? 0, rot: p.rot, sit: p.sit ?? null } };
+    return { group, config, aura: p.au ?? null, act: p.act ?? null, target: { x: p.x, z: p.z, y: p.y ?? 0, rot: p.rot, sit: p.sit ?? null, pose: p.pose ?? null } };
   }
 
   return {
@@ -56,7 +58,7 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
         seen.add(p.id);
         const existing = avatars.get(p.id);
         if (existing) {
-          existing.target = { x: p.x, z: p.z, y: p.y ?? 0, rot: p.rot, sit: p.sit ?? null };
+          existing.target = { x: p.x, z: p.z, y: p.y ?? 0, rot: p.rot, sit: p.sit ?? null, pose: p.pose ?? null };
           existing.act = p.act ?? null;
           if (p.au != null && p.au !== existing.aura) {
             existing.aura = p.au;
@@ -95,7 +97,9 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
         group.userData.seatLift = pose?.lift ?? 0;
         group.userData.seatKind = inCar ? 'car' : null;
         // penumpang mobil yang melaju tidak berjalan di tempat: posisinya menempel ke kursi, jadi "laju" avatarnya hanyalah laju mobil
-        applyPose(group, avatar.act ?? (!inCar && speed > 0.8 ? 'walk' : null), time, delta);
+        const swimName = target.sit == null && isSwimPose(target.pose) ? target.pose : null; // berenang di kolam hotel (swim.js): pose dari kolom pose jaringan
+        applyPose(group, swimName ? null : avatar.act ?? (!inCar && speed > 0.8 ? 'walk' : null), time, delta);
+        const swimLift = applySwimPose(group, swimName, time, delta); // tengkurap, tegak mengayuh, telentang, menyelam; 0 bila tidak berenang
         if (inCar) applyCarSeat(group, pose.fit); // punggung bersandar sesuai tinggi atap supaya kepala tidak menembus atap (car-seat-pose.js)
         const kp = pose?.snap ? 1 : k; // kursi mobil yang melaju: tempel ke kursi (interpolasi akan membuat penumpang tertinggal di luar mobil)
         group.position.x += (tx - group.position.x) * kp;
@@ -104,7 +108,7 @@ export function createRemotePlayers(scene, { poseFor } = {}) {
         // applyPose menulis rotation.x (membungkuk) tiap frame: tambahkan kemiringan tidur sesudahnya
         group.userData.tilt = (group.userData.tilt ?? 0) + ((pose ? pose.tilt : 0) - (group.userData.tilt ?? 0)) * k;
         group.rotation.x += group.userData.tilt;
-        group.position.y += ((pose ? pose.y : (target.y ?? 0) + (target.sit == null ? 0 : HALL.seatedDrop)) - group.position.y) * kp;
+        group.position.y += ((pose ? pose.y : (target.y ?? 0) + (target.sit == null ? 0 : HALL.seatedDrop) + swimLift) - group.position.y) * kp;
       }
     },
     avatarGroups() {
