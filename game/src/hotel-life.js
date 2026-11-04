@@ -3,6 +3,7 @@ import { LANES_PER_DIRECTION } from './highway.js';
 import { birdPose, birdSpecs, birdVisibility, lightLevel, hitVehicle, mixedTrafficSpecs, trafficPose } from './hotel-life-data.js';
 import { createVehicleSet, setVehicleLights } from './hotel-vehicle-parts.js';
 import { buildAircraft } from './hotel-aircraft.js';
+import { createRain3D } from './rain-3d.js';
 
 // Hotel dan jalan terasa hidup (THREE): lalu lintas campuran (mobil, motor, bus, truk; lampu menyala saat gelap dan hujan) di Lingkar NIKORA
 // dan burung yang mengitari tapak di siang hari, serta helikopter dan pesawat yang mengorbit menara (hotel-aircraft.js, dipasang di sini karena
@@ -11,8 +12,10 @@ import { buildAircraft } from './hotel-aircraft.js';
 // kendaraan, update() melaporkan tabrakan ({ hit }) dan hotel-main.js melempar pemain. ?lalin=0 mematikan lalu lintas, ?burung=0 burung, ?pesawat=0 helikopter dan pesawat. Lajur dalam sisi utara dikosongkan
 // untuk kendaraan karyawan (COMMUTE_LANE).
 // update() juga melaporkan kendaraan yang cukup dekat untuk terdengar ({ sources }); hotel-main.js meneruskannya ke hotel-traffic-audio.js (suara mesin).
+// Hujan 3D (rain-3d.js: tetes di dunia yang terhalang kanopi, percikan, genangan, dunia basah) juga dipasang dan dilangkahkan dari sini, sebelum
+// pemeriksaan `active`, jadi tetap turun selama lorong perjalanan. ?hujan3d=0 mematikannya. Galat di dalamnya hanya mematikan hujan 3D.
 // Yang SUDAH ada dan tidak diulang: petugas (hotel-staff-view.js), karyawan pulang-pergi (hotel-commute.js), langit dan lampu (hotel-sky.js),
-// hujan (rain-boot.js). Suara sekitar ada di hotel-ambience.js.
+// jadwal, kilat, suara, dan getar hujan (rain-boot.js). Suara sekitar ada di hotel-ambience.js.
 
 const HIT_RANGE = 14; // m: hanya kendaraan yang sedekat ini ke pemain yang diperiksa tabrakannya (badan terpanjang: bus 11,5 m)
 const SOUND_RANGE = 120; // m: kendaraan yang lebih jauh dari ini tidak mungkin terdengar (jangkauan terjauh di hotel-traffic-audio.js: bus dan truk)
@@ -68,11 +71,19 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
       aircraft = null;
     }
   }
+  // ---- hujan 3D: objeknya anak `scene` (bukan `root`) supaya tetap terlihat selama lorong perjalanan; galat di dalamnya tidak mematikan lalu lintas
+  let rain3d = null;
+  try {
+    rain3d = createRain3D({ scene, low, search });
+  } catch (error) {
+    console.warn('[hotel] hujan 3D dilewati', error);
+    rain3d = null;
+  }
   let level = 0;
 
   return {
     root,
-    info: () => ({ cars: specs.length, kinds: Object.fromEntries(sets.map(({ list, set }) => [set.kind, list.length])), birds: birdList.length, aircraft: aircraft?.info() ?? null, lights: level }),
+    info: () => ({ cars: specs.length, kinds: Object.fromEntries(sets.map(({ list, set }) => [set.kind, list.length])), birds: birdList.length, aircraft: aircraft?.info() ?? null, rain: rain3d?.info?.() ?? null, lights: level }),
     /**
      * Tiap frame: time detik, me = pemain {x, z}, night 0..1 (nightLevel), rain 0..1, active = false selama perjalanan lorong (dunia berbeda).
      * hittable = pemain boleh tertabrak sekarang (berjalan kaki di luar, tidak sedang terbaring/kebal/di kendaraan). Mengembalikan
@@ -81,6 +92,15 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
      * tiap frame: pakai segera, jangan disimpan.
      */
     update({ time, me, night = 0, rain = 0, active = true, hittable = false }) {
+      if (rain3d) {
+        try {
+          rain3d.update({ time, me, rain, active });
+        } catch (error) {
+          console.warn('[hotel] hujan 3D dimatikan karena galat', error);
+          try { rain3d.dispose(); } catch { /* sudah dibuang */ }
+          rain3d = null;
+        }
+      }
       root.visible = active;
       let hit = null;
       sources.length = 0;
@@ -142,6 +162,7 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
     dispose() {
       scene.remove(root);
       aircraft?.dispose();
+      rain3d?.dispose?.();
       for (const { set } of sets) set.dispose();
       for (const m of [birds?.left, birds?.right]) m?.dispose?.();
       for (const x of owned) x.dispose?.();
