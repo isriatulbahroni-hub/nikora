@@ -123,3 +123,79 @@ test('bioskop 5D: denyut getaran HP makin rapat dan kuat, tidak ada di bawah amb
   assert.ok(Math.abs(b.gap - 0.15) < 1e-9);
   assert.deepEqual(rumbleBeat(5), b, 'level dibatasi 1');
 });
+
+test('bioskop 5D: semua adegan sah, lebih pendek dari slot tayang, dan kembali nol di akhir', async () => {
+  const { BADAI, GEMPA, HANTU, SHOW_ORDER, SHOW_SLOT_SECONDS } = await import('./cinema-5d-data.js');
+  assert.deepEqual(Object.keys(SCENES).sort(), [...SHOW_ORDER].sort());
+  for (const scene of [TSUNAMI, HANTU, GEMPA, BADAI]) {
+    assert.deepEqual(validateScene(scene), [], scene.id);
+    assert.ok(scene.duration + 20 <= SHOW_SLOT_SECONDS, `${scene.id}: jeda antar tayangan minimal 20 detik`);
+    for (const dist of [0, MAX_SEAT_DISTANCE]) for (const ch of CHANNEL_IDS) assert.equal(channelValue(scene, ch, scene.duration, dist), 0, `${scene.id}/${ch}`);
+  }
+});
+
+test('bioskop 5D: kilatan dibatasi 3 kali per detik (keselamatan cahaya berkedip) dan divalidasi', async () => {
+  const { BADAI, HANTU } = await import('./cinema-5d-data.js');
+  for (const scene of [HANTU, BADAI]) {
+    const rises = scene.cues.filter((c) => c.ch === 'flash' && c.to >= 0.5).map((c) => c.t).sort((a, b) => a - b);
+    for (let i = 3; i < rises.length; i++) assert.ok(rises[i] - rises[i - 3] >= 1, scene.id);
+  }
+  const burst = { id: 'x', duration: 10, cues: [0, 0.2, 0.4, 0.6].flatMap((t) => [{ ch: 'flash', t, to: 1, dur: 0.05 }, { ch: 'flash', t: t + 0.05, to: 0, dur: 0.05 }]) };
+  assert.ok(validateScene(burst).some((e) => e.includes('kilatan')));
+  for (const scene of [TSUNAMI]) assert.equal(sceneAt(scene, 5, { comfort: 'calm' }).flash, 0);
+});
+
+test('bioskop 5D: kilatan petir lebih dulu daripada guntur (cahaya lebih cepat dari suara)', async () => {
+  const { BADAI } = await import('./cinema-5d-data.js');
+  assert.ok(channelValue(BADAI, 'flash', 8.05) > 0.9, 'kilat pada detik 8');
+  assert.ok(channelValue(BADAI, 'rumble', 8.05) < 0.3, 'belum ada guntur');
+  assert.ok(channelValue(BADAI, 'rumble', 9.6) > 0.7, 'guntur menyusul sekitar 1,2 detik kemudian');
+  assert.equal(sceneAt(BADAI, 8.05, { comfort: 'calm' }).flash, 0, 'mode tenang tanpa kilatan');
+  assert.ok(sceneAt(BADAI, 8.05, { comfort: 'gentle' }).flash < channelValue(BADAI, 'flash', 8.05));
+});
+
+test('bioskop 5D: gempa: horizon bergoyang kiri-kanan dan mereda', async () => {
+  const { GEMPA } = await import('./cinema-5d-data.js');
+  const tilts = [7.5, 9, 10.5, 12, 13.5].map((t) => channelValue(GEMPA, 'tilt', t + 1.5));
+  assert.ok(tilts.some((v) => v > 3) && tilts.some((v) => v < -3), 'berayun ke dua sisi');
+  assert.ok(channelValue(GEMPA, 'shake', 17) > 0.9);
+  assert.equal(channelValue(GEMPA, 'shake', 39), 0);
+});
+
+test('bioskop 5D: jadwal tayang serentak dari jam epoch: slot bergilir, jeda, dan hitung mundur', async () => {
+  const { SHOW_ORDER, SHOW_SLOT_SECONDS, showAt } = await import('./cinema-5d-data.js');
+  const a = showAt(0);
+  assert.equal(a.id, SHOW_ORDER[0]);
+  assert.equal(a.playing, true);
+  assert.equal(a.nextId, SHOW_ORDER[1]);
+  assert.equal(a.nextIn, SHOW_SLOT_SECONDS);
+  assert.equal(showAt(SHOW_SLOT_SECONDS * 1000 + 5000).id, SHOW_ORDER[1]);
+  assert.equal(showAt(SHOW_SLOT_SECONDS * 4 * 1000).id, SHOW_ORDER[0], 'berputar ke awal');
+  const gap = showAt(70000);
+  assert.equal(gap.playing, false);
+  assert.ok(Math.abs(gap.nextIn - 20) < 1e-9);
+  assert.deepEqual(showAt(123456).id, showAt(123456).id);
+  assert.equal(showAt(NaN).id, SHOW_ORDER[0]);
+  assert.equal(showAt(-1000).id, SHOW_ORDER[SHOW_ORDER.length - 1], 'jam sebelum epoch tetap sah');
+});
+
+test('bioskop 5D: denah kursi: layar lebar, kursi dalam blok dengan lorong, kursi hantu kosong, semua di dalam ruang', async () => {
+  const { SEAT, cinemaSeatPlan } = await import('./cinema-5d-data.js');
+  const rect = [-78, 499, -8, 561];
+  const p = cinemaSeatPlan(rect);
+  assert.equal(p.screen.w, 24);
+  assert.ok(Math.abs(p.screen.x - (rect[0] + 0.12)) < 1e-9);
+  assert.equal(p.blocks, 4);
+  assert.equal(p.rows, 20);
+  assert.equal(p.seats.length, p.rows * p.blocks * SEAT.perBlock - 1, 'satu kursi dikosongkan untuk adegan hantu');
+  assert.ok(p.ghost && !p.seats.some((s) => s.x === p.ghost.x && s.z === p.ghost.z));
+  for (const s of p.seats) assert.ok(s.x > rect[0] + 6 && s.x < rect[2] - 6 && s.z > rect[1] + 3 && s.z < rect[3] - 3, 'di dalam ruang dengan ruang jalan');
+  const row0 = p.seats.filter((s) => s.row === 0).map((s) => s.z).sort((a, b) => a - b);
+  const gaps = row0.slice(1).map((z, i) => z - row0[i]).filter((g) => g > SEAT.step + 0.5);
+  assert.equal(gaps.length, p.blocks - 1, 'satu lorong di antara blok');
+  assert.ok(p.foyerX > p.seats.at(-1).x, 'foyer di belakang baris terakhir');
+  assert.ok(new Set(p.seats.map((s) => `${s.x.toFixed(3)},${s.z.toFixed(3)}`)).size === p.seats.length, 'tidak ada kursi bertumpuk');
+  const small = cinemaSeatPlan([0, 0, 20, 14]);
+  assert.ok(small.blocks >= 1 && small.seats.length > 0 && small.rows <= SEAT.maxRows);
+  assert.equal(cinemaSeatPlan([0, 0, 10, 10]).ghost, null, 'ruang terlalu dangkal: tanpa baris, tanpa kursi hantu');
+});

@@ -16,6 +16,7 @@ import { createVehicleView } from './vehicle-view.js';
 import { createCarRide } from './car-ride.js';
 import { cockpitFov, eyeWorld, cockpitSpec } from './cockpit.js';
 import { mountCabinLook } from './cabin-look-ui.js';
+import { createHotelCinema } from './cinema-5d-fx.js';
 import { GATES, HIGHWAY_LIMIT, arrivalGate, gateArrival, leftOf, venueUrl } from './highway.js';
 import { FLOOR_COLORS, GROUP_ORDER, GROUPS, cssColor, describePlace, hotelPlaces } from './hotel-places.js';
 import { OWNER_GARAGE, PARKING_PLACES, assignValet, guestOccupied, inRect, parkingZoneAt, valetStandPoint } from './hotel-parking.js';
@@ -400,6 +401,15 @@ async function start() {
   } catch (error) {
     console.warn('[hotel] suara sekitar dilewati', error);
     ambience = null;
+  }
+  // Bioskop 5D di Mini Cinema lantai 3 (cinema-5d-fx.js): tayangan serentak berdasarkan jam, efek hanya terasa di dalam ruang bioskop.
+  // Dibungkus try/catch: bila gagal dibuat atau galat saat berjalan, efeknya dimatikan sendiri dan bioskop biasa tetap jalan. ?bioskop=0 mematikannya.
+  let cinema = null;
+  try {
+    cinema = createHotelCinema({ scene, renderer, low: lowQuality, search: window.location.search });
+  } catch (error) {
+    console.warn('[hotel] bioskop 5D dilewati', error);
+    cinema = null;
   }
   const indoorLight = new THREE.PointLight(0xffe2b8, 0, 26, 1.3);
   scene.add(indoorLight);
@@ -1060,6 +1070,15 @@ async function start() {
         ambience = null;
       }
     }
+    if (cinema) {
+      try {
+        cinema.update({ me, delta, nowMs: Date.now(), active: journey.state === 'idle' && !riding && !fleet.mine });
+      } catch (error) {
+        console.warn('[hotel] bioskop 5D dimatikan karena galat', error);
+        try { cinema.dispose(); } catch { /* sudah dibuang */ }
+        cinema = null;
+      }
+    }
     const qChange = quality.tick(performance.now());
     if (qChange) renderer.setPixelRatio(qChange.ratio);
     if (inCabin) carView.renderMirrors(renderer, scene);
@@ -1083,6 +1102,7 @@ async function start() {
     knocked: () => !!down, // sedang terlempar atau terbaring setelah tertabrak (pengujian)
     life: () => life?.info() ?? null, // lalu lintas dan burung (pengujian); null bila dimatikan
     ambience: () => ambience?.info() ?? null, // suara sekitar (pengujian); null bila dimatikan
+    cinema: () => cinema?.info() ?? null, // bioskop 5D: tayangan, efek, kenyamanan (pengujian); null bila dimatikan
     sky: () => sky.info(), // langit dan lampu saat ini (pengujian)
     surroundings: () => surroundings.info(), // satelit, kota, pohon (pengujian)
     villa: () => villa.state(), // villa di dalam dunia hotel: sudah dimuat? gagal? (pengujian)
