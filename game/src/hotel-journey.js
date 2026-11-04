@@ -7,7 +7,7 @@ import { setRoadProbe } from './vehicle.js';
 import { FOG_FAR, createJourneyWorld, flareHalf } from './journey-world.js';
 import { alongOf, endPoint, gatePsi, localToWorld, onRoute, planeBeyond, planeBehind, poseAt, rideSteer, startCheck, stepRide, villaAnchor, worldToLocal, wrap } from './hotel-journey-math.js';
 import { hoursAt, zoneFromSearch } from './day-night.js';
-import { createRoadTrafficView } from './road-traffic-view.js';
+import { createAmbientTrafficView, createRoadTrafficView } from './road-traffic-view.js';
 
 // Perjalanan 20+ menit di DALAM dunia hotel (satu halaman, satu dunia): jalan raya hotel -> gerbang -> rute perjalanan (journey.js) -> tempat acara.
 // Rute dipasang di gerbang jalan raya (hotel-journey-math.js): titik awal rute = titik gerbang, diputar menurut arah keluar gerbang. Bentuk rute
@@ -28,6 +28,8 @@ import { createRoadTrafficView } from './road-traffic-view.js';
 // (tahap berikutnya: dipasang di ujung rute seperti villa).
 // Di jalan menuju villa juga berjalan karyawan villa yang pulang-pergi hotel <-> villa (villa-road-traffic.js, road-traffic-view.js): motor, bus antar-jemput,
 // dan mobil dinas; hanya tampilan, tidak ikut fisika mobil pemain.
+// Jalan menuju tempat acara lain (aula, royal, masjid) diisi lalu lintas umum menurut jam (road-ambient-traffic.js): mobil, motor, dan bus yang ramai
+// pagi dan sore; ?lalin=0 mematikannya (sama dengan lalu lintas Lingkar NIKORA di hotel-life.js).
 const PRELOAD = 300; // dunia perjalanan sebuah gerbang dibangun saat pemain sedekat ini (m)
 const KEEP = 460; // ... dan dibuang saat pemain menjauh dari sini
 const ROAM = 30; // radius jalan kaki bebas di sekitar ujung rute (tempat acara selain villa)
@@ -87,6 +89,7 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
   const query = new URLSearchParams(search);
   const timeScale = Math.min(20, Math.max(1, Number(query.get('kecepatan')) || 1));
   const autopilot = query.get('otomatis') === '1'; // bawaan MATI: pemain mengemudi sendiri
+  const ambientTraffic = query.get('lalin') !== '0'; // lalu lintas umum di jalan menuju aula, royal, dan masjid
   const trafficZone = zoneFromSearch(search);
   const trafficSeconds = () => hoursAt(Date.now(), trafficZone) * 3600; // jam asli di zona acara: sama dengan langit dan jadwal karyawan
   const worlds = new Map(); // id gerbang -> { gate, j, world, traffic, planes, clipDirty }
@@ -107,7 +110,7 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
     world.group.rotation.y = gatePsi(gate);
     if (gate.id === 'villa') dropArrivalPlaceholder(world.group, j);
     scene.add(world.group);
-    const traffic = gate.id === 'villa' ? createRoadTrafficView({ group: world.group, j, secondsNow: trafficSeconds }) : null; // karyawan villa pulang-pergi hotel <-> villa
+    const traffic = gate.id === 'villa' ? createRoadTrafficView({ group: world.group, j, secondsNow: trafficSeconds }) : ambientTraffic ? createAmbientTrafficView({ group: world.group, j, secondsNow: trafficSeconds, venue: gate.id }) : null; // villa: karyawan pulang-pergi hotel <-> villa; tempat acara lain: lalu lintas umum
     w = { gate, j, world, traffic, planes: [toPlane(planeBeyond(gate))], clipDirty: true };
     worlds.set(gate.id, w);
     return w;

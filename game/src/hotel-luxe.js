@@ -107,9 +107,16 @@ function materials(anisotropy) {
   return shared;
 }
 
-const floorMaterial = (m, style) => {
-  const key = `${style.tex}:${style.tint}`;
-  if (!m.floors.has(key)) m.floors.set(key, new THREE.MeshStandardMaterial({ map: m.maps[style.tex], color: style.tint, roughness: m.rough[style.tex], metalness: style.tex === 'marble' ? 0.05 : 0 }));
+// Lantai dasar (seluruh tapak) dan lantai ruang tumpang tindih. Supaya tidak saling berebut kedalaman (garis berkedip di lantai lobi),
+// lantai ruang diangkat ROOM_FLOOR_LIFT di atas lantai dasar dan lantai dasar didorong ke belakang lewat polygonOffset.
+const ROOM_FLOOR_LIFT = 0.006;
+const floorMaterial = (m, style, base = false) => {
+  const key = `${style.tex}:${style.tint}${base ? ':base' : ''}`;
+  if (!m.floors.has(key)) {
+    const mat = new THREE.MeshStandardMaterial({ map: m.maps[style.tex], color: style.tint, roughness: m.rough[style.tex], metalness: style.tex === 'marble' ? 0.05 : 0 });
+    if (base) Object.assign(mat, { polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 2 });
+    m.floors.set(key, mat);
+  }
   return m.floors.get(key);
 };
 
@@ -134,13 +141,14 @@ function instanced(parent, items, material, { cast = false } = {}) {
 }
 
 /** Lantai bertekstur: satu geometri per (tekstur, tint); UV mengikuti ukuran ruang supaya motif tidak melar. */
-function floorMeshes(parent, m, quads, y) {
+function floorMeshes(parent, m, quads, y0) {
   const groups = new Map();
-  for (const { rect, style } of quads) {
-    const key = `${style.tex}:${style.tint}`;
-    if (!groups.has(key)) groups.set(key, { style, pos: [], uv: [], idx: [] });
+  for (const { rect, style, base = false } of quads) {
+    const key = `${style.tex}:${style.tint}${base ? ':base' : ''}`;
+    if (!groups.has(key)) groups.set(key, { style, base, pos: [], uv: [], idx: [] });
     const gr = groups.get(key);
     const [x1, z1, x2, z2] = rect;
+    const y = base ? y0 : y0 + ROOM_FLOOR_LIFT; // lantai ruang sedikit di atas lantai dasar
     const t = m.tile[style.tex];
     const n = gr.pos.length / 3;
     gr.pos.push(x1, y, z1, x2, y, z1, x2, y, z2, x1, y, z2);
@@ -153,7 +161,7 @@ function floorMeshes(parent, m, quads, y) {
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(gr.uv, 2));
     geo.setIndex(gr.idx);
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, floorMaterial(m, gr.style));
+    const mesh = new THREE.Mesh(geo, floorMaterial(m, gr.style, gr.base));
     mesh.receiveShadow = true;
     mesh.userData.luxeFloor = true;
     parent.add(mesh);
@@ -168,7 +176,7 @@ export function buildLuxeLevel(group, { L, l, y0, F, guestLevel, anisotropy = 8 
   const m = materials(anisotropy);
 
   // ---- lantai
-  const quads = [{ rect: F, style: floorStyle('base', guestLevel) }];
+  const quads = [{ rect: F, style: floorStyle('base', guestLevel), base: true }];
   for (const r of L.rooms) {
     const style = floorStyle(r.kind);
     if (style) quads.push({ rect: r.rect, style });
