@@ -6,6 +6,7 @@ import { HOTEL_WALL_HEIGHT } from './hotel-layout.js';
 import { DOOR_HEIGHT } from './villa-layout.js';
 import { LAMP_COLOR } from './hotel-props.js';
 import { C, chandelier, chandelierSpots, doorTrim, floorStyle, isGrandKind, propLuxParts, wallArt, wallTrim } from './hotel-luxe-data.js';
+import { levelDecor } from './hotel-decor-data.js';
 
 const BOX = new THREE.BoxGeometry(1, 1, 1);
 let shared = null; // bahan dan tekstur dibuat sekali (kanvas), dipakai semua lantai
@@ -221,6 +222,10 @@ export function buildLuxeLevel(group, { L, l, y0, F, guestLevel, anisotropy = 8 
   gold.push(...art.frames);
   matte.push(...art.canvas);
   light.push(...art.lights);
+
+  // ---- dekorasi tematik per ruang (hotel-decor-data.js): disesuaikan dengan nama dan jenis ruangan, kamar tamu menurut kelas lantai
+  const deco = levelDecor({ L, l, y0, F });
+  for (const k of Object.keys(deco)) for (const q of deco[k]) bucket[k].push(q);
 
   instanced(group, matte, m.matte);
   instanced(group, wood, m.wood);
