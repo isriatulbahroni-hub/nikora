@@ -117,10 +117,16 @@ test('pepohonan di luar vila: deterministik, di luar kompleks, jalan tanah tidak
 test('roomAt memberi nama lokasi yang benar', () => {
   assert.equal(roomAt(0, -10).id, 'wedding_hall');
   assert.equal(roomAt(0, 9).kind, 'pool');
-  assert.equal(roomAt(30, 36).id, 'parking');
+  assert.equal(roomAt(30, 36).id, 'grounds', 'bekas parkir lama sekarang halaman biasa');
   assert.equal(roomAt(19, 8).kind, 'guest');
   assert.equal(roomAt(-26, 12).id, 'restaurant');
   assert.equal(roomAt(0, 0).id, 'courtyard');
+});
+
+test('parkir lama di dalam pagar dihapus: tidak ada zona parkir dan tidak ada mobil di kompleks (parkir pindah ke villa-parking.js)', () => {
+  assert.ok(!world.zones.some((z) => z.kind === 'parking'), 'zona parkir lama masih ada');
+  assert.equal(world.allProps.filter((p) => p.type === 'car').length, 0, 'mobil parkir lama masih ada');
+  for (const [x, z] of [[22, 30], [26, 37], [30, 33], [34, 30]]) assert.ok(ok(x, z), `bekas slot parkir lama (${x}, ${z}) harus bisa dilewati`);
 });
 
 test('jumlah ruangan dan kamar tamu sesuai rancangan', () => {

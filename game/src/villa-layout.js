@@ -62,10 +62,10 @@ export const ROOMS = Object.freeze([
 ]);
 
 // Area terbuka (dipakai untuk label lokasi dan lantai paving).
+// Parkir lama (zona 'parking' dan 8 mobil di halaman tenggara) dihapus: parkir pindah ke lahan luas di luar gerbang (villa-parking.js).
 export const ZONES = Object.freeze([
   { id: 'bridge_pool', name: 'Pool & Garden', kind: 'pool', rect: [-7, 2, 7, 16] },
   { id: 'fountain_garden', name: 'Pool & Garden', kind: 'garden', rect: [-12, 16, 12, 42] },
-  { id: 'parking', name: 'Parking Area', kind: 'parking', rect: [18, 24, 42, 42] },
   { id: 'courtyard', name: 'Main Courtyard', kind: 'courtyard', rect: [-42, -3, 42, 4] },
   ...GAME_ZONES, // plaza Game Center di antara dua arena
 ]);
@@ -210,7 +210,6 @@ function buildProps() {
   props.push({ type: 'sofa', x: 17.5, z: -7 }, { type: 'sofa', x: 22.5, z: -7 }); // lobby, menghadap utara
   for (const x of [-32, -20]) for (const z of [8, 16]) props.push({ type: 'table', x, z }); // restoran
   for (const z of [22.5, 26.5]) props.push({ type: 'counter', x: -31, z: z + 0 }, { type: 'counter', x: -28, z: z + 0 }); // dapur
-  for (const x of [22, 26, 30, 34]) for (const z of [30, 37]) props.push({ type: 'car', x, z }); // parkir
   const palms = [
     [-10, 6], [-10, 12], [10, 6], [10, 12], [-6, 22], [6, 22], [-6, 34], [6, 34], [-6, 28], [6, 28],
     [-14, 24], [-22, 26], [-30, 34], [-36, 36], [-26, 38], [-18, 33], [-12, 38], [14, 24], [13, 36], [12, 30],
