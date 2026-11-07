@@ -1,8 +1,10 @@
 // Suara semua kendaraan di sekitar hotel (WebAudio sintetis, tanpa berkas): mesin mobil, motor, bus, dan truk lalu lintas Lingkar NIKORA,
 // mesin mobil pemain lain, klakson, dan benturan. Dulu hanya mesin mobil yang dikemudikan sendiri yang bersuara (car-audio.js); lalu lintas senyap.
 // Hanya beberapa kendaraan terdekat yang dibunyikan (MAX_VOICES) supaya HP tidak berat; dengung lalu lintas jauh tetap di hotel-ambience.js.
-// Parameter suara dihitung murni (voiceParams, panOf, pickSources, diuji di hotel-traffic-audio.test.js); mesin audio baru dibuat saat pemain
-// pertama kali menyentuh layar atau menekan tombol (aturan autoplay peramban). ?suara=0 mematikannya.
+// Parameter suara dihitung murni (voiceParams, panOf, pickSources; diuji di hotel-traffic-audio.test.js); mesin audio baru dibuat saat pemain
+// pertama kali menyentuh layar atau menekan tombol (aturan autoplay peramban). Di HP, sentuhan awal (pointerdown) belum dianggap izin autoplay
+// sehingga konteks audio bisa tetap "suspended" dan senyap: karena itu setiap sentuhan, lepas sentuhan, ketukan, dan tombol berikutnya
+// mencoba melanjutkannya (resume) sampai benar-benar berjalan. ?suara=0 mematikannya.
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const SOUND_SPEED = 343; // m/s
@@ -18,7 +20,7 @@ export const VOICE = Object.freeze({
   bus: Object.freeze({ idleHz: 18, perMs: 1.6, maxHz: 85, cutoff: 560, gain: 0.9, range: 120 }),
   truck: Object.freeze({ idleHz: 17, perMs: 1.5, maxHz: 80, cutoff: 520, gain: 0.9, range: 120 }),
 });
-export const LEVEL = 0.12; // kekerasan dasar satu kendaraan di dekat pemain
+export const LEVEL = 0.18; // kekerasan dasar satu kendaraan di dekat pemain (speaker HP lemah di nada rendah, jadi tidak terlalu kecil)
 export const MAX_VOICES = 6;
 export const MAX_VOICES_LOW = 4;
 
@@ -80,6 +82,8 @@ export function pickSources(listener, sources, max = MAX_VOICES) {
 
 // klakson tiap jenis: [nada 1, nada 2 (0 = tunggal), lama detik]
 const HORN = Object.freeze({ car: [415, 523, 0.38], motor: [680, 0, 0.16], bus: [255, 320, 0.7], truck: [196, 247, 0.8] });
+// Kejadian peramban yang boleh membuka kunci audio: di HP, pointerdown sentuh belum cukup; pointerup, touchend, dan click yang membuka.
+const UNLOCK_EVENTS = Object.freeze(['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']);
 
 /**
  * Mengembalikan { update({ listener, sources, indoor, cabin }), bump(strength, distance), horn(kind, distance), info(), dispose() }.
@@ -101,22 +105,36 @@ export function createTrafficAudio({ search = '', low = false } = {}) {
     return c;
   })();
 
+  const running = () => !!ctx && (!ctx.state || ctx.state === 'running');
   const start = () => {
-    if (ctx) return;
-    try {
-      ctx = new AC();
-      master = ctx.createGain();
-      master.gain.value = 0.9;
-      master.connect(ctx.destination);
-      ctx.resume?.();
-    } catch {
-      ctx = null;
+    if (!ctx) {
+      try {
+        ctx = new AC();
+        master = ctx.createGain();
+        master.gain.value = 0.9;
+        master.connect(ctx.destination);
+      } catch {
+        ctx = null;
+        return;
+      }
+    }
+    if (!running()) {
+      try {
+        ctx.resume?.()?.catch?.(() => {}); // belum diizinkan: dicoba lagi pada sentuhan/ketukan berikutnya
+      } catch {
+        /* dicoba lagi nanti */
+      }
     }
   };
-  if (typeof addEventListener === 'function') {
-    addEventListener('pointerdown', start, { once: true });
-    addEventListener('keydown', start, { once: true });
+  const forget = () => {
+    if (typeof removeEventListener !== 'function') return;
+    for (const ev of UNLOCK_EVENTS) removeEventListener(ev, unlock);
+  };
+  function unlock() {
+    start();
+    if (running()) forget(); // sudah berjalan: tidak perlu mendengarkan lagi
   }
+  if (typeof addEventListener === 'function') for (const ev of UNLOCK_EVENTS) addEventListener(ev, unlock);
 
   const noise = () => {
     if (!noiseBuf) {
@@ -252,12 +270,9 @@ export function createTrafficAudio({ search = '', low = false } = {}) {
       }
       setTimeout(() => gain.disconnect(), (dur + 0.4) * 1000);
     },
-    info: () => ({ on: !!ctx, voices: voices.size }),
+    info: () => ({ on: running(), voices: voices.size }),
     dispose() {
-      if (typeof removeEventListener === 'function') {
-        removeEventListener('pointerdown', start);
-        removeEventListener('keydown', start);
-      }
+      forget();
       for (const v of voices.values()) release(v);
       voices.clear();
       const c = ctx;
