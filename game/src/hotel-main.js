@@ -28,6 +28,7 @@ import { VILLA_APPROACH, createHotelVilla } from './hotel-villa.js';
 import { createHotelJourney } from './hotel-journey.js';
 import { alongOf } from './hotel-journey-math.js';
 import { createHotelLife } from './hotel-life.js';
+import { createTrafficAudio } from './hotel-traffic-audio.js';
 import { KNOCKDOWN, knockDistance, knockdownPose } from './hotel-life-data.js';
 import { createHotelAmbience } from './hotel-ambience.js';
 import { findNearestSpot, isSpotId, poseOfSpot, seatLabel, spotById, spotsInRoom, standPoint } from './hotel-seating.js';
@@ -383,9 +384,13 @@ async function start() {
   // Tertabrak lalu lintas (hotel-life.js melaporkan { hit }): terlempar searah laju kendaraan, terbaring, bangun, lalu kebal sebentar.
   let down = null;
   let immuneUntil = 0;
+  // Suara kendaraan lalu lintas (hotel-traffic-audio.js): mesin mobil, motor, bus, truk, klakson, dan benturan. trafficSources = kendaraan yang terdengar frame ini (dari hotel-life.js).
+  let trafficAudio = null;
+  let trafficSources = [];
   const KIND_LABEL = { car: 'mobil', motor: 'motor', bus: 'bus', truck: 'truk' };
   const startKnockdown = (h, now) => {
     down = { t0: now, dirX: h.dirX, dirZ: h.dirZ, distance: knockDistance(h.speed), slid: 0, lie: 0 };
+    trafficAudio?.bump(Math.max(8, h.speed), 0); // dentuman dan benturan logam tepat di pemain
     toast(`Kamu tertabrak ${KIND_LABEL[h.kind] ?? 'kendaraan'}!`, 2800);
   };
   let ambience = null;
@@ -400,6 +405,12 @@ async function start() {
   } catch (error) {
     console.warn('[hotel] suara sekitar dilewati', error);
     ambience = null;
+  }
+  try {
+    trafficAudio = createTrafficAudio({ search: window.location.search, low: lowQuality });
+  } catch (error) {
+    console.warn('[hotel] suara lalu lintas dilewati', error);
+    trafficAudio = null;
   }
   const indoorLight = new THREE.PointLight(0xffe2b8, 0, 26, 1.3);
   scene.add(indoorLight);
@@ -1038,6 +1049,7 @@ async function start() {
         return 0;
       }
     })();
+    trafficSources = []; // diisi ulang oleh life.update di bawah (kosong bila lalu lintas mati atau selama lorong)
     if (life) {
       try {
         const lifeNow = life.update({
@@ -1045,6 +1057,7 @@ async function start() {
           hittable: !down && time >= immuneUntil && !riding && !fleet.mine && fleet.sitId == null && spot === null && !inVilla && journey.state === 'idle' && me.level === 0,
         });
         if (lifeNow?.hit) startKnockdown(lifeNow.hit, time);
+        trafficSources = lifeNow?.sources ?? [];
       } catch (error) {
         console.warn('[hotel] lalu lintas dan burung dimatikan karena galat', error);
         try { life.dispose(); } catch { /* sudah dibuang */ }
@@ -1058,6 +1071,24 @@ async function start() {
         console.warn('[hotel] suara sekitar dimatikan karena galat', error);
         try { ambience.dispose(); } catch { /* sudah ditutup */ }
         ambience = null;
+      }
+    }
+    if (trafficAudio) {
+      try {
+        // telinga = pemain (me mengikuti mobil saat mengemudi); kecepatan untuk Doppler dari mobil yang dikemudikan bila ada
+        const driven = fleet.driving;
+        const earSpeed = driven ? driven.speed ?? 0 : 0;
+        const earHeading = driven ? driven.heading ?? 0 : 0;
+        trafficAudio.update({
+          listener: { x: me.x, z: me.z, yaw: camNow.yaw, vx: Math.sin(earHeading) * earSpeed, vz: Math.cos(earHeading) * earSpeed },
+          sources: trafficSources,
+          indoor: indoorK,
+          cabin: inCabin,
+        });
+      } catch (error) {
+        console.warn('[hotel] suara lalu lintas dimatikan karena galat', error);
+        try { trafficAudio.dispose(); } catch { /* sudah ditutup */ }
+        trafficAudio = null;
       }
     }
     const qChange = quality.tick(performance.now());
@@ -1083,6 +1114,7 @@ async function start() {
     knocked: () => !!down, // sedang terlempar atau terbaring setelah tertabrak (pengujian)
     life: () => life?.info() ?? null, // lalu lintas dan burung (pengujian); null bila dimatikan
     ambience: () => ambience?.info() ?? null, // suara sekitar (pengujian); null bila dimatikan
+    trafficAudio: () => trafficAudio?.info() ?? null, // suara kendaraan lalu lintas (pengujian): { on, voices }; null bila dimatikan
     sky: () => sky.info(), // langit dan lampu saat ini (pengujian)
     surroundings: () => surroundings.info(), // satelit, kota, pohon (pengujian)
     villa: () => villa.state(), // villa di dalam dunia hotel: sudah dimuat? gagal? (pengujian)

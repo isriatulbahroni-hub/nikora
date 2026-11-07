@@ -26,7 +26,7 @@ test('lalu lintas tidak lagi menghilang dekat pemain, tetapi bisa menabrak', () 
   const life = src('./hotel-life.js');
   assert.doesNotMatch(life, /proximityScale/, 'kendaraan tidak mengecil/menghilang lagi');
   assert.match(life, /hitVehicle\(/, 'tabrakan diperiksa tiap frame');
-  assert.match(life, /return \{ hit \}/, 'update() melaporkan tabrakan');
+  assert.match(life, /return \{ hit, sources \}/, 'update() melaporkan tabrakan (dan kendaraan yang terdengar)');
 });
 
 test('hotel-main.js melempar pemain yang tertabrak, mengunci gerak, lalu membangunkannya', () => {

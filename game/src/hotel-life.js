@@ -17,6 +17,9 @@ import { createRain3D } from './rain-3d.js';
 // jadwal, kilat, suara, dan getar hujan (rain-boot.js). Suara sekitar ada di hotel-ambience.js.
 
 const HIT_RANGE = 14; // m: hanya kendaraan yang sedekat ini ke pemain yang diperiksa tabrakannya (badan terpanjang: bus 11,5 m)
+// update() juga melaporkan kendaraan yang cukup dekat untuk terdengar ({ sources }); hotel-main.js meneruskannya ke hotel-traffic-audio.js (suara mesin).
+const SOUND_RANGE = 120; // m: kendaraan yang lebih jauh dari ini tidak mungkin terdengar (jangkauan terjauh di hotel-traffic-audio.js: bus dan truk)
+const NO_SOURCES = Object.freeze([]);
 
 export function createHotelLife({ scene, low = false, search = '' } = {}) {
   const q = new URLSearchParams(search);
@@ -30,6 +33,7 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
   const dummy = new THREE.Object3D();
   const local = new THREE.Matrix4();
   const world = new THREE.Matrix4();
+  const sources = []; // kendaraan yang terdengar frame ini (dipakai ulang tiap frame)
 
   // ---- lalu lintas: satu kumpulan per jenis kendaraan
   const specs = trafficOn ? mixedTrafficSpecs({ lanes: low ? 2 : LANES_PER_DIRECTION, perLane: low ? 4 : 9 }) : [];
@@ -83,7 +87,9 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
     /**
      * Tiap frame: time detik, me = pemain {x, z}, night 0..1 (nightLevel), rain 0..1, active = false selama perjalanan lorong (dunia berbeda).
      * hittable = pemain boleh tertabrak sekarang (berjalan kaki di luar, tidak sedang terbaring/kebal/di kendaraan). Mengembalikan
-     * { hit: { id, kind, speed, dirX, dirZ } } untuk kendaraan pertama yang mengenai pemain, atau { hit: null }.
+     * { hit: { id, kind, speed, dirX, dirZ }, sources } : hit = kendaraan pertama yang mengenai pemain (atau null); sources = kendaraan dalam
+     * SOUND_RANGE dari pemain, [{ id, kind, x, z, speed, vx, vz }] untuk hotel-traffic-audio.js (kosong selama lorong). Daftar sources dipakai ulang
+     * tiap frame: pakai segera, jangan disimpan.
      */
     update({ time, me, night = 0, rain = 0, active = true, hittable = false }) {
       if (rain3d) {
@@ -97,7 +103,8 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
       }
       root.visible = active;
       let hit = null;
-      if (!active) return { hit };
+      sources.length = 0;
+      if (!active) return { hit, sources: NO_SOURCES };
       if (sets.length) {
         level = lightLevel(night, rain);
         setVehicleLights(level);
@@ -108,6 +115,12 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
             if (hittable && !hit && Math.abs(p.x - me.x) < HIT_RANGE && Math.abs(p.z - me.z) < HIT_RANGE) {
               const h = hitVehicle(p, list[i].kind, me);
               if (h) hit = { id: list[i].id, kind: list[i].kind, speed: list[i].speed, dirX: h.dirX, dirZ: h.dirZ };
+            }
+            const sx = p.x - me.x;
+            const sz = p.z - me.z;
+            if (sx * sx + sz * sz < SOUND_RANGE * SOUND_RANGE) {
+              const v = list[i].speed;
+              sources.push({ id: list[i].id, kind: list[i].kind, x: p.x, z: p.z, speed: v, vx: Math.sin(p.heading) * v, vz: Math.cos(p.heading) * v });
             }
           }
           set.commit(list.length);
@@ -144,7 +157,7 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
           aircraft = null;
         }
       }
-      return { hit };
+      return { hit, sources };
     },
     dispose() {
       scene.remove(root);

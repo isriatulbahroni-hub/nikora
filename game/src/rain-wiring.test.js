@@ -10,7 +10,7 @@ test('hotel-life.js memasang hujan 3D dan melangkahkannya tiap frame, sebelum pe
   assert.match(life, /from '\.\/rain-3d\.js'/);
   assert.match(life, /createRain3D\(\{ scene, low, search \}\)/);
   assert.match(life, /rain3d\.update\(\{ time, me, rain, active \}\)/);
-  assert.ok(life.indexOf('rain3d.update(') < life.indexOf('if (!active) return { hit }'), 'hujan tetap turun selama lorong perjalanan');
+  assert.ok(life.indexOf('rain3d.update(') < life.indexOf('if (!active) return { hit, sources: NO_SOURCES }'), 'hujan tetap turun selama lorong perjalanan');
   assert.match(life, /rain3d\?\.dispose\?\.\(\)/);
 });
 
