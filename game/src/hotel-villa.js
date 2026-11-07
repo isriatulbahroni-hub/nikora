@@ -3,6 +3,8 @@ import { BOUNDS, GATE_HALF_WIDTH, getVillaWorld, roomAt } from './villa-layout.j
 import { buildVillaWorld } from './villa-world.js';
 import { buildCameraOccluders } from './villa-camera.js';
 import { doorAssist, extraCameraOccluders, inflateBoxes } from './villa-motion.js';
+import { createHotelMasjid } from './hotel-masjid.js';
+import { createVenueHub } from './hotel-venues.js';
 
 // NIKORA Wedding Villa DI DALAM dunia hotel, di ujung Perjalanan 20 menit (hotel-journey.js): satu halaman, satu dunia.
 // Villa dibangun apa adanya (denah villa-layout.js) di dalam grup `root` yang digeser dan diputar mengikuti ujung jalan perjalanan
@@ -11,6 +13,10 @@ import { doorAssist, extraCameraOccluders, inflateBoxes } from './villa-motion.j
 // Lantai villa dinaikkan sedikit (VILLA_APPROACH.pad) di atas bukit-bukit kecil perjalanan; halaman depan berupa tanjakan landai
 // dari ujung jalan ke pagar. Yang BELUM ikut (masih di halaman villa lengkap, tombol "Buka Villa lengkap"): lift, ruang game, TV kamar,
 // kunci kamar, duduk/tidur, layar tancap, bulu tangkis, panel pesta, dan suara dekat.
+//
+// createHotelVilla() mengembalikan penghubung tempat acara (hotel-venues.js): villa dan Masjid Agung (hotel-masjid.js) dipasang dengan cara
+// yang sama di ujung lorongnya masing-masing; hotel-main.js memakainya seperti satu villa, dan hotel-journey.js memasang tiap tempat acara
+// lewat `.venues[id]`.
 export const VILLA_APPROACH = Object.freeze({
   gap: 26, // jarak ujung jalan perjalanan ke pagar selatan villa (m)
   pad: 2.4, // lantai villa lebih tinggi dari ujung jalan (m): di atas bukit-bukit kecil medan
@@ -83,7 +89,7 @@ function rampMesh(zFence, gap, pad, half, color) {
   return new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color, side: THREE.DoubleSide }));
 }
 
-export function createHotelVilla({ scene }) {
+function createVillaVenue({ scene }) {
   const world = getVillaWorld();
   const root = new THREE.Group(); // bingkai villa: digeser dan diputar ke ujung jalan perjalanan
   root.visible = false;
@@ -163,6 +169,9 @@ export function createHotelVilla({ scene }) {
   }
 
   return {
+    id: 'villa',
+    fenceZ: FENCE_Z, // pagar selatan di bingkai villa (hotel-journey.js memasang villa dengan ini)
+    approach: VILLA_APPROACH,
     zone: BOUNDS,
     carColliders: [],
     occluders,
@@ -290,4 +299,12 @@ export function createHotelVilla({ scene }) {
     },
     state: () => ({ anchored: !!frame, loaded: !!built, failed, frame }),
   };
+}
+
+/**
+ * Tempat acara yang dipasang di dunia hotel, dilihat halaman hotel sebagai satu "villa": villa dan Masjid Agung lewat penghubung
+ * (hotel-venues.js). hotel-journey.js memasang tiap tempat acara di ujung lorongnya lewat `.venues[id]`.
+ */
+export function createHotelVilla({ scene }) {
+  return createVenueHub([createVillaVenue({ scene }), createHotelMasjid({ scene })]);
 }

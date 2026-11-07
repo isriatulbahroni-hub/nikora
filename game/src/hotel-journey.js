@@ -7,7 +7,7 @@ import { setRoadProbe } from './vehicle.js';
 import { FOG_FAR, createJourneyWorld, flareHalf } from './journey-world.js';
 import { alongOf, endPoint, gatePsi, localToWorld, onRoute, planeBeyond, planeBehind, poseAt, rideSteer, startCheck, stepRide, villaAnchor, worldToLocal, wrap } from './hotel-journey-math.js';
 import { hoursAt, zoneFromSearch } from './day-night.js';
-import { createRoadTrafficView } from './road-traffic-view.js';
+import { createAmbientTrafficView, createRoadTrafficView } from './road-traffic-view.js';
 
 // Perjalanan 20+ menit di DALAM dunia hotel (satu halaman, satu dunia): jalan raya hotel -> gerbang -> rute perjalanan (journey.js) -> tempat acara.
 // Rute dipasang di gerbang jalan raya (hotel-journey-math.js): titik awal rute = titik gerbang, diputar menurut arah keluar gerbang. Bentuk rute
@@ -24,14 +24,17 @@ import { createRoadTrafficView } from './road-traffic-view.js';
 // Autopilot lama masih ada untuk pengujian: tambahkan ?otomatis=1 pada alamat halaman.
 // Mobil tetap di y = 0 dan seluruh dunia perjalanan digeser vertikal mengikuti tinggi jalan di bawah pemain (hanya dunia perjalanan; hotel tetap),
 // jadi fisika mobil, kursi, dan kamera hotel dipakai apa adanya.
-// Di ujung rute villa dipasang (hotel-villa.js) dan bisa dimasuki langsung; tempat acara lain masih memakai halaman sendiri lewat tombol "Masuk"
-// (tahap berikutnya: dipasang di ujung rute seperti villa).
+// Di ujung rute tempat acara dipasang dan bisa dimasuki langsung: villa (hotel-villa.js) dan Masjid Agung (hotel-masjid.js), lewat penghubung
+// tempat acara (hotel-venues.js; `villa.venues[id]`). Tempat acara lain (aula, royal) masih memakai halaman sendiri lewat tombol "Masuk"
+// (tahap berikutnya: dipasang di ujung rute seperti villa dan masjid; lihat docs/SATU_DUNIA_RENCANA.md).
 // Di jalan menuju villa juga berjalan karyawan villa yang pulang-pergi hotel <-> villa (villa-road-traffic.js, road-traffic-view.js): motor, bus antar-jemput,
 // dan mobil dinas; hanya tampilan, tidak ikut fisika mobil pemain.
+// Jalan menuju tempat acara lain (aula, royal, masjid) diisi lalu lintas umum menurut jam (road-ambient-traffic.js): mobil, motor, dan bus yang ramai
+// pagi dan sore; ?lalin=0 mematikannya (sama dengan lalu lintas Lingkar NIKORA di hotel-life.js).
 const PRELOAD = 300; // dunia perjalanan sebuah gerbang dibangun saat pemain sedekat ini (m)
 const KEEP = 460; // ... dan dibuang saat pemain menjauh dari sini
-const ROAM = 30; // radius jalan kaki bebas di sekitar ujung rute (tempat acara selain villa)
-const ANCHOR_BEFORE = 380; // villa dipasang saat sisa rute sependek ini (jalan sudah datar sepanjang itu)
+const ROAM = 30; // radius jalan kaki bebas di sekitar ujung rute (tempat acara yang belum dipasang di dunia ini)
+const ANCHOR_BEFORE = 380; // tempat acara dipasang saat sisa rute sependek ini (jalan sudah datar sepanjang itu)
 const ARRIVE_BEFORE = 15; // dianggap tiba saat sisa rute sependek ini (mengemudi sendiri)
 const EDGE_MARGIN = 0.9; // dinding lunak: mobil tidak boleh lebih dekat dari ini ke tepi aspal
 const MED_HALF = MEDIAN_WIDTH / 2; // setengah lebar median (2,5 m); lihat journey-world.js (curbs: sx = MEDIAN_WIDTH)
@@ -80,15 +83,20 @@ function clipMaterials(group, planes) {
 }
 
 /**
- * scene: THREE.Scene hotel; villa: createHotelVilla(); approach: VILLA_APPROACH; search: location.search (?kecepatan=1..20 dan ?otomatis=1 hanya untuk menguji);
+ * scene: THREE.Scene hotel; villa: createHotelVilla() (penghubung tempat acara: villa, masjid, ...); approach: VILLA_APPROACH (bawaan bila tempat acara tidak punya `approach` sendiri);
+ * search: location.search (?kecepatan=1..20 dan ?otomatis=1 hanya untuk menguji);
  * enterUrl(gate): alamat halaman tempat acara (null = tempat acara ada di dunia ini); onReturn(gate): pemanggil memindahkan pemain kembali ke hotel.
  */
 export function createHotelJourney({ scene, villa, approach, search = '', enterUrl = () => null, onReturn = () => {} }) {
   const query = new URLSearchParams(search);
   const timeScale = Math.min(20, Math.max(1, Number(query.get('kecepatan')) || 1));
   const autopilot = query.get('otomatis') === '1'; // bawaan MATI: pemain mengemudi sendiri
+  const ambientTraffic = query.get('lalin') !== '0'; // lalu lintas umum di jalan menuju aula, royal, dan masjid
   const trafficZone = zoneFromSearch(search);
   const trafficSeconds = () => hoursAt(Date.now(), trafficZone) * 3600; // jam asli di zona acara: sama dengan langit dan jadwal karyawan
+  // Tempat acara yang dipasang di ujung rute gerbang `id` (villa, masjid), atau null bila tempat acara itu masih halaman sendiri.
+  // Penghubung memberi `venues[id]`; `villa` polos (tanpa penghubung) hanya mengenal villa.
+  const mountOf = (id) => villa.venues?.[id] ?? (id === 'villa' ? villa : null);
   const worlds = new Map(); // id gerbang -> { gate, j, world, traffic, planes, clipDirty }
   let state = 'idle'; // idle | riding | arrived
   let ride = null; // { w, gate, j, st, capture, paused, anchored, loadPending, sites, medSide }
@@ -105,9 +113,9 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
     world.setNight?.(night);
     world.group.position.set(gate.x, 0, gate.z);
     world.group.rotation.y = gatePsi(gate);
-    if (gate.id === 'villa') dropArrivalPlaceholder(world.group, j);
+    if (mountOf(gate.id)) dropArrivalPlaceholder(world.group, j); // tempat acara sungguhan menggantikan bangunan sementara
     scene.add(world.group);
-    const traffic = gate.id === 'villa' ? createRoadTrafficView({ group: world.group, j, secondsNow: trafficSeconds }) : null; // karyawan villa pulang-pergi hotel <-> villa
+    const traffic = gate.id === 'villa' ? createRoadTrafficView({ group: world.group, j, secondsNow: trafficSeconds }) : ambientTraffic ? createAmbientTrafficView({ group: world.group, j, secondsNow: trafficSeconds, venue: gate.id }) : null; // villa: karyawan pulang-pergi hotel <-> villa; tempat acara lain: lalu lintas umum
     w = { gate, j, world, traffic, planes: [toPlane(planeBeyond(gate))], clipDirty: true };
     worlds.set(gate.id, w);
     return w;
@@ -209,14 +217,15 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
     else if (!autopilot) trackManual(delta, driving, me);
     // dunia perjalanan digeser vertikal mengikuti tinggi jalan di bawah mobil (mobil tetap di y = 0)
     w.world.group.position.y = -frameAt(j, clamp(ride.st.s, 0, j.length)).y;
-    // villa dipasang di ujung rute saat jalan sudah datar dan dekat (dimuat satu frame kemudian supaya tidak menumpuk)
-    if (gate.id === 'villa') {
+    // tempat acara (villa, masjid) dipasang di ujung rute saat jalan sudah datar dan dekat (dimuat satu frame kemudian supaya tidak menumpuk)
+    const mount = mountOf(gate.id);
+    if (mount) {
       if (!ride.anchored && ride.st.s >= j.length - ANCHOR_BEFORE) {
-        villa.anchor(villaAnchor(gate, j, VILLA_BOUNDS.maxZ, approach));
+        mount.anchor(villaAnchor(gate, j, mount.fenceZ ?? VILLA_BOUNDS.maxZ, mount.approach ?? approach));
         ride.anchored = true;
         ride.loadPending = true;
       } else if (ride.loadPending) {
-        villa.load();
+        mount.load();
         ride.loadPending = false;
       }
     }
@@ -273,7 +282,7 @@ export function createHotelJourney({ scene, villa, approach, search = '', enterU
       return { ok: true };
     },
 
-    /** Akhiri perjalanan (kembali ke hotel): villa dibongkar, dunia perjalanan kembali ke tinggi hotel. */
+    /** Akhiri perjalanan (kembali ke hotel): tempat acara dibongkar, dunia perjalanan kembali ke tinggi hotel. */
     finish() {
       if (ride) {
         ride.w.world.group.position.y = 0;

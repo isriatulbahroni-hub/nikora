@@ -28,7 +28,13 @@ import { VILLA_APPROACH, createHotelVilla } from './hotel-villa.js';
 import { createHotelJourney } from './hotel-journey.js';
 import { alongOf } from './hotel-journey-math.js';
 import { createHotelLife } from './hotel-life.js';
+import { createTrafficAudio } from './hotel-traffic-audio.js';
+import { KNOCKDOWN, knockDistance, knockdownPose } from './hotel-life-data.js';
 import { createHotelAmbience } from './hotel-ambience.js';
+import { findNearestSpot, isSpotId, poseOfSpot, seatLabel, spotById, spotsInRoom, standPoint } from './hotel-seating.js';
+import { WADE_DEPTH, actionLabel, createSwimmer, isSwimPose, poolAt, stepSwimmer, toggleAction } from './swim.js'; // berenang di Kolam Lagoon
+import { applySwimPose } from './swim-pose.js';
+import { createSwimFx } from './swim-fx.js';
 
 // NIKORA Grand Hotel sebagai halaman sendiri (/hotel.html): menara 1000 lantai yang dijelajahi dengan avatar (satu pemain).
 // Geometri 3D dari hotel-world.js dan denah dari hotel-layout.js (dipakai bersama dunia villa); halaman ini hanya
@@ -87,7 +93,7 @@ function hasWebGL2() {
 const held = new Set();
 const joystick = { x: 0, z: 0 };
 const KEYS = { w: [0, -1], arrowup: [0, -1], s: [0, 1], arrowdown: [0, 1], a: [-1, 0], arrowleft: [-1, 0], d: [1, 0], arrowright: [1, 0] };
-const hooks = { map: () => {}, camera: () => {}, places: () => {}, action: () => {}, sky: () => {}, horn: () => {} };
+const hooks = { map: () => {}, camera: () => {}, places: () => {}, action: () => {}, sky: () => {}, horn: () => {}, dive: () => {} };
 // lastDrag: kapan pemain terakhir memutar kamera (kamera mobil tidak melawan putaran itu).
 // cabinDrag(dx, dy): dipasang start(); mengembalikan true bila geseran satu jari dipakai untuk menoleh di kamera kabin (bukan memutar kamera orbit).
 const camInput = { lastDrag: -1e9, cabinDrag: null };
@@ -126,6 +132,7 @@ function setupInput(canvas, camState) {
     else if (!e.repeat && k === 'j') hooks.places();
     else if (!e.repeat && k === 'n') hooks.sky(); // ganti mode langit: otomatis, siang, senja, malam, demo
     else if (!e.repeat && k === 'h') hooks.horn(true);
+    else if (!e.repeat && k === 'z') hooks.dive(true); // tahan = menyelam (hanya berarti di air dalam)
     else if (!e.repeat && (k === 'e' || k === ' ')) {
       hooks.action(); // buka pintu/bagasi, naik, atau turun mobil
       e.preventDefault();
@@ -135,7 +142,7 @@ function setupInput(canvas, camState) {
     else if (k === '-') camState.dist = clamp(camState.dist * 1.1, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
     else if (k === '=' || k === '+') camState.dist = clamp(camState.dist * 0.9, CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
   });
-  addEventListener('keyup', (e) => { held.delete(e.key.toLowerCase()); if (e.key.toLowerCase() === 'h') hooks.horn(false); });
+  addEventListener('keyup', (e) => { held.delete(e.key.toLowerCase()); if (e.key.toLowerCase() === 'h') hooks.horn(false); if (e.key.toLowerCase() === 'z') hooks.dive(false); });
   addEventListener('blur', () => held.clear());
   canvas.addEventListener('wheel', (e) => {
     camState.dist = clamp(camState.dist * (e.deltaY > 0 ? 1.1 : 0.9), CAM_LIMITS.minDist, CAM_LIMITS.maxDist);
@@ -374,6 +381,18 @@ async function start() {
   // Dibungkus try/catch: bila gagal dibuat atau galat saat berjalan, efek itu dimatikan sendiri dan hotel tetap jalan.
   // ?lalin=0 mematikan lalu lintas, ?burung=0 burung, ?suara=0 suara sekitar.
   let life = null;
+  // Tertabrak lalu lintas (hotel-life.js melaporkan { hit }): terlempar searah laju kendaraan, terbaring, bangun, lalu kebal sebentar.
+  let down = null;
+  let immuneUntil = 0;
+  // Suara kendaraan lalu lintas (hotel-traffic-audio.js): mesin mobil, motor, bus, truk, klakson, dan benturan. trafficSources = kendaraan yang terdengar frame ini (dari hotel-life.js).
+  let trafficAudio = null;
+  let trafficSources = [];
+  const KIND_LABEL = { car: 'mobil', motor: 'motor', bus: 'bus', truck: 'truk' };
+  const startKnockdown = (h, now) => {
+    down = { t0: now, dirX: h.dirX, dirZ: h.dirZ, distance: knockDistance(h.speed), slid: 0, lie: 0 };
+    trafficAudio?.bump(Math.max(8, h.speed), 0); // dentuman dan benturan logam tepat di pemain
+    toast(`Kamu tertabrak ${KIND_LABEL[h.kind] ?? 'kendaraan'}!`, 2800);
+  };
   let ambience = null;
   try {
     life = createHotelLife({ scene, low: lowQuality, search: window.location.search });
@@ -386,6 +405,12 @@ async function start() {
   } catch (error) {
     console.warn('[hotel] suara sekitar dilewati', error);
     ambience = null;
+  }
+  try {
+    trafficAudio = createTrafficAudio({ search: window.location.search, low: lowQuality });
+  } catch (error) {
+    console.warn('[hotel] suara lalu lintas dilewati', error);
+    trafficAudio = null;
   }
   const indoorLight = new THREE.PointLight(0xffe2b8, 0, 26, 1.3);
   scene.add(indoorLight);
@@ -446,6 +471,26 @@ async function start() {
   blob.rotation.x = -Math.PI / 2;
   scene.add(blob);
 
+  // ---------- berenang di Kolam Lagoon (swim.js, swim-pose.js, swim-fx.js) ----------
+  // Masuk air dari tepi kolam atau dermaga: air dangkal = berjalan di air; air dalam = berenang, tegak mengayuh, mengapung (tombol Apung),
+  // menyelam (tahan Selam atau tombol Z); air dangkal diam = Mandi. Pose disiarkan lewat kolom pose jaringan; pemain lain melihatnya (multiplayer-view.js).
+  const swim = createSwimmer();
+  const swimFx = createSwimFx(scene);
+  const diveBtn = $('dive-button');
+  let diveHeld = false;
+  let swimOut = null; // hasil stepSwimmer frame terakhir (null = tidak sedang di air)
+  let swimMul = 1; // pengali kecepatan jalan dari frame lalu
+  let lastMoving = false;
+  let swimTipShown = false;
+  const remoteRipple = new Map(); // id pemain lain -> waktu riak terakhir (detik)
+  const setDive = (on) => { diveHeld = on && swimOut?.active === true; };
+  hooks.dive = setDive;
+  if (diveBtn) {
+    diveBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); setDive(true); });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) diveBtn.addEventListener(ev, () => setDive(false));
+    diveBtn.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+
   // Tamu yang datang dari tempat acara (?from=villa|hall|royal|masjid) muncul di gerbangnya, menghadap hotel; selain itu di drop-off.
   const arrival = arrivalGate(params.get('from'));
   const arrivalPose = arrival ? gateArrival(arrival) : null;
@@ -498,6 +543,7 @@ async function start() {
   const fade = $('lift-fade');
   const teleport = (level, x, z) => {
     if (journey.state !== 'idle') returnToHotel(journey.gate); // menu Jelajah selalu membawa ke hotel: akhiri perjalanan dulu
+    spot = null; // bangun dari kursi/kasur (hotel-seating.js)
     riding = null;
     fade.classList.remove('on');
     me.level = level;
@@ -604,6 +650,8 @@ async function start() {
   doorHook = (car) => carAudio.door(Math.hypot(car.x - me.x, car.z - me.z));
   hooks.action = () => {
     if (riding) return; // sedang di dalam lift
+    if (swimOut?.active && toggleAction(swim, { x: me.x, z: me.z, moving: lastMoving })) return; // mandi (air dangkal) atau mengapung (air dalam)
+    if (seatAction()) return; // duduk, tidur, atau berdiri dari perabot hotel (hotel-seating.js)
     if (journey.riding) {
       toast('Perjalanan sedang berlangsung. Nikmati pemandangannya, atau tekan Lewati.', 3000);
       return;
@@ -618,12 +666,59 @@ async function start() {
     } else if (me.level === 0 && !me.villa) carRide.interact(me); // buka/tutup pintu atau bagasi, atau naik lewat pintu yang sudah terbuka
   };
   hooks.horn = (down) => carRide.horn(down);
+
+  // ---------- duduk dan tidur di perabot hotel (hotel-seating.js) ----------
+  // Tombol aksi di dekat sofa, kursi, bangku, kasur, dsb. = Duduk atau Tidur; saat memakainya = Berdiri. Tiap perabot punya ukuran sendiri
+  // (panggul tepat di permukaan, kaki menapak lantai, kepala di bantal). Pemain lain melihatnya lewat id titik di kolom `sit` (id >= 100000).
+  let spot = null; // id titik duduk/tidur yang sedang dipakai, atau null
+  let spotSince = 0;
+  const spotOf = (id) => spotById(id, (level) => world.levels[level]);
+  const seatPoseOf = (id) => {
+    const s = isSpotId(id) ? spotOf(id) : null;
+    return s ? poseOfSpot(s) : null;
+  };
+  const occupiedSpots = () => {
+    const set = new Set();
+    if (multiplayer) for (const p of multiplayer.net.players) if (p.id !== multiplayer.net.id && isSpotId(p.sit)) set.add(p.sit);
+    return set;
+  };
+  const reachableSpot = () => {
+    if (spot !== null || riding || journey.state !== 'idle' || me.villa || fleet.mine) return null;
+    const room = world.roomAt(me.x, me.z, me.level);
+    return findNearestSpot({ x: me.x, z: me.z, level: me.level, room: room.id }, spotsInRoom(world.levels[me.level], room.id), occupiedSpots());
+  };
+  const seatPrompt = () => {
+    const s = reachableSpot();
+    return s ? seatLabel(s) : '';
+  };
+  const standUp = () => {
+    const s = spot === null ? null : spotOf(spot);
+    spot = null;
+    if (!s) return;
+    const p = standPoint(s, (x, z) => world.canStand(s.level, x, z) && world.roomAt(x, z, s.level).id === s.room); // tempat berdiri yang bebas di ruang yang sama
+    me.x = p.x;
+    me.z = p.z;
+  };
+  const seatAction = () => {
+    if (spot !== null) {
+      standUp();
+      return true;
+    }
+    const s = reachableSpot();
+    if (!s) return false;
+    spot = s.id;
+    spotSince = performance.now();
+    me.x = s.x;
+    me.z = s.z;
+    facing = s.pose.rotY;
+    return true;
+  };
   actBtn.addEventListener('click', () => hooks.action());
   let multiplayer = null;
   let netStatus = 'Menyambung…';
   // Multiplayer lewat LiveKit (ruang "hotel" terpisah dari vila). Dimuat belakangan: tanpa jaringan hotel tetap bisa dijelajahi sendiri.
   import('./multiplayer-view.js')
-    .then(({ startMultiplayer }) => startMultiplayer({ scene, search: window.location.search, name, world: 'hotel', poseFor: (id) => fleet.seatPose(id), useVideoCall: false, onError: (m) => { netStatus = `Offline · ${m}`; } }))
+    .then(({ startMultiplayer }) => startMultiplayer({ scene, search: window.location.search, name, world: 'hotel', poseFor: (id) => seatPoseOf(id) ?? fleet.seatPose(id), useVideoCall: false, onError: (m) => { netStatus = `Offline · ${m}`; } }))
     .then((session) => {
       multiplayer = session;
       if (!session) {
@@ -697,17 +792,18 @@ async function start() {
     const delta = Math.min((time - last) / 1000, 0.05);
     last = time;
 
-    const rawInput = riding || journey.riding ? { x: 0, z: 0 } : readInput();
+    const rawInput = down || riding || journey.riding ? { x: 0, z: 0 } : readInput(); // tertabrak: tidak bisa bergerak sampai bangun
     let move = { x: 0, z: 0 };
     const inVilla = villa.active(me); // di kompleks villa (dunia yang sama): dinding, pintu, tangga memakai fisika villa
-    if (!riding && !fleet.mine) { // di dalam mobil joystick = gas dan setir, bukan berjalan
+    if (spot !== null && Math.hypot(rawInput.x, rawInput.z) > 0.35) standUp(); // bergerak = berdiri
+    if (!riding && !fleet.mine && spot === null) { // di dalam mobil joystick = gas dan setir, bukan berjalan; di kursi/kasur diam
       move = cameraRelative(rawInput, camNow.yaw);
       move = inVilla ? villa.assist(me, move) : doorAssist(me, move, world.levels[me.level].doors);
     }
     const moving = move.x !== 0 || move.z !== 0;
     if (moving) {
-      const sx = move.x * SPEED * delta;
-      const sz = move.z * SPEED * delta;
+      const sx = move.x * SPEED * swimMul * delta; // swimMul < 1 di air (swim.js)
+      const sz = move.z * SPEED * swimMul * delta;
       if (inVilla) {
         villa.walk(me, sx, sz); // mengubah me.x, me.z, me.y, me.villa
       } else if (journey.state !== 'idle') {
@@ -723,6 +819,48 @@ async function start() {
       facing = Math.atan2(-move.x, -move.z);
       walkClock += delta;
     }
+
+    if (down) { // terlempar searah laju kendaraan (menabrak dinding berhenti), terbaring, lalu bangun (knockdownPose)
+      const kp = knockdownPose((time - down.t0) / 1000);
+      if (kp.phase === 'done') {
+        down = null;
+        immuneUntil = time + KNOCKDOWN.immune * 1000;
+      } else {
+        const want = kp.slide * down.distance;
+        const step = want - down.slid;
+        if (step > 0 && !inVilla && journey.state === 'idle') {
+          const next = world.move(me, down.dirX * step, down.dirZ * step);
+          me.x = next.x;
+          me.z = next.z;
+        }
+        down.slid = want;
+        down.lie = kp.lie;
+      }
+    }
+
+    // berenang: hanya di lantai dasar hotel, berjalan kaki (bukan di villa, mobil, lift, lorong perjalanan, atau kursi)
+    lastMoving = moving;
+    const swimOk = !inVilla && !riding && !fleet.mine && spot === null && journey.state === 'idle' && me.level === 0;
+    if (swimOk) {
+      const sw = stepSwimmer(swim, { x: me.x, z: me.z, groundY: hotelLevelY(0), moving, dive: diveHeld, dt: delta });
+      swimOut = sw.active ? sw : null;
+      swimMul = sw.speedMul;
+      if (sw.active) me.y = sw.y;
+      if (sw.splash) swimFx.splash(sw.splash.x, sw.waterY, sw.splash.z, sw.splash.strength);
+      if (sw.ripple) swimFx.ripple(me.x, sw.waterY, me.z, moving ? 1 : 0.7);
+      if (sw.entered && !swimTipShown && sw.depth > WADE_DEPTH) {
+        swimTipShown = true;
+        toast('Berenang: gerak untuk berenang · tahan Selam (Z) untuk menyelam · Apung untuk mengapung', 4200);
+      }
+    } else if (swim.active || swimOut) {
+      Object.assign(swim, createSwimmer());
+      swimOut = null;
+      swimMul = 1;
+    }
+    if (!swimOut) diveHeld = false;
+    const inDeep = swimOut?.active === true && swimOut.depth > WADE_DEPTH;
+    if (diveBtn && diveBtn.hidden === inDeep) diveBtn.hidden = !inDeep;
+    swimFx.update(delta);
 
     // perjalanan lift: tinggi berubah halus, lantai tujuan menjadi nyata di akhir
     if (riding) {
@@ -744,7 +882,7 @@ async function start() {
     const car = carRide.step(me, { delta, rawInput });
     // lorong perjalanan 20+ menit: autopilot menggeser mobil di sepanjang rute (satu dunia, tidak pindah halaman)
     journey.update({ delta, camera, me, driving: fleet.driving });
-    enterCorridor(); // melewati gerbang jalan raya = masuk lorongnya
+    enterCorridor(); // melewati gerbang = masuk lorongnya
     const seatPose = car.riding ? fleet.seatPose(car.sit) : null;
     if (seatPose && journey.state !== 'idle') {
       me.x = seatPose.x; // pose kursi dihitung ulang sesudah autopilot menggeser mobil (tanpa tertinggal satu frame)
@@ -752,19 +890,50 @@ async function start() {
     }
     if (car.riding) facing = car.facing;
     shownFacing = seatPose ? seatPose.rotY : turnToward(shownFacing, facing, delta);
-    avatar.position.x = me.x;
-    avatar.position.z = me.z;
-    avatar.position.y = seatPose ? seatPose.y : me.y + (moving ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0);
-    avatar.rotation.y = shownFacing;
-    avatar.userData.seated = !!seatPose;
+    const sp = spot !== null ? seatPoseOf(spot) : null; // duduk atau berbaring di perabot hotel (hotel-seating.js)
+    const swimPoseName = swimOut?.active && !seatPose && !sp ? swimOut.pose : null; // gerak renang (null di darat dan saat berjalan di air dangkal)
+    if (sp) {
+      const ks = 1 - Math.exp(-14 * delta);
+      avatar.position.x += (sp.x - avatar.position.x) * ks;
+      avatar.position.z += (sp.z - avatar.position.z) * ks;
+      avatar.position.y += (sp.y - avatar.position.y) * ks;
+      avatar.userData.tilt = (avatar.userData.tilt ?? 0) + (sp.tilt - (avatar.userData.tilt ?? 0)) * ks;
+      avatar.rotation.y = sp.rotY;
+      shownFacing = sp.rotY;
+    } else {
+      avatar.position.x = me.x;
+      avatar.position.z = me.z;
+      avatar.position.y = seatPose ? seatPose.y : me.y + (moving && !swimPoseName ? Math.abs(Math.sin(walkClock * 12)) * 0.08 : 0); // berenang: tanpa loncatan langkah
+      avatar.rotation.y = shownFacing;
+      avatar.userData.tilt = (avatar.userData.tilt ?? 0) * Math.exp(-14 * delta);
+    }
+    if (down) { // terbaring telentang menurut tahap tertabrak; sedikit diturunkan supaya badan rebah di aspal
+      avatar.userData.tilt = down.lie * (Math.PI / 2);
+      avatar.position.y -= down.lie * 0.15;
+    }
+    avatar.userData.seated = !!seatPose || (sp ? sp.tilt === 0 : false);
+    avatar.userData.seatHip = sp?.legs?.hip ?? null; // sudut paha menyesuaikan tinggi dudukan (avatar.js)
+    avatar.userData.seatLift = sp?.lift ?? 0;
     avatar.userData.seatKind = seatPose ? 'car' : null; // kursi mobil: kaki avatar manusia maju ke bawah dasbor, bukan menjuntai seperti di kursi biasa (avatar-human.js)
-    applyPose(avatar, moving ? 'walk' : null, time / 1000, delta);
+    applyPose(avatar, moving && !swimPoseName ? 'walk' : null, time / 1000, delta);
+    avatar.rotation.x += avatar.userData.tilt ?? 0; // applyPose menulis rotation.x: tambahkan kemiringan tidur sesudahnya
+    avatar.position.y += applySwimPose(avatar, swimPoseName, time / 1000, delta); // berenang: tengkurap, tegak mengayuh, telentang, menyelam (swim-pose.js); model manusia dikoreksi ke tinggi panggul
     // duduk di mobil: kaki ke depan dan punggung bersandar sesuai tinggi atap supaya kepala tidak menembus atap; avatar sederhana dan manusia (car-seat-pose.js)
     if (seatPose) applyCarSeat(avatar, seatPose.fit);
     const others = multiplayer ? multiplayer.net.players.filter((p) => p.id !== multiplayer.net.id) : [];
+    for (const o of others) { // pemain lain yang berenang: riak di permukaan (tanpa percikan; posisi dan gerak dari multiplayer-view.js)
+      if (!isSwimPose(o.pose) || o.pose === 'selam') continue;
+      const pool = poolAt(o.x, o.z);
+      if (!pool || time / 1000 - (remoteRipple.get(o.id) ?? 0) < 0.6) continue;
+      remoteRipple.set(o.id, time / 1000);
+      swimFx.ripple(o.x, pool.waterY, o.z, 0.8);
+    }
+    multiplayer?.net.setPose?.(swimPoseName); // kolom pose jaringan (null = tidak berenang)
     if (multiplayer) {
       multiplayer.view.update(delta, time / 1000); // pemain lain
-      multiplayer.sendInput(move.x, move.z, facing, time, fleet.sitId, { x: me.x, z: me.z, y: me.y }); // sit = kursi mobil (id >= 1000) atau null
+      multiplayer.sendInput(move.x, move.z, facing, time, fleet.sitId ?? spot, { x: me.x, z: me.z, y: me.y }); // sit = kursi mobil (id >= 1000), titik duduk/tidur hotel (id >= 100000), atau null
+      const mineNet = multiplayer.net.players.find((p) => p.id === multiplayer.net.id);
+      if (mineNet && spot !== null && time - spotSince > 800 && mineNet.sit !== spot) standUp(); // titik sudah dipakai orang lain: berdiri
     }
     const online = multiplayer ? (multiplayer.net.status === 'reconnecting' ? 'Menyambung ulang…' : `Online: ${others.length + 1}`) : netStatus;
     if ($('online').textContent !== online) $('online').textContent = online;
@@ -802,7 +971,7 @@ async function start() {
     const lookY = me.y + 1.2;
     camera.lookAt(me.x + (ahead.x - me.x) * look, lookY + (ahead.y - lookY) * look, me.z + (ahead.z - me.z) * look);
     avatar.visible = camArm > 0.95;
-    blob.visible = avatar.visible;
+    blob.visible = avatar.visible && !swimOut?.active; // bayangan bulat tidak berarti di atas air
 
     // kamera kabin: mata di kepala pengemudi, menghadap ke depan mobil (atau ke arah pandangan: menoleh ke teman/belakang, cabin-look.js),
     // sedikit mengintip ke arah belokan saat menatap lurus; avatar disembunyikan
@@ -852,7 +1021,9 @@ async function start() {
     liftPanel.update(!riding && !fleet.mine && !inVilla && journey.state === 'idle' && !!world.liftAt(me.x, me.z), me.level);
     // tombol aksi: Turun saat di mobil; berjalan kaki di dekat mobil = aksi bagian yang didekati (Buka pintu kanan, Naik, Buka bagasi, ...)
     const carPrompt = !riding && !fleet.mine && me.level === 0 && !me.villa ? carRide.prompt(me) : '';
-    const actText = riding || journey.riding ? '' : fleet.mine ? 'Turun' : carPrompt;
+    const seatText = riding || journey.riding || fleet.mine ? '' : spot !== null ? 'Berdiri' : seatPrompt();
+    const swimText = swimOut?.active ? actionLabel(swim, { x: me.x, z: me.z, moving }) : ''; // Mandi (air dangkal) atau Apung (air dalam)
+    const actText = riding || journey.riding ? '' : fleet.mine ? 'Turun' : swimText || seatText || carPrompt;
     if (actText && actBtn.textContent !== actText) {
       actBtn.textContent = actText;
       const long = actText.length > 6; // tulisan panjang ("Buka pintu kanan") dikecilkan dan dibungkus supaya muat di tombol bulat
@@ -878,9 +1049,15 @@ async function start() {
         return 0;
       }
     })();
+    trafficSources = []; // diisi ulang oleh life.update di bawah (kosong bila lalu lintas mati atau selama lorong)
     if (life) {
       try {
-        life.update({ time: time / 1000, me, night: nightK, rain: rainK, active: journey.state === 'idle' }); // disembunyikan selama lorong (dunia lain)
+        const lifeNow = life.update({
+          time: time / 1000, me, night: nightK, rain: rainK, active: journey.state === 'idle', // disembunyikan selama lorong (dunia lain)
+          hittable: !down && time >= immuneUntil && !riding && !fleet.mine && fleet.sitId == null && spot === null && !inVilla && journey.state === 'idle' && me.level === 0,
+        });
+        if (lifeNow?.hit) startKnockdown(lifeNow.hit, time);
+        trafficSources = lifeNow?.sources ?? [];
       } catch (error) {
         console.warn('[hotel] lalu lintas dan burung dimatikan karena galat', error);
         try { life.dispose(); } catch { /* sudah dibuang */ }
@@ -894,6 +1071,24 @@ async function start() {
         console.warn('[hotel] suara sekitar dimatikan karena galat', error);
         try { ambience.dispose(); } catch { /* sudah ditutup */ }
         ambience = null;
+      }
+    }
+    if (trafficAudio) {
+      try {
+        // telinga = pemain (me mengikuti mobil saat mengemudi); kecepatan untuk Doppler dari mobil yang dikemudikan bila ada
+        const driven = fleet.driving;
+        const earSpeed = driven ? driven.speed ?? 0 : 0;
+        const earHeading = driven ? driven.heading ?? 0 : 0;
+        trafficAudio.update({
+          listener: { x: me.x, z: me.z, yaw: camNow.yaw, vx: Math.sin(earHeading) * earSpeed, vz: Math.cos(earHeading) * earSpeed },
+          sources: trafficSources,
+          indoor: indoorK,
+          cabin: inCabin,
+        });
+      } catch (error) {
+        console.warn('[hotel] suara lalu lintas dimatikan karena galat', error);
+        try { trafficAudio.dispose(); } catch { /* sudah ditutup */ }
+        trafficAudio = null;
       }
     }
     const qChange = quality.tick(performance.now());
@@ -916,8 +1111,10 @@ async function start() {
     renderStats: () => ({ calls: renderer.info.render.calls, triangles: renderer.info.render.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio() }),
     places: () => places,
     staff: () => staffView.stats(), // petugas yang sedang digambar (pengujian)
+    knocked: () => !!down, // sedang terlempar atau terbaring setelah tertabrak (pengujian)
     life: () => life?.info() ?? null, // lalu lintas dan burung (pengujian); null bila dimatikan
     ambience: () => ambience?.info() ?? null, // suara sekitar (pengujian); null bila dimatikan
+    trafficAudio: () => trafficAudio?.info() ?? null, // suara kendaraan lalu lintas (pengujian): { on, voices }; null bila dimatikan
     sky: () => sky.info(), // langit dan lampu saat ini (pengujian)
     surroundings: () => surroundings.info(), // satelit, kota, pohon (pengujian)
     villa: () => villa.state(), // villa di dalam dunia hotel: sudah dimuat? gagal? (pengujian)
@@ -930,6 +1127,8 @@ async function start() {
     cockpit: () => cockpitOn, // kamera kabin aktif (pengujian)
     cycleCamera: () => hooks.camera(), // sama dengan tombol kamera (pengujian)
     driving: () => (fleet.driving ? { model: fleet.driving.model, speed: fleet.driving.speed, engine: fleet.driving.engine, steer: fleet.driving.steer, slip: fleet.driving.slip, tyreTemp: fleet.driving.tyreTemp } : null),
+    seat: () => ({ spot, pose: spot === null ? null : seatPoseOf(spot), prompt: seatPrompt() }), // pengujian: titik duduk/tidur saat ini
+    sit: () => seatAction(), // sama dengan tombol aksi saat berjalan kaki (pengujian)
     teleport, // hanya untuk pengujian dan menu Jelajah
     valet: () => { const v = valet(); return v ? { id: v.slot.id, block: v.slot.block, ev: v.slot.ev, stand: v.stand } : null; }, // slot pilihan valet (pengujian)
     gatePrompt: () => null, // tombol gerbang sudah tidak ada: lorong dimasuki otomatis saat melewati gerbang

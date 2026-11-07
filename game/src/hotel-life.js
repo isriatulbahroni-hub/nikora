@@ -1,22 +1,31 @@
 import * as THREE from 'three';
 import { LANES_PER_DIRECTION } from './highway.js';
-import { birdPose, birdSpecs, birdVisibility, lightLevel, mixedTrafficSpecs, proximityScale, trafficPose } from './hotel-life-data.js';
+import { birdPose, birdSpecs, birdVisibility, lightLevel, hitVehicle, mixedTrafficSpecs, trafficPose } from './hotel-life-data.js';
 import { createVehicleSet, setVehicleLights } from './hotel-vehicle-parts.js';
+import { buildAircraft } from './hotel-aircraft.js';
+import { createRain3D } from './rain-3d.js';
 
 // Hotel dan jalan terasa hidup (THREE): lalu lintas campuran (mobil, motor, bus, truk; lampu menyala saat gelap dan hujan) di Lingkar NIKORA
-// dan burung yang mengitari tapak di siang hari. Data dan matematikanya di hotel-life-data.js (diuji); bentuk kendaraan di hotel-vehicle-parts.js
-// (dipakai bersama hotel-commute.js). Hanya pemandangan: tidak ada tabrakan; kendaraan lalu lintas mengecil halus bila terlalu dekat pemain.
-// ?lalin=0 mematikan lalu lintas, ?burung=0 burung. Lajur dalam sisi utara dikosongkan untuk kendaraan karyawan (COMMUTE_LANE).
-// Yang SUDAH ada dan tidak diulang: pesawat dan helikopter (hotel-aircraft.js), petugas (hotel-staff-view.js), karyawan pulang-pergi (hotel-commute.js),
-// langit dan lampu (hotel-sky.js), hujan (rain-boot.js). Suara sekitar ada di hotel-ambience.js.
+// dan burung yang mengitari tapak di siang hari, serta helikopter dan pesawat yang mengorbit menara (hotel-aircraft.js, dipasang di sini karena
+// modul ini sudah dipanggil tiap frame oleh hotel-main.js). Data dan matematikanya di hotel-life-data.js (diuji); bentuk kendaraan di
+// hotel-vehicle-parts.js (dipakai bersama hotel-commute.js). Kendaraan selalu tampil utuh dan tetap melaju; bila pemain berada di badan
+// kendaraan, update() melaporkan tabrakan ({ hit }) dan hotel-main.js melempar pemain. ?lalin=0 mematikan lalu lintas, ?burung=0 burung, ?pesawat=0 helikopter dan pesawat. Lajur dalam sisi utara dikosongkan
+// untuk kendaraan karyawan (COMMUTE_LANE).
+// Hujan 3D (rain-3d.js: tetes di dunia yang terhalang kanopi, percikan, genangan, dunia basah) juga dipasang dan dilangkahkan dari sini, sebelum
+// pemeriksaan `active`, jadi tetap turun selama lorong perjalanan. ?hujan3d=0 mematikannya. Galat di dalamnya hanya mematikan hujan 3D.
+// Yang SUDAH ada dan tidak diulang: petugas (hotel-staff-view.js), karyawan pulang-pergi (hotel-commute.js), langit dan lampu (hotel-sky.js),
+// jadwal, kilat, suara, dan getar hujan (rain-boot.js). Suara sekitar ada di hotel-ambience.js.
 
-const NEAR = 7; // m: lebih dekat dari ini kendaraan lalu lintas menghilang (tanpa tabrakan); jalan tetap terasa ramai di sekitar pemain
-const FAR = 18;
+const HIT_RANGE = 14; // m: hanya kendaraan yang sedekat ini ke pemain yang diperiksa tabrakannya (badan terpanjang: bus 11,5 m)
+// update() juga melaporkan kendaraan yang cukup dekat untuk terdengar ({ sources }); hotel-main.js meneruskannya ke hotel-traffic-audio.js (suara mesin).
+const SOUND_RANGE = 120; // m: kendaraan yang lebih jauh dari ini tidak mungkin terdengar (jangkauan terjauh di hotel-traffic-audio.js: bus dan truk)
+const NO_SOURCES = Object.freeze([]);
 
 export function createHotelLife({ scene, low = false, search = '' } = {}) {
   const q = new URLSearchParams(search);
   const trafficOn = q.get('lalin') !== '0';
   const birdsOn = q.get('burung') !== '0';
+  const aircraftOn = q.get('pesawat') !== '0';
   const root = new THREE.Group();
   root.name = 'nikora-life';
   scene.add(root);
@@ -24,6 +33,7 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
   const dummy = new THREE.Object3D();
   const local = new THREE.Matrix4();
   const world = new THREE.Matrix4();
+  const sources = []; // kendaraan yang terdengar frame ini (dipakai ulang tiap frame)
 
   // ---- lalu lintas: satu kumpulan per jenis kendaraan
   const specs = trafficOn ? mixedTrafficSpecs({ lanes: low ? 2 : LANES_PER_DIRECTION, perLane: low ? 4 : 9 }) : [];
@@ -51,22 +61,67 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
     owned.push(mat);
     birds = { left: make(-0.55), right: make(0.55) };
   }
+  // ---- helikopter dan pesawat: anak `root`, jadi ikut disembunyikan selama lorong perjalanan; galat di dalamnya tidak mematikan lalu lintas dan burung
+  let aircraft = null;
+  if (aircraftOn) {
+    try {
+      aircraft = buildAircraft(root);
+    } catch (error) {
+      console.warn('[hotel] helikopter dan pesawat dilewati', error);
+      aircraft = null;
+    }
+  }
+  // ---- hujan 3D: objeknya anak `scene` (bukan `root`) supaya tetap terlihat selama lorong perjalanan; galat di dalamnya tidak mematikan lalu lintas
+  let rain3d = null;
+  try {
+    rain3d = createRain3D({ scene, low, search });
+  } catch (error) {
+    console.warn('[hotel] hujan 3D dilewati', error);
+    rain3d = null;
+  }
   let level = 0;
 
   return {
     root,
-    info: () => ({ cars: specs.length, kinds: Object.fromEntries(sets.map(({ list, set }) => [set.kind, list.length])), birds: birdList.length, lights: level }),
-    /** Tiap frame: time detik, me = pemain {x, z}, night 0..1 (nightLevel), rain 0..1, active = false selama perjalanan lorong (dunia berbeda). */
-    update({ time, me, night = 0, rain = 0, active = true }) {
+    info: () => ({ cars: specs.length, kinds: Object.fromEntries(sets.map(({ list, set }) => [set.kind, list.length])), birds: birdList.length, aircraft: aircraft?.info() ?? null, rain: rain3d?.info?.() ?? null, lights: level }),
+    /**
+     * Tiap frame: time detik, me = pemain {x, z}, night 0..1 (nightLevel), rain 0..1, active = false selama perjalanan lorong (dunia berbeda).
+     * hittable = pemain boleh tertabrak sekarang (berjalan kaki di luar, tidak sedang terbaring/kebal/di kendaraan). Mengembalikan
+     * { hit: { id, kind, speed, dirX, dirZ }, sources } : hit = kendaraan pertama yang mengenai pemain (atau null); sources = kendaraan dalam
+     * SOUND_RANGE dari pemain, [{ id, kind, x, z, speed, vx, vz }] untuk hotel-traffic-audio.js (kosong selama lorong). Daftar sources dipakai ulang
+     * tiap frame: pakai segera, jangan disimpan.
+     */
+    update({ time, me, night = 0, rain = 0, active = true, hittable = false }) {
+      if (rain3d) {
+        try {
+          rain3d.update({ time, me, rain, active });
+        } catch (error) {
+          console.warn('[hotel] hujan 3D dimatikan karena galat', error);
+          try { rain3d.dispose(); } catch { /* sudah dibuang */ }
+          rain3d = null;
+        }
+      }
       root.visible = active;
-      if (!active) return;
+      let hit = null;
+      sources.length = 0;
+      if (!active) return { hit, sources: NO_SOURCES };
       if (sets.length) {
         level = lightLevel(night, rain);
         setVehicleLights(level);
         for (const { list, set } of sets) {
           for (let i = 0; i < list.length; i++) {
             const p = trafficPose(list[i], time);
-            set.place(i, p.x, p.z, p.heading, proximityScale(Math.hypot(p.x - me.x, p.z - me.z), NEAR, FAR), list[i].color);
+            set.place(i, p.x, p.z, p.heading, 1, list[i].color);
+            if (hittable && !hit && Math.abs(p.x - me.x) < HIT_RANGE && Math.abs(p.z - me.z) < HIT_RANGE) {
+              const h = hitVehicle(p, list[i].kind, me);
+              if (h) hit = { id: list[i].id, kind: list[i].kind, speed: list[i].speed, dirX: h.dirX, dirZ: h.dirZ };
+            }
+            const sx = p.x - me.x;
+            const sz = p.z - me.z;
+            if (sx * sx + sz * sz < SOUND_RANGE * SOUND_RANGE) {
+              const v = list[i].speed;
+              sources.push({ id: list[i].id, kind: list[i].kind, x: p.x, z: p.z, speed: v, vx: Math.sin(p.heading) * v, vz: Math.cos(p.heading) * v });
+            }
           }
           set.commit(list.length);
         }
@@ -93,9 +148,21 @@ export function createHotelLife({ scene, low = false, search = '' } = {}) {
           birds.right.instanceMatrix.needsUpdate = true;
         }
       }
+      if (aircraft) {
+        try {
+          aircraft.update(time);
+        } catch (error) {
+          console.warn('[hotel] helikopter dan pesawat dimatikan karena galat', error);
+          try { aircraft.dispose(); } catch { /* sudah dibuang */ }
+          aircraft = null;
+        }
+      }
+      return { hit, sources };
     },
     dispose() {
       scene.remove(root);
+      aircraft?.dispose();
+      rain3d?.dispose?.();
       for (const { set } of sets) set.dispose();
       for (const m of [birds?.left, birds?.right]) m?.dispose?.();
       for (const x of owned) x.dispose?.();
