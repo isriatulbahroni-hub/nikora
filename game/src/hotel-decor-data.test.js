@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DECOR_MATS, DECOR_THEMES, guestTier, levelDecor, roomDecor, themeFor } from './hotel-decor-data.js';
-import { HOTEL_LEVEL_HEIGHT, getHotelWorld, hotelFootprint, hotelRoomsAtLevel, isGuestLevel } from './hotel-layout.js';
+import { HOTEL_LEVEL_HEIGHT, getHotelWorld, hotelFootprint, hotelRoomsAtLevel, isGuestLevel, isSkyLobbyLevel } from './hotel-layout.js';
 
 const finite = (q) => ['x', 'y', 'z', 'sx', 'sy', 'sz', 'color'].every((k) => Number.isFinite(q[k]));
-const LEVELS = [0, 1, 2, 3, 50, 100, 150, 400, 700, 950, 998, 999];
+// Podium, Sky Lobby (kelipatan 50), lantai kamar tiap kelas (termasuk zona meruncing), suite eksekutif, Sky Level.
+const LEVELS = [0, 1, 2, 3, 10, 50, 150, 301, 601, 901, 950, 997, 998, 999];
 const world = getHotelWorld();
 const decorOf = (l) => levelDecor({ L: world.levels[l], l, y0: l * HOTEL_LEVEL_HEIGHT, F: hotelFootprint(l) });
 
@@ -21,13 +22,17 @@ test('tiap ruang publik (podium, Sky Lobby, suite eksekutif, Sky Level) punya te
 });
 
 test('kelas kamar tamu mengikuti nama lantai: Deluxe, Premier, Grand Premier, Royal Residence', () => {
+  // 300, 600, 900 adalah Sky Lobby (bukan lantai kamar), jadi batas kelas diuji di 299/301, 599/601, 899/901.
+  assert.ok(isSkyLobbyLevel(300) && isSkyLobbyLevel(600) && isSkyLobbyLevel(900));
   assert.equal(guestTier(4), 'deluxe');
   assert.equal(guestTier(299), 'deluxe');
-  assert.equal(guestTier(300), 'premier');
-  assert.equal(guestTier(600), 'grand');
-  assert.equal(guestTier(900), 'royal');
+  assert.equal(guestTier(301), 'premier');
+  assert.equal(guestTier(599), 'premier');
+  assert.equal(guestTier(601), 'grand');
+  assert.equal(guestTier(899), 'grand');
+  assert.equal(guestTier(901), 'royal');
   const count = (l) => DECOR_MATS.reduce((n, m) => n + decorOf(l)[m].length, 0);
-  const [d, p, g, r] = [10, 400, 700, 950].map((l) => { assert.ok(isGuestLevel(l)); return count(l); });
+  const [d, p, g, r] = [10, 301, 601, 901].map((l) => { assert.ok(isGuestLevel(l), `lantai ${l} harus lantai kamar`); return count(l); });
   assert.ok(r > g && g > p && p > d, `makin tinggi kelasnya makin mewah: ${[d, p, g, r]}`);
 });
 
