@@ -143,7 +143,8 @@ function createVillaVenue({ scene }) {
     try {
       const staging = new THREE.Scene(); // langit, kabut, dan cahaya mandiri villa ditampung di sini lalu dibuang; hotel punya langit sendiri
       const noTrees = { ...world, props: world.props.filter((p) => p.type !== 'tree') };
-      const b = buildVillaWorld(staging, noTrees, {});
+      // parking: false → parkir luas villa (villa-parking.js) tidak ikut: di sini selatan gerbang adalah halaman depan dan tanjakan jalan perjalanan
+      const b = buildVillaWorld(staging, noTrees, { parking: false });
       const ground = stripStandaloneParts(b.root);
       root.add(b.root);
       root.updateMatrixWorld(true);

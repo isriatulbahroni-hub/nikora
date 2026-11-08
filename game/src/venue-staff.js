@@ -42,7 +42,10 @@ const VILLA_AREAS = Object.freeze({
   kitchen: villaFind('kitchen'),
   spa: villaFind('spa'),
   corridor: villaFind('corridor'),
-  parking: villaFind('parking'),
+  // Zona 'parking' lama sudah dihapus dari villa-layout.js (parkir pindah ke lahan luas di luar gerbang, villa-parking.js), jadi petak
+  // bekasnya dipertahankan di sini sebagai titik tugas petugas parkir, satpam, dan bellboy di dalam pagar. Karyawan yang bertugas di
+  // lahan parkir baru (di luar BOUNDS villa) belum dikerjakan.
+  parking: area('parking', [18, 24, 42, 42]),
   courtyard: villaFind('courtyard'),
   garden: villaFind('fountain_garden'),
   gate: area('gate', [-10, 70, 10, 82]), // di dalam gerbang selatan

@@ -13,6 +13,8 @@ import {
   asphaltTexture, frondTexture, grassTexture, marbleTexture, parquetTexture, plasterTexture, poolTileTexture, rng, roofTileTexture,
   rugTexture, stoneTexture, waterNormalTexture,
 } from './villa-textures.js';
+import { buildVillaParking } from './villa-parking-world.js';
+import { inParkingKeepOut } from './villa-parking.js';
 
 const SUN_DIR = new THREE.Vector3(22, 42, 16).normalize();
 const dummy = new THREE.Object3D();
@@ -696,10 +698,13 @@ function buildCountryside(world, parent, mats, rand) {
   parent.add(instanced(crown, std(0xffffff, { roughness: 0.9 }), trees.map((t, i) => ({
     x: t.x, y: t.s * 3.6 + 0.9, z: t.z, sx: t.s * 1.9, sy: t.s * 1.6, sz: t.s * 1.9, ry: rand() * 6.28, color: greens[i % greens.length],
   }))));
-  // semak rendah di sepanjang jalan supaya terasa seperti jalan desa
+  // semak rendah di sepanjang jalan supaya terasa seperti jalan desa (lahan parkir villa-parking.js bebas semak)
   const bushes = [];
   for (let z = world.bounds.maxZ + 8; z < 150; z += 6 + rand() * 4) {
-    for (const side of [-1, 1]) bushes.push({ x: side * (COUNTRYSIDE.roadHalf + 1.2 + rand() * 1.5), z, s: 0.5 + rand() * 0.5, color: greens[Math.floor(rand() * 4)] });
+    for (const side of [-1, 1]) {
+      const bush = { x: side * (COUNTRYSIDE.roadHalf + 1.2 + rand() * 1.5), z, s: 0.5 + rand() * 0.5, color: greens[Math.floor(rand() * 4)] };
+      if (!inParkingKeepOut(bush.x, bush.z, 1.5)) bushes.push(bush);
+    }
   }
   parent.add(instanced(new THREE.IcosahedronGeometry(1, 1), std(0xffffff, { roughness: 0.9 }), bushes.map((b) => ({ x: b.x, y: b.s * 0.6, z: b.z, sx: b.s * 1.2, sy: b.s, sz: b.s * 1.2, color: b.color }))));
 }
@@ -1040,8 +1045,12 @@ function skyAndLight(scene, root, renderer) {
   return { sun, sky };
 }
 
-/** Membangun seluruh vila ke dalam scene. Mengembalikan fungsi update (bayangan, air, percikan). */
-export function buildVillaWorld(scene, world, { renderer } = {}) {
+/**
+ * Membangun seluruh vila ke dalam scene. Mengembalikan fungsi update (bayangan, air, percikan).
+ * `parking: false` = tanpa parkir luas di luar gerbang (villa-parking-world.js): di dunia hotel (hotel-villa.js) bagian selatan gerbang
+ * adalah halaman depan dan tanjakan jalan perjalanan sendiri, jadi parkir tidak ikut dibangun di sana.
+ */
+export function buildVillaWorld(scene, world, { renderer, parking: withParking = true } = {}) {
   const root = new THREE.Group();
   scene.add(root);
   const rand = rng(2026);
@@ -1176,6 +1185,7 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
   buildProps(groundLevel.props, root, mats, rand);
   buildLanterns(root, mats);
   buildCountryside(world, root, mats, rand);
+  const parking = withParking ? buildVillaParking(root) : null; // parkir luas di luar gerbang: 300 slot tamu, karyawan, bus (villa-parking.js)
   buildStairs(STAIRS.filter((s) => s.from === 0), root, mats);
   for (let level = 1; level < world.levels.length; level++) {
     const group = new THREE.Group();
@@ -1197,6 +1207,7 @@ export function buildVillaWorld(scene, world, { renderer } = {}) {
       tex.waterNormal.offset.x += delta * 0.018;
       tex.waterNormal.offset.y += delta * 0.011;
       for (const fn of anim) fn(clock);
+      parking?.update(delta); // lampu slot, panah LED, mobil datang/pergi
       sky.position.set(px, 0, pz); // langit mengikuti pemain agar horizon tidak pernah terkejar
       // bukit latar diam saat pemain di dalam vila, lalu ikut bergerak penuh setelah keluar (tidak pernah bisa dimasuki)
       const follow = Math.min(1, Math.max(0, (Math.hypot(px, pz) - 40) / 25));
